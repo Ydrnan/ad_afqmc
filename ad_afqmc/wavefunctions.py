@@ -1054,7 +1054,8 @@ class ghf_complex(wave_function):
     @partial(jit, static_argnums=0)
     def _calc_overlap_restricted(self, walker: jax.Array, wave_data: dict) -> jax.Array:
         # det(mo_coeff^\dagger . walker)
-        return jnp.linalg.det(wave_data["mo_coeff"].T.conj() @ walker)
+        ovlp = jnp.linalg.det(wave_data["mo_coeff"].T.conj() @ walker)
+        return ovlp
 
     @partial(jit, static_argnums=0)
     def _calc_green(self, walker: jax.Array, wave_data: dict) -> jax.Array:
@@ -1078,6 +1079,37 @@ class ghf_complex(wave_function):
             "gij,ij->g", ham_data["rot_chol"], green_walker, optimize="optimal"
         )
         return fb
+
+    @partial(jit, static_argnums=0)
+    def _calc_e1(
+        self, walker: jax.Array, ham_data: dict, wave_data: dict
+    ) -> jax.Array:
+        h0, rot_h1 = ham_data["h0"], ham_data["rot_h1"]
+        green_walker = self._calc_green(walker, wave_data)
+
+        # <ghf|H_1|w><ghf|w> = Tr(green_walker.T . rot_h1)
+        ene1 = jnp.sum(green_walker * rot_h1)
+        return ene1
+
+    @partial(jit, static_argnums=0)
+    def _calc_e2(
+        self, walker: jax.Array, ham_data: dict, wave_data: dict
+    ) -> jax.Array:
+        h0, rot_chol = ham_data["h0"], ham_data["rot_chol"]
+
+        green_walker = self._calc_green(walker, wave_data)
+        # <ghf|H_2|w><ghf|w> = 0.5 \sum_\gamma Tr(rot_chol_\gamma . green_walker.T)^2
+        # - Tr(rot_chol_\gamma . green_walker.T . rot_chol_\gamma . green_walker.T)
+        #f = jnp.einsum("gij,jk->gik", rot_chol, green_walker.T, optimize="optimal")
+        #c = vmap(jnp.trace)(f)
+        #exc = jnp.sum(vmap(lambda x: x * x.T)(f))
+        #ene2 = (jnp.sum(c * c) - exc) / 2.0
+
+        p1 = jnp.einsum("ri,gir,sj,gjs->", green_walker.T, rot_chol, green_walker.T, rot_chol, optimize="optimal")
+        p2 = jnp.einsum("sk,gkr,rl,gls->", green_walker.T, rot_chol, green_walker.T, rot_chol, optimize="optimal")
+        ene2 = 0.5 * (p1 - p2)
+
+        return ene2
 
     @partial(jit, static_argnums=0)
     def _calc_energy_restricted(

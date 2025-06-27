@@ -1011,6 +1011,52 @@ def prep_afqmc_ghf_complex(mol, gmf: scf.ghf.GHF, tmpdir, chol_cut=1e-5):
 
     return h, h_mod, chol
 
+def prep_afqmc_ghf_complex_dice(mol, mf, gmf: scf.ghf.GHF, tmpdir, chol_cut=1e-5):
+    import scipy.linalg as la
+
+    overlap = gmf.get_ovlp(mol)
+    basis = la.block_diag(mf.mo_coeff, mf.mo_coeff)
+    gmf.mo_coeff = basis.T.dot(overlap).dot(gmf.mo_coeff)
+
+    norb = np.shape(gmf.mo_coeff)[-1]//2
+
+    # Chol ao to mo
+    chol_vecs = chunked_cholesky(mol, max_error=chol_cut)
+    nchol = chol_vecs.shape[0]
+    chol = np.zeros((nchol, 2*norb, 2*norb), dtype=complex)
+    for i in range(nchol):
+        chol_i = chol_vecs[i].reshape(norb, norb)
+        chol_i = la.block_diag(chol_i, chol_i)
+        chol[i] = basis.T.conj() @ chol_i @ basis
+
+    # h ao to mo
+    h = basis.T.conj() @ gmf.get_hcore() @ basis
+
+    enuc = mol.energy_nuc()
+    nbasis = h.shape[-1]
+    print(f'nelec: {mol.nelec}')
+    print(f'nbasis: {nbasis}')
+    print(f'chol.shape: {chol.shape}')
+
+    # Modified one-electron integrals
+    chol = chol.reshape((-1, nbasis, nbasis))
+    v0 = 0.5 * np.einsum('gik,gkj->ij', chol, chol, optimize='optimal')
+    h_mod = h - v0
+    chol = chol.reshape((chol.shape[0], -1))
+
+    # Save
+    write_dqmc(h, h_mod, chol, sum(mol.nelec), nbasis, enuc, ms=mol.spin, filename=tmpdir+'/FCIDUMP_chol')
+
+    ovlp = gmf.get_ovlp(mol)
+    q, r = np.linalg.qr(
+        basis.T.conj() @ ovlp @ gmf.mo_coeff
+    )
+    sgn = np.sign(r.diagonal())
+    q = np.einsum("ij,j->ij", q, sgn)
+    np.savez(tmpdir + "/mo_coeff.npz", mo_coeff=[q,q])
+
+    return h, h_mod, chol
+
 def prep_afqmc_spinor(mol, mo_coeff, h_ao, n_ao, tmpdir, chol_cut=1e-5):
     import scipy.linalg as la
     from socutils.scf import spinor_hf
