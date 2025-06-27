@@ -1049,7 +1049,7 @@ def prep_afqmc_ghf_complex_dice(mol, mf, gmf: scf.ghf.GHF, tmpdir, chol_cut=1e-5
 
     ovlp = gmf.get_ovlp(mol)
     q, r = np.linalg.qr(
-        basis.T.conj() @ ovlp @ gmf.mo_coeff
+        gmf.mo_coeff
     )
     sgn = np.sign(r.diagonal())
     q = np.einsum("ij,j->ij", q, sgn)
