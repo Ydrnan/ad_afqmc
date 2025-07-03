@@ -119,9 +119,41 @@ def afqmc_energy(
 
     # Run sampling
     for n in range(sampler.n_blocks):
+
+        if n in [6113, 6114, 6115, 6116]:
+            save = True
+        else:
+            save = False
+
+        if save:
+            with open(tmpdir+"/chk1_"+str(n)+".pkl", "wb") as f:
+                pickle.dump(
+                    (ham,
+                    ham_data,
+                    propagator,
+                    prop_data,
+                    trial,
+                    wave_data,
+                    sampler),
+                    f
+                    )
+
         block_energy_n, prop_data = sampler.propagate_phaseless(
             ham, ham_data, propagator, prop_data, trial, wave_data
         )
+
+        if save:
+            with open(tmpdir+"/chk2_"+str(n)+".pkl", "wb") as f:
+                pickle.dump(
+                    (ham,
+                    ham_data,
+                    propagator,
+                    prop_data,
+                    trial,
+                    wave_data,
+                    sampler),
+                    f
+                    )
 
         block_energy_n = np.array([block_energy_n], dtype="float32")
         block_weight_n = np.array([jnp.sum(prop_data["weights"])], dtype="float32")
@@ -145,11 +177,37 @@ def afqmc_energy(
         block_energy_n = comm.bcast(block_energy_n, root=0)
         prop_data = propagator.orthonormalize_walkers(prop_data)
 
+        if save:
+            with open(tmpdir+"/chk3_"+str(n)+".pkl", "wb") as f:
+                pickle.dump(
+                    (ham,
+                    ham_data,
+                    propagator,
+                    prop_data,
+                    trial,
+                    wave_data,
+                    sampler),
+                    f
+                    )
+
         if options["save_walkers"] == True:
             _save_walkers(prop_data, n, tmpdir, rank)
 
         prop_data = propagator.stochastic_reconfiguration_global(prop_data, comm)
         prop_data["e_estimate"] = 0.9 * prop_data["e_estimate"] + 0.1 * block_energy_n
+
+        if save:
+            with open(tmpdir+"/chk4_"+str(n)+".pkl", "wb") as f:
+                pickle.dump(
+                    (ham,
+                    ham_data,
+                    propagator,
+                    prop_data,
+                    trial,
+                    wave_data,
+                    sampler),
+                    f
+                    )
 
         # Print progress and save intermediate results
         if n % (max(sampler.n_blocks // 10, 1)) == 0:
@@ -705,12 +763,12 @@ def _print_progress_energy(
         )
         if energy_error is not None:
             print(
-                f" {n:5d}      {e_afqmc:.9e}        {energy_error:.9e}        {time.time() - init:.2e} ",
+                f" {n:5d}      {e_afqmc:.16f}        {energy_error:.9e}        {time.time() - init:.2e} ",
                 flush=True,
             )
         else:
             print(
-                f" {n:5d}      {e_afqmc:.9e}                -              {time.time() - init:.2e} ",
+                f" {n:5d}      {e_afqmc:.16f}                -              {time.time() - init:.2e} ",
                 flush=True,
             )
         np.savetxt(
