@@ -34,9 +34,7 @@ def print_diff(a, b):
 
 def read_block(n_block, n_chk):
     # 1
-    print("\n#########")
-    print("### "+str(n_chk)+" ###")
-    print("#########")
+    print("\n### "+str(n_chk)+" ###")
 
     b1_uhf = from_chkpt(uhf_path+"chk"+str(n_chk)+"_"+str(n_block)+".pkl")
     b1_rghf = from_chkpt(rghf_path+"chk"+str(n_chk)+"_"+str(n_block)+".pkl")
@@ -97,13 +95,34 @@ def read_block(n_block, n_chk):
     print_diff(rghf_fb, uhf_fb)
     print_diff(cghf_fb, rghf_fb)
 
-blocks = [9, 10, 11]
+    if n_chk == 1:
+        block_energy_n, prop_data = b1_uhf.sampler.propagate_phaseless(
+            b1_uhf.ham, b1_uhf.ham_data, b1_uhf.propagator, b1_uhf.prop_data, b1_uhf.trial, b1_uhf.wave_data
+        )
+        block_weight_n = np.array([jnp.sum(prop_data["weights"])], dtype="float32")
+        print(block_energy_n)
+        print(block_weight_n)
+        block_energy_n, prop_data = b1_rghf.sampler.propagate_phaseless(
+            b1_rghf.ham, b1_rghf.ham_data, b1_rghf.propagator, b1_rghf.prop_data, b1_rghf.trial, b1_rghf.wave_data
+        )
+        block_weight_n = np.array([jnp.sum(prop_data["weights"])], dtype="float32")
+        print(block_energy_n)
+        print(block_weight_n)
+        block_energy_n, prop_data = b1_cghf.sampler.propagate_phaseless(
+            b1_cghf.ham, b1_cghf.ham_data, b1_cghf.propagator, b1_cghf.prop_data, b1_cghf.trial, b1_cghf.wave_data
+        )
+        block_weight_n = np.array([jnp.sum(prop_data["weights"])], dtype="float32")
+        print(block_energy_n)
+        print(block_weight_n)
 
-uhf_path = "tmp_uhf/"
-rghf_path = "tmp_rghf/"
-cghf_path = "tmp_cghf/"
+blocks = [6113, 6114, 6115, 6116]
+
+uhf_path = "real_debug/uhf/"
+rghf_path = "real_debug/ad/"
+cghf_path = "complex_debug/ad/"
 
 for n_block in blocks:
+    print("\n### Block "+str(n_block)+" ###")
     read_block(n_block, 1)
     read_block(n_block, 2)
     read_block(n_block, 3)
