@@ -1,13 +1,13 @@
 import jax.numpy as jnp
 import numpy as np
-from ad_afqmc import wavefunctions, sampling, propagation
+from ad_afqmc import wavefunctions, sampling, propagation, stat_utils
 import pickle
 
 from jax import config
 config.update("jax_enable_x64", True)
 
 class Block():
-    def __init__(self, ham, ham_data, propagator, prop_data, trial, wave_data, sampler):
+    def __init__(self, ham, ham_data, propagator, prop_data, trial, wave_data, sampler, global_block_weights, global_block_energies):
         self.ham = ham
         self.ham_data = ham_data
         self.propagator = propagator
@@ -15,13 +15,15 @@ class Block():
         self.trial = trial
         self.wave_data = wave_data
         self.sampler = sampler
+        self.global_block_weights = global_block_weights
+        self.global_block_energies = global_block_energies
 
 def from_chkpt(fname):
 
     with open(fname, "rb") as f:
-        ham, ham_data, propagator, prop_data, trial, wave_data, sampler = pickle.load(f)
+        ham, ham_data, propagator, prop_data, trial, wave_data, sampler, global_block_weights, global_block_energies = pickle.load(f)
 
-    b = Block(ham, ham_data, propagator, prop_data, trial, wave_data, sampler)
+    b = Block(ham, ham_data, propagator, prop_data, trial, wave_data, sampler, global_block_weights, global_block_energies)
 
     return b
 
@@ -115,11 +117,39 @@ def read_block(n_block, n_chk):
         print(block_energy_n)
         print(block_weight_n)
 
+    if n_chk == 4:
+        n = n_block
+        e_afqmc, energy_error = stat_utils.blocking_analysis(
+            b1_uhf.global_block_weights[: (n + 1)],
+            b1_uhf.global_block_energies[: (n + 1)],
+            neql=0,
+        )
+        print(e_afqmc, energy_error)
+        e_afqmc, energy_error = stat_utils.blocking_analysis(
+            b1_rghf.global_block_weights[: (n + 1)],
+            b1_rghf.global_block_energies[: (n + 1)],
+            neql=0,
+        )
+        print(e_afqmc, energy_error)
+        e_afqmc, energy_error = stat_utils.blocking_analysis(
+            b1_cghf.global_block_weights[: (n + 1)],
+            b1_cghf.global_block_energies[: (n + 1)],
+            neql=0,
+        )
+        print(e_afqmc, energy_error)
+         
+
 blocks = [6113, 6114, 6115, 6116]
 
 uhf_path = "real_debug/uhf/"
 rghf_path = "real_debug/ad/"
 cghf_path = "complex_debug/ad/"
+
+#blocks = [9, 10, 11]
+#
+#uhf_path = "tmp_uhf/"
+#rghf_path = "tmp_rghf/"
+#cghf_path = "tmp_cghf/"
 
 for n_block in blocks:
     print("\n### Block "+str(n_block)+" ###")

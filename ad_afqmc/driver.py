@@ -121,6 +121,7 @@ def afqmc_energy(
     for n in range(sampler.n_blocks):
 
         if n in [6113, 6114, 6115, 6116]:
+        #if n in [9, 10, 11]:
             save = True
         else:
             save = False
@@ -134,7 +135,9 @@ def afqmc_energy(
                     prop_data,
                     trial,
                     wave_data,
-                    sampler),
+                    sampler,
+                    global_block_weights,
+                    global_block_energies),
                     f
                     )
 
@@ -151,7 +154,9 @@ def afqmc_energy(
                     prop_data,
                     trial,
                     wave_data,
-                    sampler),
+                    sampler,
+                    global_block_weights,
+                    global_block_energies),
                     f
                     )
 
@@ -186,7 +191,9 @@ def afqmc_energy(
                     prop_data,
                     trial,
                     wave_data,
-                    sampler),
+                    sampler,
+                    global_block_weights,
+                    global_block_energies),
                     f
                     )
 
@@ -205,7 +212,10 @@ def afqmc_energy(
                     prop_data,
                     trial,
                     wave_data,
-                    sampler),
+                    sampler,
+                    global_block_weights,
+                    global_block_energies,
+                    ),
                     f
                     )
 
