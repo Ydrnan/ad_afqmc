@@ -30,7 +30,7 @@ def from_chkpt(fname):
 def print_diff(a, b):
     n_a = np.linalg.norm(a)
     n_b = np.linalg.norm(b)
-    diff = np.linalg.norm(np.abs(n_a)-np.abs(n_b))
+    diff = np.linalg.norm(a-b)
     err = diff / n_b
     print(f"diff={diff:.2e}, err={err:.2e}")
 
@@ -60,6 +60,10 @@ def read_block(n_block, n_chk):
         b1_cghf.trial._calc_overlap_restricted(walker, b1_cghf.wave_data) for walker in b1_cghf.prop_data["walkers"]
     ])
 
+    #print(np.linalg.norm(cghf_o))
+    #print(np.linalg.norm(rghf_o))
+    #print(cghf_o - rghf_o)
+    #print(np.linalg.norm(cghf_o - rghf_o))
     print_diff(rghf_o, uhf_o)
     print_diff(cghf_o, rghf_o)
 
@@ -102,22 +106,21 @@ def read_block(n_block, n_chk):
             b1_uhf.ham, b1_uhf.ham_data, b1_uhf.propagator, b1_uhf.prop_data, b1_uhf.trial, b1_uhf.wave_data
         )
         block_weight_n = np.array([jnp.sum(prop_data["weights"])], dtype="float32")
-        print(block_energy_n)
-        print(block_weight_n)
+        print("\n   E    W")
+        print(block_energy_n, block_weight_n)
         block_energy_n, prop_data = b1_rghf.sampler.propagate_phaseless(
             b1_rghf.ham, b1_rghf.ham_data, b1_rghf.propagator, b1_rghf.prop_data, b1_rghf.trial, b1_rghf.wave_data
         )
         block_weight_n = np.array([jnp.sum(prop_data["weights"])], dtype="float32")
-        print(block_energy_n)
-        print(block_weight_n)
+        print(block_energy_n, block_weight_n)
         block_energy_n, prop_data = b1_cghf.sampler.propagate_phaseless(
             b1_cghf.ham, b1_cghf.ham_data, b1_cghf.propagator, b1_cghf.prop_data, b1_cghf.trial, b1_cghf.wave_data
         )
         block_weight_n = np.array([jnp.sum(prop_data["weights"])], dtype="float32")
-        print(block_energy_n)
-        print(block_weight_n)
+        print(block_energy_n, block_weight_n)
 
     if n_chk == 4:
+        print("\n    E_afqmc         err")
         n = n_block
         e_afqmc, energy_error = stat_utils.blocking_analysis(
             b1_uhf.global_block_weights[: (n + 1)],
@@ -139,7 +142,8 @@ def read_block(n_block, n_chk):
         print(e_afqmc, energy_error)
          
 
-blocks = [6113, 6114, 6115, 6116]
+#blocks = [6113, 6114, 6115, 6116]
+blocks = [0,1,2,3,100,101,102,103,1000,1001,1002,1003]
 
 uhf_path = "real_debug/uhf/"
 rghf_path = "real_debug/ad/"

@@ -120,7 +120,7 @@ def afqmc_energy(
     # Run sampling
     for n in range(sampler.n_blocks):
 
-        if n in [6113, 6114, 6115, 6116]:
+        if n in [0,1,2,3,100,101,102,103,1000,1001,1002,1003,6113, 6114, 6115, 6116]:
         #if n in [9, 10, 11]:
             save = True
         else:
@@ -220,20 +220,20 @@ def afqmc_energy(
                     )
 
         # Print progress and save intermediate results
-        if n % (max(sampler.n_blocks // 10, 1)) == 0:
-            _print_progress_energy(
-                n,
-                global_block_weights,
-                global_block_energies,
-                rank,
-                init,
-                comm,
-                tmpdir,
-            )
-            try:
-                print(f"node encounters on proc 0: {prop_data['node_crossings']}")
-            except:
-                pass
+        #if n % (max(sampler.n_blocks // 10, 1)) == 0:
+        _print_progress_energy(
+            n,
+            global_block_weights,
+            global_block_energies,
+            rank,
+            init,
+            comm,
+            tmpdir,
+        )
+        try:
+            print(f"node encounters on proc 0: {prop_data['node_crossings']}")
+        except:
+            pass
 
     # Analysis phase
     comm.Barrier()
