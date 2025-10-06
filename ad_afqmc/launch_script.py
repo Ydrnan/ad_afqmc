@@ -152,6 +152,7 @@ def read_options(options: Optional[Dict] = None, tmp_dir: Optional[str] = None) 
         "uhf",
         "noci",
         "cisd",
+        "cisd_pt",
         "ucisd",
         "ghf_complex",
         "gcisd_complex",
@@ -386,6 +387,37 @@ def set_trial(
             )
         except:
             raise ValueError("Trial specified as cisd, but amplitudes.npz not found.")
+
+    elif options_trial == "cisd_pt":
+        try:
+            amplitudes = np.load(directory + "/amplitudes.npz")
+            t1 = jnp.array(amplitudes["t1"])
+            t12 = jnp.einsum("ia,jb->iajb", t1, t1)
+            t2 = jnp.array(amplitudes["t2"])
+            t2 = jnp.einsum("ijab->iajb", t2)
+            ci1 = jnp.array(amplitudes["ci1"])
+            ci2 = jnp.array(amplitudes["ci2"])
+            trial_wave_data = {"t1": t1, "t12": t12, "t2": t2, "ci1": ci1, "ci2": ci2}
+            wave_data.update(trial_wave_data)
+
+            if options["trial_mixed_precision"]:
+                mixed_real_dtype = jnp.float32
+                mixed_complex_dtype = jnp.complex64
+            else:
+                mixed_real_dtype = jnp.float64
+                mixed_complex_dtype = jnp.complex128
+
+            trial = wavefunctions.cisd_pt(
+                norb,
+                nelec_sp,
+                n_chunks=options["n_chunks"],
+                projector=options["symmetry_projector"],
+                mixed_real_dtype=mixed_real_dtype,
+                mixed_complex_dtype=mixed_complex_dtype,
+                memory_mode=options["memory_mode"],
+            )
+        except:
+            raise ValueError("Trial specified as cisd_pt, but amplitudes.npz not found.")
 
     elif options_trial == "ccsd":
         try:

@@ -5390,3 +5390,569 @@ class rhf_lno(rhf, wave_function):
 
     def __hash__(self) -> int:
         return hash(tuple(self.__dict__.values()))
+
+@dataclass
+class cisd_pt(wave_function):
+    """A manual implementation of the restricted CISD wave function.
+
+    The corresponding wave_data contains "ci1" and "ci2" which are the coefficients of the single (c_ia)
+    and double (c_iajb) excitations respectively. Mixed precision and memory mode are used to optimize
+    the performance of the energy calculations.
+
+    Attributes:
+        norb: int
+            Number of orbitals.
+        nelec: Tuple[int, int]
+            Number of electrons in alpha and beta spin channels.
+        n_chunks: int
+            Number of walker chunks.
+        mixed_real_dtype: DTypeLike
+            Data type used for mixed precision, double precision by default.
+        mixed_complex_dtype: DTypeLike
+            Data type used for mixed precision, double precision by default.
+        memory_mode: enum
+            Memory mode for energy calculations. "high" builds O(XNM) scaling intermediates per walker,
+            "low" builds at most O(XN^2).
+        _mixed_real_dtype_testing: DTypeLike
+            Data type used for testing. Some operations are in single precision by default but
+            can be changed to double precision for testing.
+        _mixed_complex_dtype_testing: DTypeLike
+            Data type used for testing. Some operations are in single precision by default but
+            can be changed to double precision for testing.
+    """
+
+    norb: int
+    nelec: Tuple[int, int]
+    n_chunks: int = 1
+    projector: Optional[str] = None
+    mixed_real_dtype: DTypeLike = jnp.float64
+    mixed_complex_dtype: DTypeLike = jnp.complex128
+    memory_mode: Literal["high", "low"] = "low"
+    _mixed_real_dtype_testing: DTypeLike = jnp.float64 #32
+    _mixed_complex_dtype_testing: DTypeLike = jnp.complex128 #64
+
+    def __post_init__(self):
+        if self.memory_mode not in {"low", "high"}:
+            raise ValueError(
+                f"memory_mode must be one of ['low', 'high'], got {self.memory_mode}"
+            )
+
+    @partial(jit, static_argnums=0)
+    def _calc_overlap_restricted_singles(self, walker: jax.Array, t1: jax.Array) -> complex:
+        nocc = walker.shape[1]
+        GF = (walker.dot(jnp.linalg.inv(walker[: walker.shape[1], :]))).T
+        o1 = jnp.einsum("ia,ia", t1, GF[:, nocc:])
+        return o1
+
+    @partial(jit, static_argnums=0)
+    def _calc_overlap_restricted_doubles(self, walker: jax.Array, t: jax.Array) -> complex:
+        nocc = walker.shape[1]
+        GF = (walker.dot(jnp.linalg.inv(walker[: walker.shape[1], :]))).T
+        o2 = 2 * jnp.einsum(
+            "iajb, ia, jb", t, GF[:, nocc:], GF[:, nocc:]
+        ) - jnp.einsum("iajb, ib, ja", t, GF[:, nocc:], GF[:, nocc:])
+        return o2
+
+
+    @partial(jit, static_argnums=0)
+    def _calc_overlap_restricted(self, walker: jax.Array, wave_data: dict) -> complex:
+        #nocc, ci1, ci2 = walker.shape[1], wave_data["ci1"], wave_data["ci2"]
+        nocc = walker.shape[1]
+        GF = (walker.dot(jnp.linalg.inv(walker[: walker.shape[1], :]))).T
+        o0 = jnp.linalg.det(walker[: walker.shape[1], :]) ** 2
+        #jax.debug.print("o0 {}", o0)
+        #o1 = jnp.einsum("ia,ia", ci1, GF[:, nocc:])
+        #o2 = 2 * jnp.einsum(
+        #    "iajb, ia, jb", ci2, GF[:, nocc:], GF[:, nocc:]
+        #) - jnp.einsum("iajb, ib, ja", ci2, GF[:, nocc:], GF[:, nocc:])
+        #return (1.0 + 2 * o1 + o2) * o0
+        return o0
+
+    @partial(jit, static_argnums=0)
+    def _calc_force_bias_restricted_singles(
+        self, walker: jax.Array, ham_data: dict, t1: jax.Array
+    ) -> jax.Array:
+        """Calculates force bias < psi_T | chol_gamma | walker > / < psi_T | walker >"""
+        nocc = self.nelec[0]
+        green = (walker.dot(jnp.linalg.inv(walker[:nocc, :]))).T
+        green_occ = green[:, nocc:].copy()
+        greenp = jnp.vstack((green_occ, -jnp.eye(self.norb - nocc)))
+
+        chol = ham_data["chol"].reshape(-1, self.norb, self.norb)
+        rot_chol = chol[:, : self.nelec[0], :]
+        lg = jnp.einsum("gpj,pj->g", rot_chol, green, optimize="optimal")
+
+        # single excitations
+        t1g = jnp.einsum("pt,pt->", t1, green_occ, optimize="optimal")
+        t1gp = jnp.einsum("pt,it->pi", t1, greenp, optimize="optimal")
+        gt1gp = jnp.einsum("pj,pi->ij", green, t1gp, optimize="optimal")
+        fb_1_1 = 4 * t1g * lg
+        fb_1_2 = -2 * jnp.einsum(
+            "gij,ij->g",
+            chol.astype(self.mixed_real_dtype),
+            gt1gp.astype(self.mixed_complex_dtype),
+            optimize="optimal",
+        )
+        fb_1 = fb_1_1 + fb_1_2
+
+        return fb_1
+
+    @partial(jit, static_argnums=0)
+    def _calc_force_bias_restricted_doubles(
+        self, walker: jax.Array, ham_data: dict, t: jax.Array
+    ) -> jax.Array:
+        """Calculates force bias < psi_T | chol_gamma | walker > / < psi_T | walker >"""
+        nocc = self.nelec[0]
+        green = (walker.dot(jnp.linalg.inv(walker[:nocc, :]))).T
+        green_occ = green[:, nocc:].copy()
+        greenp = jnp.vstack((green_occ, -jnp.eye(self.norb - nocc)))
+
+        chol = ham_data["chol"].reshape(-1, self.norb, self.norb)
+        rot_chol = chol[:, : self.nelec[0], :]
+        lg = jnp.einsum("gpj,pj->g", rot_chol, green, optimize="optimal")
+
+        # double excitations
+        tg_c = jnp.einsum(
+            "ptqu,pt->qu",
+            t.astype(self.mixed_real_dtype),
+            green_occ.astype(self.mixed_complex_dtype),
+        )
+        tg_e = jnp.einsum(
+            "ptqu,pu->qt",
+            t.astype(self.mixed_real_dtype),
+            green_occ.astype(self.mixed_complex_dtype),
+        )
+        cisd_green_c = (greenp @ tg_c.T) @ green
+        cisd_green_e = (greenp @ tg_e.T) @ green
+        cisd_green = -4 * cisd_green_c + 2 * cisd_green_e
+        tg = 4 * tg_c - 2 * tg_e
+        gtg = jnp.einsum("qu,qu->", tg, green_occ, optimize="optimal")
+        fb_2_1 = lg * gtg
+        fb_2_2 = jnp.einsum(
+            "gij,ij->g",
+            chol.astype(self.mixed_real_dtype),
+            cisd_green.astype(self.mixed_complex_dtype),
+            optimize="optimal",
+        )
+        fb_2 = fb_2_1 + fb_2_2
+
+        return fb_2
+
+    @partial(jit, static_argnums=0)
+    def _calc_force_bias_restricted(
+        self, walker: jax.Array, ham_data: dict, wave_data: dict
+    ) -> jax.Array:
+        """Calculates force bias < psi_T | chol_gamma | walker > / < psi_T | walker >"""
+        ci1, ci2 = wave_data["ci1"], wave_data["ci2"]
+        t1, t12, t2 = wave_data["t1"], wave_data["t12"], wave_data["t2"]
+        nocc = self.nelec[0]
+        green = (walker.dot(jnp.linalg.inv(walker[:nocc, :]))).T
+        green_occ = green[:, nocc:].copy()
+        greenp = jnp.vstack((green_occ, -jnp.eye(self.norb - nocc)))
+
+        chol = ham_data["chol"].reshape(-1, self.norb, self.norb)
+        rot_chol = chol[:, : self.nelec[0], :]
+        lg = jnp.einsum("gpj,pj->g", rot_chol, green, optimize="optimal")
+
+        # ref
+        fb_0 = 2 * lg
+
+        ## single excitations
+        #ci1g = jnp.einsum("pt,pt->", ci1, green_occ, optimize="optimal")
+        #ci1gp = jnp.einsum("pt,it->pi", ci1, greenp, optimize="optimal")
+        #gci1gp = jnp.einsum("pj,pi->ij", green, ci1gp, optimize="optimal")
+        #fb_1_1 = 4 * ci1g * lg
+        #fb_1_2 = -2 * jnp.einsum(
+        #    "gij,ij->g",
+        #    chol.astype(self.mixed_real_dtype),
+        #    gci1gp.astype(self.mixed_complex_dtype),
+        #    optimize="optimal",
+        #)
+        #fb_1 = fb_1_1 + fb_1_2
+
+        ## double excitations
+        #ci2g_c = jnp.einsum(
+        #    "ptqu,pt->qu",
+        #    ci2.astype(self.mixed_real_dtype),
+        #    green_occ.astype(self.mixed_complex_dtype),
+        #)
+        #ci2g_e = jnp.einsum(
+        #    "ptqu,pu->qt",
+        #    ci2.astype(self.mixed_real_dtype),
+        #    green_occ.astype(self.mixed_complex_dtype),
+        #)
+        #cisd_green_c = (greenp @ ci2g_c.T) @ green
+        #cisd_green_e = (greenp @ ci2g_e.T) @ green
+        #cisd_green = -4 * cisd_green_c + 2 * cisd_green_e
+        #ci2g = 4 * ci2g_c - 2 * ci2g_e
+        #gci2g = jnp.einsum("qu,qu->", ci2g, green_occ, optimize="optimal")
+        #fb_2_1 = lg * gci2g
+        #fb_2_2 = jnp.einsum(
+        #    "gij,ij->g",
+        #    chol.astype(self.mixed_real_dtype),
+        #    cisd_green.astype(self.mixed_complex_dtype),
+        #    optimize="optimal",
+        #)
+        #fb_2 = fb_2_1 + fb_2_2
+
+        ## overlap
+        #overlap_1 = 2 * ci1g
+        #overlap_2 = gci2g / 2.0
+        #overlap = 1.0 + overlap_1 + overlap_2
+
+        #return (fb_0 + fb_1 + fb_2) / overlap
+
+        o0 = 1.0  #self._calc_overlap_restricted(walker, wave_data)
+        oS = self._calc_overlap_restricted_singles(walker, t1)
+        oD_1 = self._calc_overlap_restricted_doubles(walker, t12)
+        oD_2 = self._calc_overlap_restricted_doubles(walker, t2)
+
+        nuS = self._calc_force_bias_restricted_singles(walker, ham_data, t1)
+        nuD_1 = self._calc_force_bias_restricted_doubles(walker, ham_data, t12)
+        nuD_2 = self._calc_force_bias_restricted_doubles(walker, ham_data, t2)
+
+        Nu0 = fb_0
+        Nu1 = (nuS + nuD_2 - Nu0 * (oS + oD_2))
+        Nu2 = 0.5 * (nuD_1 - Nu0 * oD_1 - 2 * Nu1 *(oS + oD_2))
+
+        #jax.debug.print("Nu0 {}", Nu0)
+        #jax.debug.print("Nu1 {}", Nu1)
+        #jax.debug.print("Nu2 {}", Nu2)
+       
+        return Nu0 #+ Nu1 + Nu2 
+
+    @partial(jit, static_argnums=0)
+    def _calc_energy_restricted_singles(
+        self, walker: jax.Array, ham_data: dict, t1: jax.Array
+    ) -> complex:
+        nocc = self.nelec[0]
+        green = (walker.dot(jnp.linalg.inv(walker[:nocc, :]))).T
+        green_occ = green[:, nocc:].copy()
+        greenp = jnp.vstack((green_occ, -jnp.eye(self.norb - nocc)))
+
+        chol = ham_data["chol"].reshape(-1, self.norb, self.norb)
+        rot_chol = chol[:, : self.nelec[0], :]
+        h1 = (ham_data["h1"][0] + ham_data["h1"][1]) / 2.0
+        hg = jnp.einsum("pj,pj->", h1[:nocc, :], green)
+
+        # 1 body energy
+        # single excitations
+        t1g = jnp.einsum("pt,pt->", t1, green_occ, optimize="optimal")
+        e1_1_1 = 4 * t1g * hg
+        gpt1 = greenp @ t1.T
+        t1_green = gpt1 @ green
+        e1_1_2 = -2 * jnp.einsum("ij,ij->", h1, t1_green, optimize="optimal")
+        e1_1 = e1_1_1 + e1_1_2
+
+        # two body energy
+        # ref
+        lg = jnp.einsum("gpj,pj->g", rot_chol, green, optimize="optimal")
+        # lg1 = jnp.einsum("gpj,pk->gjk", rot_chol, green, optimize="optimal")
+        lg1 = jnp.einsum("gpj,qj->gpq", rot_chol, green, optimize="optimal")
+        e2_0_1 = 2 * lg @ lg
+        e2_0_2 = -jnp.sum(vmap(lambda x: x * x.T)(lg1))
+        e2_0 = e2_0_1 + e2_0_2
+
+        # single excitations
+        e2_1_1 = 2 * e2_0 * t1g
+        lt1g = jnp.einsum(
+            "gij,ij->g",
+            chol.astype(self.mixed_real_dtype),
+            t1_green.astype(self.mixed_complex_dtype),
+            optimize="optimal",
+        )
+        e2_1_2 = -2 * (lt1g @ lg)
+        # lt1g1 = jnp.einsum("gij,jk->gik", chol, t1_green, optimize="optimal")
+        # glgpt1 = jnp.einsum(("gpi,iq->gpq"), gl, gpt1, optimize="optimal")
+        t1g1 = t1 @ green_occ.T
+        # e2_1_3 = jnp.einsum("gpq,gpq->", glgpt1, lg1, optimize="optimal")
+        e2_1_3_1 = jnp.einsum("gpq,gqr,rp->", lg1, lg1, t1g1, optimize="optimal")
+        lt1g = jnp.einsum("gip,qi->gpq", ham_data["lt1"], green, optimize="optimal")
+        e2_1_3_2 = -jnp.einsum("gpq,gqp->", lt1g, lg1, optimize="optimal")
+        e2_1_3 = e2_1_3_1 + e2_1_3_2
+        e2_1 = e2_1_1 + 2 * (e2_1_2 + e2_1_3)
+
+        return e1_1 + e2_1
+
+    @partial(jit, static_argnums=0)
+    def _calc_energy_restricted_doubles(
+        self, walker: jax.Array, ham_data: dict, t2: jax.Array
+    ) -> complex:
+        nocc = self.nelec[0]
+        green = (walker.dot(jnp.linalg.inv(walker[:nocc, :]))).T
+        green_occ = green[:, nocc:].copy()
+        greenp = jnp.vstack((green_occ, -jnp.eye(self.norb - nocc)))
+
+        chol = ham_data["chol"].reshape(-1, self.norb, self.norb)
+        rot_chol = chol[:, : self.nelec[0], :]
+        h1 = (ham_data["h1"][0] + ham_data["h1"][1]) / 2.0
+        hg = jnp.einsum("pj,pj->", h1[:nocc, :], green)
+
+        # 1 body energy
+        # double excitations
+        t2g_c = jnp.einsum(
+            "ptqu,pt->qu",
+            t2.astype(self.mixed_real_dtype),
+            green_occ.astype(self.mixed_complex_dtype),
+        )
+        t2g_e = jnp.einsum(
+            "ptqu,pu->qt",
+            t2.astype(self.mixed_real_dtype),
+            green_occ.astype(self.mixed_complex_dtype),
+        )
+        t2_green_c = (greenp @ t2g_c.T) @ green
+        t2_green_e = (greenp @ t2g_e.T) @ green
+        t2_green = 2 * t2_green_c - t2_green_e
+        t2g = 2 * t2g_c - t2g_e
+        gt2g = jnp.einsum("qu,qu->", t2g, green_occ, optimize="optimal")
+        e1_2_1 = 2 * hg * gt2g
+        e1_2_2 = -2 * jnp.einsum("ij,ij->", h1, t2_green, optimize="optimal")
+        e1_2 = e1_2_1 + e1_2_2
+
+        # two body energy
+        # ref
+        lg = jnp.einsum("gpj,pj->g", rot_chol, green, optimize="optimal")
+        # lg1 = jnp.einsum("gpj,pk->gjk", rot_chol, green, optimize="optimal")
+        lg1 = jnp.einsum("gpj,qj->gpq", rot_chol, green, optimize="optimal")
+        e2_0_1 = 2 * lg @ lg
+        e2_0_2 = -jnp.sum(vmap(lambda x: x * x.T)(lg1))
+        e2_0 = e2_0_1 + e2_0_2
+
+        # double excitations
+        e2_2_1 = e2_0 * gt2g
+        lt2g = jnp.einsum(
+            "gij,ij->g",
+            chol.astype(self.mixed_real_dtype),
+            t2_green.astype(self.mixed_complex_dtype),
+            optimize="optimal",
+        )
+        e2_2_2_1 = -lt2g @ lg
+
+        lt2_green = jnp.einsum(
+            "gpi,ji->gpj", rot_chol, t2_green, optimize="optimal"
+        )
+        gl = jnp.einsum(
+            "pj,gji->gpi",
+            green.astype(self.mixed_complex_dtype),
+            chol.astype(self.mixed_real_dtype),
+            optimize="optimal",
+        )
+        e2_2_2_2 = 0.5 * jnp.einsum("gpi,gpi->", gl, lt2_green, optimize="optimal")
+        glgp = jnp.einsum("gpi,it->gpt", gl, greenp, optimize="optimal").astype(
+            self._mixed_complex_dtype_testing
+        )
+        l2t2_1 = jnp.einsum(
+            "gpt,gqu,ptqu->g",
+            glgp,
+            glgp,
+            t2.astype(self._mixed_real_dtype_testing),
+            optimize="optimal",
+        )
+        l2t2_2 = jnp.einsum(
+            "gpu,gqt,ptqu->g",
+            glgp,
+            glgp,
+            t2.astype(self._mixed_real_dtype_testing),
+            optimize="optimal",
+        )
+        e2_2_3 = 2 * l2t2_1.sum() - l2t2_2.sum()
+
+        e2_2_2 = 4 * (e2_2_2_1 + e2_2_2_2)
+        e2_2 = e2_2_1 + e2_2_2 + e2_2_3
+
+        return e1_2 + e2_2
+
+    @partial(jit, static_argnums=0)
+    def _calc_energy_restricted(
+        self, walker: jax.Array, ham_data: dict, wave_data: dict
+    ) -> complex:
+        t1, t12, t2 = wave_data["t1"], wave_data["t12"], wave_data["t2"]
+        nocc = self.nelec[0]
+        green = (walker.dot(jnp.linalg.inv(walker[:nocc, :]))).T
+        green_occ = green[:, nocc:].copy()
+        greenp = jnp.vstack((green_occ, -jnp.eye(self.norb - nocc)))
+
+        chol = ham_data["chol"].reshape(-1, self.norb, self.norb)
+        rot_chol = chol[:, : self.nelec[0], :]
+        h1 = (ham_data["h1"][0] + ham_data["h1"][1]) / 2.0
+        hg = jnp.einsum("pj,pj->", h1[:nocc, :], green)
+
+        # 0 body energy
+        e0 = ham_data["h0"]
+
+        # 1 body energy
+        # ref
+        e1_0 = 2 * hg
+
+        ## single excitations
+        #ci1g = jnp.einsum("pt,pt->", ci1, green_occ, optimize="optimal")
+        #e1_1_1 = 4 * ci1g * hg
+        #gpci1 = greenp @ ci1.T
+        #ci1_green = gpci1 @ green
+        #e1_1_2 = -2 * jnp.einsum("ij,ij->", h1, ci1_green, optimize="optimal")
+        #e1_1 = e1_1_1 + e1_1_2
+
+        ## double excitations
+        #ci2g_c = jnp.einsum(
+        #    "ptqu,pt->qu",
+        #    ci2.astype(self.mixed_real_dtype),
+        #    green_occ.astype(self.mixed_complex_dtype),
+        #)
+        #ci2g_e = jnp.einsum(
+        #    "ptqu,pu->qt",
+        #    ci2.astype(self.mixed_real_dtype),
+        #    green_occ.astype(self.mixed_complex_dtype),
+        #)
+        #ci2_green_c = (greenp @ ci2g_c.T) @ green
+        #ci2_green_e = (greenp @ ci2g_e.T) @ green
+        #ci2_green = 2 * ci2_green_c - ci2_green_e
+        #ci2g = 2 * ci2g_c - ci2g_e
+        #gci2g = jnp.einsum("qu,qu->", ci2g, green_occ, optimize="optimal")
+        #e1_2_1 = 2 * hg * gci2g
+        #e1_2_2 = -2 * jnp.einsum("ij,ij->", h1, ci2_green, optimize="optimal")
+        #e1_2 = e1_2_1 + e1_2_2
+        #e1 = e1_0 + e1_1 + e1_2
+
+        # two body energy
+        # ref
+        lg = jnp.einsum("gpj,pj->g", rot_chol, green, optimize="optimal")
+        # lg1 = jnp.einsum("gpj,pk->gjk", rot_chol, green, optimize="optimal")
+        lg1 = jnp.einsum("gpj,qj->gpq", rot_chol, green, optimize="optimal")
+        e2_0_1 = 2 * lg @ lg
+        e2_0_2 = -jnp.sum(vmap(lambda x: x * x.T)(lg1))
+        e2_0 = e2_0_1 + e2_0_2
+
+        ## single excitations
+        #e2_1_1 = 2 * e2_0 * ci1g
+        #lci1g = jnp.einsum(
+        #    "gij,ij->g",
+        #    chol.astype(self.mixed_real_dtype),
+        #    ci1_green.astype(self.mixed_complex_dtype),
+        #    optimize="optimal",
+        #)
+        #e2_1_2 = -2 * (lci1g @ lg)
+        ## lci1g1 = jnp.einsum("gij,jk->gik", chol, ci1_green, optimize="optimal")
+        ## glgpci1 = jnp.einsum(("gpi,iq->gpq"), gl, gpci1, optimize="optimal")
+        #ci1g1 = ci1 @ green_occ.T
+        ## e2_1_3 = jnp.einsum("gpq,gpq->", glgpci1, lg1, optimize="optimal")
+        #e2_1_3_1 = jnp.einsum("gpq,gqr,rp->", lg1, lg1, ci1g1, optimize="optimal")
+        #lci1g = jnp.einsum("gip,qi->gpq", ham_data["lci1"], green, optimize="optimal")
+        #e2_1_3_2 = -jnp.einsum("gpq,gqp->", lci1g, lg1, optimize="optimal")
+        #e2_1_3 = e2_1_3_1 + e2_1_3_2
+        #e2_1 = e2_1_1 + 2 * (e2_1_2 + e2_1_3)
+
+        ## double excitations
+        #e2_2_1 = e2_0 * gci2g
+        #lci2g = jnp.einsum(
+        #    "gij,ij->g",
+        #    chol.astype(self.mixed_real_dtype),
+        #    ci2_green.astype(self.mixed_complex_dtype),
+        #    optimize="optimal",
+        #)
+        #e2_2_2_1 = -lci2g @ lg
+
+        #if self.memory_mode == "low":
+
+        #    def scan_over_chol(carry, x):
+        #        chol_i, rot_chol_i = x
+        #        gl_i = jnp.einsum("pj,ji->pi", green, chol_i, optimize="optimal")
+        #        lci2_green_i = jnp.einsum(
+        #            "pi,ji->pj", rot_chol_i, ci2_green, optimize="optimal"
+        #        )
+        #        carry[0] += 0.5 * jnp.einsum(
+        #            "pi,pi->", gl_i, lci2_green_i, optimize="optimal"
+        #        )
+        #        glgp_i = jnp.einsum(
+        #            "pi,it->pt", gl_i, greenp, optimize="optimal"
+        #        ).astype(self._mixed_complex_dtype_testing)
+        #        l2ci2_1 = jnp.einsum(
+        #            "pt,qu,ptqu->",
+        #            glgp_i,
+        #            glgp_i,
+        #            ci2.astype(self._mixed_real_dtype_testing),
+        #            optimize="optimal",
+        #        )
+        #        l2ci2_2 = jnp.einsum(
+        #            "pu,qt,ptqu->",
+        #            glgp_i,
+        #            glgp_i,
+        #            ci2.astype(self._mixed_real_dtype_testing),
+        #            optimize="optimal",
+        #        )
+        #        carry[1] += 2 * l2ci2_1 - l2ci2_2
+        #        return carry, 0.0
+
+        #    [e2_2_2_2, e2_2_3], _ = lax.scan(
+        #        scan_over_chol, [0.0, 0.0], (chol, rot_chol)
+        #    )
+        #else:
+        #    lci2_green = jnp.einsum(
+        #        "gpi,ji->gpj", rot_chol, ci2_green, optimize="optimal"
+        #    )
+        #    gl = jnp.einsum(
+        #        "pj,gji->gpi",
+        #        green.astype(self.mixed_complex_dtype),
+        #        chol.astype(self.mixed_real_dtype),
+        #        optimize="optimal",
+        #    )
+        #    e2_2_2_2 = 0.5 * jnp.einsum("gpi,gpi->", gl, lci2_green, optimize="optimal")
+        #    glgp = jnp.einsum("gpi,it->gpt", gl, greenp, optimize="optimal").astype(
+        #        self._mixed_complex_dtype_testing
+        #    )
+        #    l2ci2_1 = jnp.einsum(
+        #        "gpt,gqu,ptqu->g",
+        #        glgp,
+        #        glgp,
+        #        ci2.astype(self._mixed_real_dtype_testing),
+        #        optimize="optimal",
+        #    )
+        #    l2ci2_2 = jnp.einsum(
+        #        "gpu,gqt,ptqu->g",
+        #        glgp,
+        #        glgp,
+        #        ci2.astype(self._mixed_real_dtype_testing),
+        #        optimize="optimal",
+        #    )
+        #    e2_2_3 = 2 * l2ci2_1.sum() - l2ci2_2.sum()
+
+        #e2_2_2 = 4 * (e2_2_2_1 + e2_2_2_2)
+        #e2_2 = e2_2_1 + e2_2_2 + e2_2_3
+
+        #e2 = e2_0 + e2_1 + e2_2
+
+        ## overlap
+        #overlap_1 = 2 * ci1g  # jnp.einsum("ia,ia", ci1, green_occ)
+        #overlap_2 = gci2g
+        #overlap = 1.0 + overlap_1 + overlap_2
+
+        #return (e1 + e2) / overlap + e0
+
+        o0 = 1.0 #self._calc_overlap_restricted(walker, wave_data)
+        oS = self._calc_overlap_restricted_singles(walker, t1)
+        oD_1 = self._calc_overlap_restricted_doubles(walker, t12)
+        oD_2 = self._calc_overlap_restricted_doubles(walker, t2)
+
+        eS = self._calc_energy_restricted_singles(walker, ham_data, t1)
+        eD_1 = self._calc_energy_restricted_doubles(walker, ham_data, t12)
+        eD_2 = self._calc_energy_restricted_doubles(walker, ham_data, t2)
+
+        E0 = e0 + e1_0 + e2_0
+        E1 = (eS + eD_2 - E0 * (oS + oD_2))
+        E2 = 0.5 * (eD_1 - E0 * oD_1 - 2 * E1 *(oS + oD_2))
+
+        return E0 + E1 + E2
+
+    @partial(jit, static_argnums=0)
+    def _build_measurement_intermediates(self, ham_data: dict, wave_data: dict) -> dict:
+        ham_data["lt1"] = jnp.einsum(
+            "git,pt->gip",
+            ham_data["chol"].reshape(-1, self.norb, self.norb)[:, :, self.nelec[0] :],
+            wave_data["t1"],
+            optimize="optimal",
+        )
+        return ham_data
+
+    def __hash__(self):
+        return hash(tuple(self.__dict__.values()))
+
+
