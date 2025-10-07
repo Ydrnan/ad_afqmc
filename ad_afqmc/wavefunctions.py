@@ -5602,7 +5602,7 @@ class cisd_pt(wave_function):
 
         #return (fb_0 + fb_1 + fb_2) / overlap
 
-        o0 = 1.0  #self._calc_overlap_restricted(walker, wave_data)
+        o0 = self._calc_overlap_restricted(walker, wave_data)
         oS = self._calc_overlap_restricted_singles(walker, t1)
         oD_1 = self._calc_overlap_restricted_doubles(walker, t12)
         oD_2 = self._calc_overlap_restricted_doubles(walker, t2)
@@ -5615,10 +5615,6 @@ class cisd_pt(wave_function):
         Nu1 = (nuS + nuD_2 - Nu0 * (oS + oD_2))
         Nu2 = 0.5 * (nuD_1 - Nu0 * oD_1 - 2 * Nu1 *(oS + oD_2))
 
-        #jax.debug.print("Nu0 {}", Nu0)
-        #jax.debug.print("Nu1 {}", Nu1)
-        #jax.debug.print("Nu2 {}", Nu2)
-       
         return Nu0 #+ Nu1 + Nu2 
 
     @partial(jit, static_argnums=0)
@@ -5927,7 +5923,7 @@ class cisd_pt(wave_function):
 
         #return (e1 + e2) / overlap + e0
 
-        o0 = 1.0 #self._calc_overlap_restricted(walker, wave_data)
+        o0 = self._calc_overlap_restricted(walker, wave_data)
         oS = self._calc_overlap_restricted_singles(walker, t1)
         oD_1 = self._calc_overlap_restricted_doubles(walker, t12)
         oD_2 = self._calc_overlap_restricted_doubles(walker, t2)
