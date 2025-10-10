@@ -134,6 +134,7 @@ def afqmc_energy(
         block_energy_n, prop_data = sampler.propagate_phaseless(
             ham, ham_data, propagator, prop_data, trial, wave_data
         )
+        print(np.min(np.abs(prop_data["overlaps"])))
 
         block_energy_n = np.array([block_energy_n], dtype="float32")
         block_weight_n = np.array([jnp.sum(prop_data["weights"])], dtype="float32")

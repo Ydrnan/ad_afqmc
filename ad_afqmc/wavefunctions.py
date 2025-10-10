@@ -437,6 +437,8 @@ class wave_function(ABC):
                 orbs = natorbs_up @ proj_orbs
                 return RHFWalkers(jnp.array([orbs + 0.0j] * n_walkers))
         elif walker_type == "unrestricted":
+            natorbs_up = np.where(abs(natorbs_up) > 1e-12, natorbs_up, 0.0)
+            natorbs_dn = np.where(abs(natorbs_dn) > 1e-12, natorbs_dn, 0.0)
             return UHFWalkers(
                 [
                     jnp.array([natorbs_up + 0.0j] * n_walkers),
@@ -444,9 +446,21 @@ class wave_function(ABC):
                 ]
             )
         elif walker_type == "generalized":
-            natorbs = jnp.linalg.eigh(rdm1[0])[1][:, ::-1][
-                :, : self.nelec[0] + self.nelec[1]
-            ]
+
+            #natorbs = jnp.linalg.eigh(rdm1[0])[1][:, ::-1][
+            #    :, : self.nelec[0] + self.nelec[1]
+            #]
+            n_a, n_b = self.nelec
+            n = rdm1[0].shape[-1]//2
+
+            rdm1 = rdm1[0]
+            oa = rdm1[:,:n_a]
+            va = rdm1[:,n_a:n]
+            ob = rdm1[:,n:n+n_b]
+            vb = rdm1[:,n+n_b:]
+            ab = np.hstack((oa,ob,va,vb))
+            rdm1 = ab
+            natorbs = rdm1[:, :self.nelec[0] + self.nelec[1]]
             return GHFWalkers(jnp.array([natorbs + 0.0j] * n_walkers))
         else:
             raise Exception("Unknown walker_type.")

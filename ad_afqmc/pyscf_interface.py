@@ -1023,6 +1023,112 @@ def prep_afqmc_ghf_complex(mol, gmf: scf.ghf.GHF, tmpdir, chol_cut=1e-5):
 
     return h, h_mod, chol
 
+def prep_afqmc_ghf_real(mol, gmf: scf.ghf.GHF, tmpdir, chol_cut=1e-5):
+    import scipy.linalg as la
+
+    norb = np.shape(gmf.mo_coeff)[-1] // 2  # type: ignore
+    mo_coeff = gmf.mo_coeff
+
+    def list_occ(n_a, n_b):
+        nO = n_a + n_b
+        l = []
+        b = np.array([2*i+1 for i in range(n_b)])
+        ab = np.array([i for i in range(nO)])
+        a = np.delete(ab, b)
+        return a,b
+
+    def list_vir(n_a, n_b, n_mo):
+        nO = n_a + n_b
+        nV = n_mo - nO
+        n = (nO + nV) // 2
+        n_a = n - n_a
+        n_b = n - n_b
+
+        a = np.array([(nV-2)-2*i for i in range(n_a)])
+        a = np.flip(a)
+        ab = np.array([i for i in range(nV)])
+        b = np.delete(ab, a)
+        a += nO
+        b += nO
+        return a,b
+
+    def list_occ_vir(n_a, n_b, n_mo):
+        o_a, o_b = list_occ(n_a, n_b)
+        v_a, v_b = list_vir(n_a, n_b, n_mo)
+        return o_a, o_b, v_a, v_b
+
+    def build_uhf_like_ghf(n_a, n_b, n_mo, C):
+        o_a, o_b, v_a, v_b = list_occ_vir(n_a, n_b, n_mo)
+        #print(o_a, o_b)
+        #print(v_a, v_b)
+
+        C_oa = C[:,o_a]
+        C_ob = C[:,o_b]
+        C_va = C[:,v_a]
+        C_vb = C[:,v_b]
+
+        Cp = np.hstack((C_oa, C_va, C_ob, C_vb))
+
+        return Cp
+
+    ovlp = gmf.get_ovlp(mol)
+    n_a, n_b = mol.nelec
+    n_mo = mo_coeff.shape[-1]
+    mo_coeff = build_uhf_like_ghf(n_a, n_b, n_mo, mo_coeff)
+
+    #amplitudes = np.load(tmpdir + "/amplitudes.npz")
+    #t1 = jnp.array(amplitudes["t1"])
+    #t2 = jnp.array(amplitudes["t2"])
+
+    #o_a, o_b, v_a, v_b = list_occ_vir(n_a, n_b, n_mo)
+    #o = np.concatenate((o_a, o_b))
+    #v = np.concatenate((v_a, v_b))
+    #t1 = t1[o,v]
+    #t2 = t1[o,o,v,v]
+
+    # Chol ao to mo
+    chol_vecs = chunked_cholesky(mol, max_error=chol_cut)
+    nchol = chol_vecs.shape[0]
+    chol = np.zeros((nchol, 2 * norb, 2 * norb), dtype=float)
+    for i in range(nchol):
+        chol_i = chol_vecs[i].reshape(norb, norb)
+        chol_i = la.block_diag(chol_i, chol_i)
+        chol[i] = mo_coeff.T.conj() @ chol_i @ mo_coeff
+
+    # h ao to mo
+    h = mo_coeff.T.conj() @ gmf.get_hcore() @ mo_coeff
+
+    enuc = mol.energy_nuc()
+    nbasis = h.shape[-1]
+    print(f"nelec: {mol.nelec}")
+    print(f"nbasis: {nbasis}")
+    print(f"chol.shape: {chol.shape}")
+
+    # Modified one-electron integrals
+    chol = chol.reshape((-1, nbasis, nbasis))
+    v0 = 0.5 * np.einsum("gik,gkj->ij", chol, chol, optimize="optimal")
+    h_mod = h - v0
+    chol = chol.reshape((chol.shape[0], -1))
+
+    # Save
+    write_dqmc(
+        h,
+        h_mod,
+        chol,
+        sum(mol.nelec),
+        nbasis,
+        enuc,
+        ms=mol.spin,
+        filename=tmpdir + "/FCIDUMP_chol",
+    )
+
+    ovlp = gmf.get_ovlp(mol)
+    q, r = np.linalg.qr(mo_coeff.T.conj() @ ovlp @ mo_coeff)
+    sgn = np.sign(r.diagonal())
+    q = np.einsum("ij,j->ij", q, sgn)
+    np.savez(tmpdir + "/mo_coeff.npz", mo_coeff=[q, q])
+
+    return h, h_mod, chol
 
 def prep_afqmc_spinor(mol, mo_coeff, h_ao, n_ao, tmpdir, chol_cut=1e-5):
     import scipy.linalg as la

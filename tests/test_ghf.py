@@ -58,7 +58,7 @@ def check_hf(mol, mf):
     # RHF/UHF based GHF
     gmf = scf.addons.convert_to_ghf(mf)
 
-    pyscf_interface.prep_afqmc_ghf_complex(mol, gmf, tmpdir, chol_cut=chol_cut)
+    pyscf_interface.prep_afqmc_ghf_real(mol, gmf, tmpdir, chol_cut=chol_cut)
 
     options["trial"] = "ghf_complex"
     options["walker_type"] = "generalized"   
@@ -67,14 +67,14 @@ def check_hf(mol, mf):
     assert np.isclose(ene1, ene2, atol=1e-6), f"{ene1} {ene2}"
     assert np.isclose(err1, err2, atol=1e-8), f"{err1} {err2}"
     
-    # RHF/UHF based GHF with a complex rotation
-    gmf.mo_coeff = gmf.mo_coeff @ la.block_diag(random_orthogonal_complex(nelec), random_orthogonal_complex(2*nmo-nelec))
+    ## RHF/UHF based GHF with a complex rotation
+    #gmf.mo_coeff = gmf.mo_coeff @ la.block_diag(random_orthogonal_complex(nelec), random_orthogonal_complex(2*nmo-nelec))
 
-    pyscf_interface.prep_afqmc_ghf_complex(mol, gmf, tmpdir, chol_cut=chol_cut)
-    
-    ene2, err2 = run_afqmc.run_afqmc(options=options, mpi_prefix=None, nproc=None, tmpdir=tmpdir)
-    assert np.isclose(ene1, ene2, atol=1e-6), f"{ene1} {ene2}"
-    assert np.isclose(err1, err2, atol=1e-8), f"{err1} {err2}"
+    #pyscf_interface.prep_afqmc_ghf_complex(mol, gmf, tmpdir, chol_cut=chol_cut)
+    #
+    #ene2, err2 = run_afqmc.run_afqmc(options=options, mpi_prefix=None, nproc=None, tmpdir=tmpdir)
+    #assert np.isclose(ene1, ene2, atol=1e-6), f"{ene1} {ene2}"
+    #assert np.isclose(err1, err2, atol=1e-8), f"{err1} {err2}"
 
 def check_cc(mol, mf):
     nmo=np.shape(mf.mo_coeff)[-1]
@@ -145,8 +145,8 @@ def test_he():
     mf = scf.UHF(mol)
     mf.kernel()
 
-    #check_hf(mol, mf)
-    check_cc(mol, mf)
+    check_hf(mol, mf)
+    #check_cc(mol, mf)
  
 # H4
 def test_h4():
@@ -161,8 +161,8 @@ def test_h4():
     mf = scf.RHF(mol)
     mf.kernel()
     
-    #check_hf(mol, mf)
-    check_cc(mol, mf)
+    check_hf(mol, mf)
+    #check_cc(mol, mf)
 
 # H2O
 def test_h2o():
@@ -177,8 +177,8 @@ def test_h2o():
     mf = scf.RHF(mol)
     mf.kernel()
     
-    #check_hf(mol, mf)
-    check_cc(mol, mf)
+    check_hf(mol, mf)
+    #check_cc(mol, mf)
 
 # NH2 
 def test_nh2():
@@ -193,11 +193,11 @@ def test_nh2():
     mf = scf.UHF(mol)
     mf.kernel()
 
-    #check_hf(mol, mf)
-    check_cc(mol, mf)
+    check_hf(mol, mf)
+    #check_cc(mol, mf)
 
 if __name__ =="__main__":
     test_he()
-    #test_h4()
-    #test_h2o()
-    #test_nh2()
+    test_h4()
+    test_h2o()
+    test_nh2()

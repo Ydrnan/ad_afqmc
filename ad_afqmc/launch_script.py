@@ -295,13 +295,29 @@ def set_trial(
     except:
         # Construct RDM1 from mo_coeff if file not found
         if options_trial in ["ghf_complex", "gcisd_complex"]:
+
+            n_a, n_b = nelec_sp
+            n = mo_coeff[0].shape[-1]//2
+            Ca = mo_coeff[0][:,:n_a]
+            Cb = mo_coeff[0][:,n:n+n_b]
+            C = np.hstack((Ca, Cb))
+            rdm1 = C @ C.T.conj()
+
+            #print(rdm1)
+            #oa = rdm1[:,:n_a]
+            #va = rdm1[:,n_a:n]
+            #ob = rdm1[:,n:n+n_b]
+            #vb = rdm1[:,n+n_b:]
+            #ab = np.hstack((oa,ob,va,vb))
+            #rdm1 = ab
             wave_data["rdm1"] = jnp.array(
-                [
-                    mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
-                    @ mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]].T.conj(),
-                    mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
-                    @ mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]].T.conj(),
-                ]
+                [rdm1, rdm1]
+                #[
+                #    mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
+                #    @ mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]].T.conj(),
+                #    mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
+                #    @ mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]].T.conj(),
+                #]
             )
 
         else:
@@ -475,7 +491,12 @@ def set_trial(
 
     elif options_trial == "ghf_complex":
         trial = wavefunctions.ghf_complex(norb, nelec_sp, n_chunks=options["n_chunks"])
-        wave_data["mo_coeff"] = mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
+        n_a, n_b = nelec_sp
+        n = mo_coeff[0].shape[-1]//2
+        Ca = mo_coeff[0][:,:n_a]
+        Cb = mo_coeff[0][:,n:n+n_b]
+        C = np.hstack((Ca, Cb))
+        wave_data["mo_coeff"] = C
 
     elif options_trial == "gcisd_complex":
         try:
