@@ -1534,12 +1534,12 @@ def fp_afqmc(
 
         prop_data["overlaps"] = trial_bra.calc_overlap(prop_data["walkers"], wave_data_bra)
         prop_data["weights"] = jnp.ones_like(prop_data["weights"])
-        energy_samples = trial_bra.calc_energy(prop_data["walkers"], ham_data, wave_data_bra)
+        #energy_samples = trial_bra.calc_energy(prop_data["walkers"], ham_data, wave_data_bra)
 
-        e_estimate = jnp.array(jnp.sum(energy_samples) / propagator.n_walkers)
-        prop_data["e_estimate"] = e_estimate.real
-        ov = prop_data["overlaps"]
-        sign = np.sum(ov) / np.sum(np.abs(ov))
+        #e_estimate = jnp.array(jnp.sum(energy_samples) / propagator.n_walkers)
+        #prop_data["e_estimate"] = e_estimate.real
+        #ov = prop_data["overlaps"]
+        #sign = np.sum(ov) / np.sum(np.abs(ov))
 
         if options["save_walkers"] == True:
             if n > 0:
@@ -1549,9 +1549,9 @@ def fp_afqmc(
                 with open(f"prop_data_init_{rank}.bin", "wb") as f:
                     pickle.dump(prop_data, f)
 
-        total_sign[n, 0] = sign
-        total_energy[n, 0] = e_estimate
-        total_weight[n, 0] = jnp.sum(prop_data["weights"])
+        total_sign[n, 0] = 1.0 #sign
+        total_energy[n, 0] = 0.0 #e_estimate
+        total_weight[n, 0] = 1.0 #jnp.sum(prop_data["weights"])
 
         (
             ov,
@@ -1563,8 +1563,6 @@ def fp_afqmc(
         ) = sampler.propagate_free(
             ham, ham_data, propagator, prop_data, trial_bra, wave_data_bra
         )
-        # global_block_weights[n] = weights[0]
-        # global_block_energies[n] = energy_samples[0]
 
         sign = ov / abs_ov
         total_energy[n, 1:] = energy_samples
@@ -1611,6 +1609,7 @@ def fp_afqmc(
                     )
                 )
             print("")
+            print(f"Time: {time.time()-init:12.2f} s")
 
         np.savetxt(
             "samples_raw.dat",

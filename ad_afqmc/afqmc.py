@@ -164,17 +164,18 @@ class AFQMC:
                 If True, writes input files like integrals to disk, useful for large calculations where one would like to run the trial generation and AFQMC calculations on different machines, on CPU and GPU, for example.
         """
         os.makedirs(self.tmpdir, exist_ok=True)
-        if self.ad_mode != "nuc_grad":
-            pyscf_interface.prep_afqmc(
-                self.mf_or_cc,
-                basis_coeff=self.basis_coeff,
-                norb_frozen=self.norb_frozen,
-                chol_cut=self.chol_cut,
-                integrals=self.integrals,
-                tmpdir=self.tmpdir,
-            )
-        else:
-            grad_utils.prep_afqmc_nuc_grad(self.mf_or_cc, self.dR, tmpdir=self.tmpdir)
+        if self.write:
+            if self.ad_mode != "nuc_grad":
+                pyscf_interface.prep_afqmc(
+                    self.mf_or_cc,
+                    basis_coeff=self.basis_coeff,
+                    norb_frozen=self.norb_frozen,
+                    chol_cut=self.chol_cut,
+                    integrals=self.integrals,
+                    tmpdir=self.tmpdir,
+                )
+            else:
+                grad_utils.prep_afqmc_nuc_grad(self.mf_or_cc, self.dR, tmpdir=self.tmpdir)
         options = {}
         for attr in dir(self):
             if (

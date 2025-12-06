@@ -4755,6 +4755,8 @@ class ucisd(wave_function):
     def _calc_energy_generalized(
         self, walker: jax.Array, ham_data: dict, wave_data: dict
     ) -> complex:
+        #return 0.0+0.0j
+
         ci1A = wave_data["ci1A"]
         ci1B = wave_data["ci1B"]
         ci2AA = wave_data["ci2AA"]

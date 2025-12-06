@@ -91,6 +91,8 @@ def read_fcidump(tmp_dir: Optional[str] = None) -> Tuple:
     # Calculate electrons per spin channel
     nelec_sp = ((nelec + abs(ms)) // 2, (nelec - abs(ms)) // 2)
 
+    #chol = chol.at[:,23:,23:].set(0.0)
+    #h1 = h1.at[23:,23:].set(0.0)
     return h0, h1, chol, norb, nelec_sp
 
 
