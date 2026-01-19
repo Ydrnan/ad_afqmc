@@ -280,6 +280,7 @@ class AFQMC:
         ] = None,
         mode: Optional[str] = "small",
     ):
+        self.mode = mode
         self.mf_or_cc = mf_or_cc
         self.mf_or_cc_ket = mf_or_cc_ket if mf_or_cc_ket is not None else mf_or_cc
         self.basis_coeff = None
@@ -301,7 +302,8 @@ class AFQMC:
 
         # Set default options
         for attr, val in Options(mode).to_dict().items():
-            setattr(self, attr, val)
+            if not hasattr(self, attr):
+                setattr(self, attr, val)
 
     def set_trial_bra_label(self, mf_or_cc):
         self.trial = None
@@ -334,6 +336,7 @@ class AFQMC:
             if (
                 attr
                 not in [
+                    "mode",
                     "mf_or_cc",
                     "mf_or_cc_ket",
                     "basis_coeff",
@@ -342,6 +345,7 @@ class AFQMC:
                     "integrals",
                     "mpi_prefix",
                     "nproc",
+                    "tmpdir",
                 ]
                 and not attr.startswith("__")
                 and not callable(getattr(self, attr))
@@ -359,7 +363,9 @@ class AFQMC:
         """
         os.makedirs(self.tmpdir, exist_ok=True)
 
-        options = self.make_options_dict()
+        options = Options(self.mode)
+        options.update_from_dict(self.make_options_dict())
+        options = options.to_dict()
 
         if self.ad_mode == "nuc_grad":
             # grad_utils.prep_afqmc_nuc_grad(self.mf_or_cc, self.dR, tmpdir=self.tmpdir)
@@ -406,11 +412,11 @@ class Options:
     # To catch typos...
     __slots__ = ("dt", "n_prop_steps", "n_ene_blocks",
     "n_walkers", "n_sr_blocks", "n_qr_blocks", "n_blocks", "n_ene_blocks_eql",
-    "n_sr_blocks_eql", "n_eql", "seed", "ad_mode", "orbital_rotation",
+    "n_sr_blocks_eql", "n_eql", "seed", "ad_mode", "orbital_rotation", "trial", "trial_ket",
     "do_sr", "walker_type", "symmetry_projector", "ngrid", "optimize_trial",
-    "target_spin", "symmetry", "save_walkers", "dR", "free_projection",
+    "s2_projector_ngrid", "target_spin", "symmetry", "save_walkers", "dR", "free_projection",
     "ene0", "n_chunks", "vhs_mixed_precision", "trial_mixed_precision",
-    "memory_mode", "write_to_disk", "read_from_disk", "prjlo",
+    "memory_mode", "write_to_disk", "read_from_disk", "prjlo", "no_beta_0_fp"
     )
 
     def __init__(self, mode):
@@ -437,10 +443,13 @@ class Options:
         self.orbital_rotation = True
         self.do_sr = True
         self.walker_type = "restricted"
+        self.trial = None
+        self.trial_ket = None
 
         # this can be tr, s2 or sz for time-reversal, S^2, or S_z symmetry projection, respectively
         self.symmetry_projector = None
         self.ngrid = 4 # Number of grid point for the quadrature
+        self.s2_projector_ngrid = 4 # Number of grid point for the quadrature
         self.optimize_trial = False
         self.target_spin = 0  # 2S and is only used when symmetry_projector is s2
         self.symmetry = False
@@ -456,13 +465,14 @@ class Options:
         self.write_to_disk = False # Write FCIDUMP and ci/cc coeff to disk
         self.read_from_disk = False # Read FCIDUMP and ci/cc coeff from disk
         self.prjlo = None  # used in LNO, need to fix
+        self.no_beta_0_fp = False # Avoid computing the energy at 0 imaginary time in fp
 
     def to_dict(self):
         return {slot: getattr(self, slot) for slot in self.__slots__}
 
-    def from_dict(self, options: dict):
+    def update_from_dict(self, options: dict):
         t = type(options)
-        if t != type(dict):
+        if t != dict:
             raise TypeError(f"Expected a dict but received '{t}'.")
         for key, val in options.items():
             if key not in self.__slots__:

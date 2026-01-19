@@ -106,7 +106,6 @@ class sampler:
     ) -> Tuple[dict, Tuple]:
         """Block scan function for free propagation."""
         prop_data["key"], subkey = random.split(prop_data["key"])
-        n_fields = self.n_qr_blocks * self.n_prop_steps
         fields = random.normal(
             subkey,
             shape=(

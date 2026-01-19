@@ -65,7 +65,7 @@ def prep(obj, target_spin):
         options = pickle.load(f)
 
     if isinstance(obj, UCCSD):
-        utils.write_pyscf_ccsd(obj, options["tmpdir"])
+        utils.write_pyscf_ccsd(obj, af.tmpdir)
 
     (
         ham_data,
@@ -78,7 +78,7 @@ def prep(obj, target_spin):
         sampler,
         observable,
         options,
-    ) = utils.setup_afqmc_fp(options, options["tmpdir"])
+    ) = utils.setup_afqmc_fp(options, af.tmpdir)
  
     ham_data = ham.build_measurement_intermediates(ham_data, trial_bra, wave_data_bra)
     ham_data = ham.build_propagation_intermediates(
