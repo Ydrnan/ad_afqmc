@@ -2533,6 +2533,10 @@ class multi_ghf_cpmc(wave_function_cpmc):
             (6, 8),
             (8, 8),
             (10, 10),
+            (11, 10),
+            (11, 11),
+            (12, 11),
+            (12, 12),
         ]
 
         def _make_alpha(n_alpha: int):
