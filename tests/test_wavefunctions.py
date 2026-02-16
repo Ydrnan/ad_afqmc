@@ -123,6 +123,7 @@ ham_data_g["chol"] = ham_data["chol"]
 ham_data_g["ene0"] = ham_data["ene0"]
 
 uhf_cpmc = wavefunctions.uhf_cpmc(norb, nelec_sp)
+ghf_cpmc = wavefunctions.ghf_cpmc(norb, nelec_sp)
 
 
 def test_rhf_overlap():
@@ -198,7 +199,7 @@ def test_ghf_overlap():
 
 
 def test_ghf_green():
-    green = ghf._calc_green(walker_up, walker_dn, wave_data_g)
+    green = ghf._calc_green_unrestricted(walker_up, walker_dn, wave_data_g)
     assert green.shape == (nelec_sp[0] + nelec_sp[1], 2 * norb)
 
 
@@ -277,6 +278,37 @@ def test_uhf_cpmc():
 
     new_green = uhf_cpmc._calc_green_full_unrestricted(new_walker_0, new_walker_1, wave_data_u)
     new_green_wick = uhf_cpmc._update_green(
+        green,
+        ratio,
+        jnp.array([[0, 3], [1, 3]]),
+        hs_constant[0] - 1,
+    )
+    assert np.allclose(new_green, new_green_wick)
+
+
+def test_ghf_cpmc():
+    u = 4.0
+    dt = 0.005
+    gamma = jnp.arccosh(jnp.exp(dt * u / 2))
+    const = jnp.exp(-dt * u / 2)
+    hs_constant = const * jnp.array(
+        [[jnp.exp(gamma), jnp.exp(-gamma)], [jnp.exp(-gamma), jnp.exp(gamma)]]
+    )
+    green = ghf_cpmc._calc_green_full_unrestricted(walker_up, walker_dn, wave_data_g)
+    assert green.shape == (2*norb, 2*norb)
+    wick_ratio = ghf_cpmc._calc_overlap_ratio(
+        green,
+        jnp.array([[0, 3], [1, 3]]),
+        hs_constant[0] - 1,
+    )
+    overlap_0 = ghf_cpmc._calc_overlap_unrestricted(walker_up, walker_dn, wave_data_g)
+    new_walker_0 = walker_up.at[3, :].mul(hs_constant[0, 0])
+    new_walker_1 = walker_dn.at[3, :].mul(hs_constant[0, 1])
+    ratio = ghf_cpmc._calc_overlap_unrestricted(new_walker_0, new_walker_1, wave_data_g) / overlap_0
+    assert np.allclose(ratio, wick_ratio)
+
+    new_green = ghf_cpmc._calc_green_full_unrestricted(new_walker_0, new_walker_1, wave_data_g)
+    new_green_wick = ghf_cpmc._update_green(
         green,
         ratio,
         jnp.array([[0, 3], [1, 3]]),
@@ -511,6 +543,7 @@ if __name__ == "__main__":
     test_noci_energy()
     test_noci_get_rdm1()
     test_uhf_cpmc()
+    test_ghf_cpmc()
     test_multislater()
     test_cisd()
     test_ucisd()
