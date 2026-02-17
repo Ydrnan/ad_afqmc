@@ -8,8 +8,7 @@ from jax import numpy as jnp
 from jax import scipy as jsp
 from jax import random
 
-from ad_afqmc import hamiltonian, propagation, wavefunctions
-from ad_afqmc.walkers import GHFWalkers
+from ad_afqmc import hamiltonian, propagation, walkers, wavefunctions
 
 # -----------------------------------------------------------------------------
 # Fixed Hamiltonian objects.
@@ -125,7 +124,7 @@ for iw in range(n_walkers):
         prop_data_u["walkers"].data[0][iw, :, :nelec_sp[0]],
         prop_data_u["walkers"].data[1][iw, :, :nelec_sp[1]],
     )
-init_walkers = GHFWalkers(jnp.array(init_walkers))
+init_walkers = walkers.GHFWalkers(jnp.array(init_walkers))
 
 prop_data_g = prop_handler_g.init_prop_data(
     trial_g, wave_data_g, ham_data_g, seed, init_walkers)
@@ -163,7 +162,7 @@ for iw in range(n_walkers):
         prop_data_u["walkers"].data[0][iw, :, :nelec_sp[0]],
         prop_data_u["walkers"].data[1][iw, :, :nelec_sp[1]],
     )
-init_walkers = GHFWalkers(jnp.array(init_walkers))
+init_walkers = walkers.GHFWalkers(jnp.array(init_walkers))
 
 prop_data_gc = prop_handler_gc.init_prop_data(
     trial_gc, wave_data_gc, ham_data_gc, seed, init_walkers)
@@ -332,7 +331,7 @@ def test_apply_trotprop_g():
     walkers_g = np.zeros((n_walkers, 2*norb, nocc), dtype=np.complex128)
     walkers_g[:, :norb, :nelec_sp[0]] = walkers_u.data[0]
     walkers_g[:, norb:, nelec_sp[0]:] = walkers_u.data[1]
-    walkers_g = GHFWalkers(jnp.array(walkers_g))
+    walkers_g = walkers.GHFWalkers(jnp.array(walkers_g))
     
     walkers_new = prop_handler_g._apply_trotprop(
         walkers_g, fields, ham_data_g

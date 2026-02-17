@@ -3,6 +3,7 @@ from ad_afqmc import config
 
 from ad_afqmc import (
     lattices,
+    walkers,
     wavefunctions, 
     propagation,
     prep, 
@@ -10,7 +11,6 @@ from ad_afqmc import (
     driver,
     hf_guess
 )
-from ad_afqmc.walkers import GHFWalkers, UHFWalkers
 
 from pyscf import gto, scf, ao2mo
 import numpy as np
@@ -111,7 +111,7 @@ def check_hf(mf, integrals, options, comm):
         n_walkers=options["n_walkers"],
         walker_type=options["walker_type"]
     )
-    init_walkers = UHFWalkers([
+    init_walkers = walkers.UHFWalkers([
         jnp.array([mf.mo_coeff[0][:, : n_elec[0]]] * n_walkers),
         jnp.array([mf.mo_coeff[1][:, : n_elec[1]]] * n_walkers),
     ])
@@ -155,7 +155,7 @@ def check_hf(mf, integrals, options, comm):
         n_walkers=options["n_walkers"],
         walker_type=options["walker_type"]
     )
-    init_walkers = GHFWalkers(jnp.array([gmf.mo_coeff[:, gmf.mo_occ>0]] * n_walkers))
+    init_walkers = walkers.GHFWalkers(jnp.array([gmf.mo_coeff[:, gmf.mo_occ>0]] * n_walkers))
     ene2, err2 = driver.afqmc(
         ham_data, ham, prop, trial, wave_data, sampler, observable, options, comm, tmpdir=tmpdir,
         init_walkers=init_walkers
@@ -199,7 +199,7 @@ def check_hf_slow(mf, integrals, options, comm):
         n_walkers=options["n_walkers"],
         walker_type=options["walker_type"]
     )
-    init_walkers = UHFWalkers([
+    init_walkers = walkers.UHFWalkers([
         jnp.array([mf.mo_coeff[0][:, : n_elec[0]]] * n_walkers),
         jnp.array([mf.mo_coeff[1][:, : n_elec[1]]] * n_walkers),
     ])
@@ -243,7 +243,7 @@ def check_hf_slow(mf, integrals, options, comm):
         n_walkers=options["n_walkers"],
         walker_type=options["walker_type"]
     )
-    init_walkers = GHFWalkers(jnp.array([gmf.mo_coeff[:, gmf.mo_occ>0]] * n_walkers))
+    init_walkers = walkers.GHFWalkers(jnp.array([gmf.mo_coeff[:, gmf.mo_occ>0]] * n_walkers))
     ene2, err2 = driver.afqmc(
         ham_data, ham, prop, trial, wave_data, sampler, observable, options, comm, tmpdir=tmpdir,
         init_walkers=init_walkers
