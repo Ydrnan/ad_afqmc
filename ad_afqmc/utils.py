@@ -11,7 +11,7 @@ import numpy as np
 import scipy
 from numpy.polynomial.legendre import leggauss
 from jax import numpy as jnp
-from pyscf import __config__, ao2mo, df, dft, lib, mcscf, scf
+from pyscf import __config__, ao2mo, df, dft, lib, mcscf, scf, fci
 from pyscf.cc.ccsd import CCSD
 from pyscf.cc.uccsd import UCCSD
 
