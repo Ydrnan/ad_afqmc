@@ -1128,8 +1128,6 @@ def get_trial_coeffs(mol, mf, basis_coeff, nbasis, norb_frozen):
         print("Cannot recognize type for mf object in write_trial")
         exit(1)
 
-    trial_coeffs[0] = uhfCoeffs[:, :nbasis]
-    trial_coeffs[1] = uhfCoeffs[:, nbasis:]
     return trial_coeffs
 
 
@@ -1355,7 +1353,7 @@ def read_fcidump(tmp_dir: str = ".") -> Tuple:
             h0: Core energy
             h1: One-body Hamiltonian matrix
             chol: Cholesky vectors
-            norb: Number of molecular orbitals
+            nbasis: Number of molecular orbitals
             nelec_sp: Tuple of electrons per spin (alpha, beta)
     """
     directory = tmp_dir
@@ -1364,21 +1362,21 @@ def read_fcidump(tmp_dir: str = ".") -> Tuple:
         directory + "/FCIDUMP_chol"
     ), f"File '{directory}/FCIDUMP_chol' does not exist."
     with h5py.File(directory + "/FCIDUMP_chol", "r") as fh5:
-        [nelec, norb, ms, nchol] = fh5["header"]
+        [nelec, nbasis, ms, nchol] = fh5["header"]
         h0 = jnp.array(fh5.get("energy_core"))
-        h1 = jnp.array(fh5.get("hcore")).reshape(norb, norb)
-        h1_mod = jnp.array(fh5.get("hcore_mod")).reshape(norb, norb)
-        chol = jnp.array(fh5.get("chol")).reshape(-1, norb, norb)
+        h1 = jnp.array(fh5.get("hcore")).reshape(nbasis, nbasis)
+        h1_mod = jnp.array(fh5.get("hcore_mod")).reshape(nbasis, nbasis)
+        chol = jnp.array(fh5.get("chol")).reshape(-1, nbasis, nbasis)
 
     assert type(ms) is np.int64
     assert type(nelec) is np.int64
-    assert type(norb) is np.int64
-    ms, nelec, norb = int(ms), int(nelec), int(norb)
+    assert type(nbasis) is np.int64
+    ms, nelec, nbasis = int(ms), int(nelec), int(nbasis)
 
     # Calculate electrons per spin channel
     nelec_sp = ((nelec + abs(ms)) // 2, (nelec - abs(ms)) // 2)
 
-    return h0, h1, h1_mod, chol, norb, nelec_sp
+    return h0, h1, h1_mod, chol, nbasis, nelec_sp
 
 
 def read_options(options: Optional[Dict] = None, tmp_dir: str = ".") -> Dict:
@@ -1437,6 +1435,8 @@ def get_options(options: Dict):
         options["walker_type"] = "restricted"
     elif options["walker_type"] == "uhf":
         options["walker_type"] = "unrestricted"
+    elif options["walker_type"] == "ghf":
+        options["walker_type"] = "generalized"
     assert options["walker_type"] in ["restricted", "unrestricted", "generalized"]
 
     options["symmetry"] = options.get("symmetry", False)
@@ -1449,6 +1449,7 @@ def get_options(options: Dict):
         "noci",
         "cisd",
         "ucisd",
+        "ghf",
         "ghf_complex",
         "gcisd_complex",
         "UCISD",
@@ -1525,13 +1526,22 @@ def set_ham(
             ham_data: Dictionary of Hamiltonian data
     """
     ham = hamiltonian.hamiltonian(norb)
+    nbasis = h1.shape[-1]
     nchol = chol.shape[0]
-    ham_data = {
-        "h0": h0,
-        "h1": jnp.array([h1, h1]),  # Replicate for up/down spins
-        "chol": chol.reshape(nchol, -1),
-        "ene0": ene0,
-    }
+    if nbasis == 2*norb: # GHF-type
+        ham_data = {
+            "h0": h0,
+            "h1": h1,
+            "chol": chol.reshape(nchol, -1),
+            "ene0": ene0,
+        }
+    else:
+        ham_data = {
+            "h0": h0,
+            "h1": jnp.array([h1, h1]),  # Replicate for up/down spins
+            "chol": chol.reshape(nchol, -1),
+            "ene0": ene0,
+        }
     return ham, ham_data
 
 
@@ -1559,6 +1569,7 @@ def set_1rdm(
     nelec_sp,
     mo_coeff,
     options_trial,
+    options_walker,
     directory,
     ):
     # Try to read RDM1 from file
@@ -1569,15 +1580,21 @@ def set_1rdm(
         print(f"# Read RDM1 from disk")
     except:
         # Construct RDM1 from mo_coeff if file not found
-        if options_trial in ["ghf_complex", "gcisd_complex"]:
-            wave_data["rdm1"] = jnp.array(
-                [
-                    mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
-                    @ mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]].T.conj(),
-                    mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
-                    @ mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]].T.conj(),
-                ]
-            )
+        if options_trial in ["ghf", "ghf_complex", "gcisd_complex"]:
+            if options_walker == "generalized":
+                wave_data["rdm1"] = jnp.array(
+                        mo_coeff[:, : nelec_sp[0] + nelec_sp[1]]
+                        @ mo_coeff[:, : nelec_sp[0] + nelec_sp[1]].T.conj()
+                )
+            else:
+                wave_data["rdm1"] = jnp.array(
+                    [
+                        mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
+                        @ mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]].T.conj(),
+                        mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
+                        @ mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]].T.conj(),
+                    ]
+                )
         else:
             wave_data["rdm1"] = jnp.array(
                 [
@@ -1671,14 +1688,17 @@ def set_trial(prep) -> Tuple[Any, Dict]:
     mo_coeff = prep.mo_basis.trial_coeff
     options = prep.options
     options_trial = prep.options["trial"]
-    if hasattr(prep.tmp, "trial"): # Dirty
+    options_walker = prep.options["walker_type"]
+    if hasattr(prep.tmp, "trial") and (prep.options["trial_ket"] is not None): # Dirty
          options_trial = prep.options["trial_ket"]
     if hasattr(prep.tmp, "amplitudes"):
         amplitudes = prep.tmp.amplitudes
     directory = prep.path.tmpdir
 
     wave_data = {}
-    wave_data = set_1rdm(wave_data, norb, nelec_sp, mo_coeff, options_trial, directory)
+    wave_data = set_1rdm(
+        wave_data, norb, nelec_sp, mo_coeff, options_trial, options_walker, directory
+    )
 
     if options.get("symmetry_projector", None) is not None:
         wave_data = set_symmetry_projector(wave_data, nelec_sp, options)
@@ -1878,7 +1898,7 @@ def set_trial(prep) -> Tuple[Any, Dict]:
             n_chunks=options["n_chunks"],
             projector=options["symmetry_projector"],
         )
-        wave_data["mo_coeff"] = mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
+        wave_data["mo_coeff"] = mo_coeff[:, : nelec_sp[0] + nelec_sp[1]]
 
     elif options_trial == "ghf_complex":
         trial = wavefunctions.ghf_complex(
@@ -1887,7 +1907,7 @@ def set_trial(prep) -> Tuple[Any, Dict]:
             n_chunks=options["n_chunks"],
             projector=options["symmetry_projector"],
         )
-        wave_data["mo_coeff"] = mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
+        wave_data["mo_coeff"] = mo_coeff[:, : nelec_sp[0] + nelec_sp[1]]
 
     elif options_trial == "gcisd_complex":
 

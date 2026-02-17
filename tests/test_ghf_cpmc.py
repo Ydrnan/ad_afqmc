@@ -5,9 +5,8 @@ from ad_afqmc import (
     lattices,
     wavefunctions, 
     propagation,
-    pyscf_interface, 
-    launch_script, 
-    run_afqmc, 
+    prep, 
+    utils,
     driver,
     hf_guess
 )
@@ -94,10 +93,10 @@ def check_hf(mf, integrals, options, comm):
         options["trial"] = "uhf"
         options["walker_type"] = "unrestricted"
     
-    pyscf_interface.prep_afqmc(
+    prep.PrepAfqmc.prep_afqmc(
         mf, basis_coeff=np.eye(n_ao), integrals=integrals, chol_cut=chol_cut, tmpdir=tmpdir
     )
-    ham_data, ham, prop, trial, wave_data, sampler, observable, options = launch_script.setup_afqmc(
+    ham_data, ham, prop, trial, wave_data, sampler, observable, options = utils.setup_afqmc(
         options, tmp_dir=tmpdir
     )
     trial = wavefunctions.uhf_cpmc(n_ao, n_elec)
@@ -141,10 +140,10 @@ def check_hf(mf, integrals, options, comm):
     gmf.mo_occ[n_ao:] = mf.mo_occ[1]
     dm = gmf.make_rdm1()
 
-    pyscf_interface.prep_afqmc(
+    prep.PrepAfqmc.prep_afqmc(
         gmf, basis_coeff=np.eye(2*n_ao), integrals=integrals_g, chol_cut=chol_cut, tmpdir=tmpdir
     )
-    ham_data, ham, prop, trial, wave_data, sampler, observable, options = launch_script.setup_afqmc(
+    ham_data, ham, prop, trial, wave_data, sampler, observable, options = utils.setup_afqmc(
         options, tmp_dir=tmpdir
     )
     trial = wavefunctions.ghf_cpmc(n_ao, n_elec)
@@ -182,10 +181,10 @@ def check_hf_slow(mf, integrals, options, comm):
         options["trial"] = "uhf"
         options["walker_type"] = "unrestricted"
     
-    pyscf_interface.prep_afqmc(
+    prep.PrepAfqmc.prep_afqmc(
         mf, basis_coeff=np.eye(n_ao), integrals=integrals, chol_cut=chol_cut, tmpdir=tmpdir
     )
-    ham_data, ham, prop, trial, wave_data, sampler, observable, options = launch_script.setup_afqmc(
+    ham_data, ham, prop, trial, wave_data, sampler, observable, options = utils.setup_afqmc(
         options, tmp_dir=tmpdir
     )
     trial = wavefunctions.uhf_cpmc(n_ao, n_elec)
@@ -229,10 +228,10 @@ def check_hf_slow(mf, integrals, options, comm):
     gmf.mo_occ[n_ao:] = mf.mo_occ[1]
     dm = gmf.make_rdm1()
 
-    pyscf_interface.prep_afqmc(
+    prep.PrepAfqmc.prep_afqmc(
         gmf, basis_coeff=np.eye(2*n_ao), integrals=integrals_g, chol_cut=chol_cut, tmpdir=tmpdir
     )
-    ham_data, ham, prop, trial, wave_data, sampler, observable, options = launch_script.setup_afqmc(
+    ham_data, ham, prop, trial, wave_data, sampler, observable, options = utils.setup_afqmc(
         options, tmp_dir=tmpdir
     )
     trial = wavefunctions.ghf_cpmc(n_ao, n_elec)
