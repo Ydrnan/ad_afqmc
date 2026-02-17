@@ -419,7 +419,7 @@ def test_propagate_cpmc_u():
         trial_cpmc_u, ham_data_cpmc_u, prop_data_cpmc_u, fields, wave_data_u
     )
     greens_new_slow = trial_cpmc_u.calc_green_full(
-        prop_data_new_slow["walkers"].data, wave_data_u
+        prop_data_new_slow["walkers"], wave_data_u
     )
 
     np.testing.assert_allclose(

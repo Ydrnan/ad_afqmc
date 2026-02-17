@@ -702,15 +702,15 @@ class wave_function_cpmc(wave_function):
         raise NotImplementedError("Walker type not supported")
 
     @calc_green_diagonal.register
-    def _(self, walkers: list, wave_data: dict) -> jax.Array:
+    def _(self, walkers: UHFWalkers, wave_data: dict) -> jax.Array:
         return vmap(self._calc_green_diagonal_unrestricted, in_axes=(0, 0, None))(
-            walkers[0], walkers[1], wave_data
+            walkers.data[0], walkers.data[1], wave_data
         )
 
     @calc_green_diagonal.register
-    def _(self, walkers: jax.Array, wave_data: dict) -> jax.Array:
+    def _(self, walkers: GHFWalkers, wave_data: dict) -> jax.Array:
         return vmap(self._calc_green_diagonal_generalized, in_axes=(0, None))(
-            walkers, wave_data
+            walkers.data, wave_data
         )
 
     @partial(jit, static_argnums=0)
@@ -741,15 +741,15 @@ class wave_function_cpmc(wave_function):
         raise NotImplementedError("Walker type not supported")
 
     @calc_green_full.register
-    def _(self, walkers: list, wave_data: dict) -> jax.Array | dict:
+    def _(self, walkers: UHFWalkers, wave_data: dict) -> jax.Array | dict:
         return vmap(self._calc_green_full_unrestricted, in_axes=(0, 0, None))(
-            walkers[0], walkers[1], wave_data
+            walkers.data[0], walkers.data[1], wave_data
         )
 
     @calc_green_full.register
-    def _(self, walkers: jax.Array, wave_data: dict) -> jax.Array | dict:
+    def _(self, walkers: GHFWalkers, wave_data: dict) -> jax.Array | dict:
         return vmap(self._calc_green_full_generalized, in_axes=(0, None))(
-            walkers, wave_data
+            walkers.data, wave_data
         )
 
     @partial(jit, static_argnums=0)

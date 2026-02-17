@@ -476,7 +476,7 @@ class propagator_cpmc(propagator_afqmc):
         prop_data["overlaps"] = prop_data["overlaps"].real
         try:
             prop_data["greens"] = trial.calc_green_full(
-                prop_data["walkers"].data, wave_data
+                prop_data["walkers"], wave_data
             )
         except:
             pass
@@ -531,7 +531,7 @@ class propagator_cpmc(propagator_afqmc):
         )
         prop_data["overlaps"] = overlaps_new
         prop_data["greens"] = trial.calc_green_full(
-            prop_data["walkers"].data, wave_data
+            prop_data["walkers"], wave_data
         )
         return prop_data
 
@@ -952,7 +952,7 @@ class propagator_cpmc_nn(propagator_cpmc):
             trial, wave_data, ham_data, seed, init_walkers
         )
         prop_data["greens"] = trial.calc_green_full(
-            prop_data["walkers"].data, wave_data
+            prop_data["walkers"], wave_data
         )
         gamma = jnp.arccosh(jnp.exp(self.dt * ham_data["u"] / 2))
         const = jnp.exp(-self.dt * ham_data["u"] / 2)
@@ -1316,7 +1316,7 @@ class propagator_cpmc_nn_slow(propagator_cpmc):
             trial, wave_data, ham_data, seed, init_walkers
         )
         prop_data["greens"] = trial.calc_green_full(
-            prop_data["walkers"].data, wave_data
+            prop_data["walkers"], wave_data
         )
         gamma = jnp.arccosh(jnp.exp(self.dt * ham_data["u"] / 2))
         const = jnp.exp(-self.dt * ham_data["u"] / 2)
