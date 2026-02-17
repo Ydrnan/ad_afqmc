@@ -147,7 +147,7 @@ assert res < 1e-14, res
 
 # Unitary transformation UHF trial <-> GHF trial
 uhf_trial = la.block_diag(ucisd.wave_data["mo_coeff"][0], ucisd.wave_data["mo_coeff"][1])
-ghf_trial = gcisd.wave_data["mo_coeff"][0]
+ghf_trial = gcisd.wave_data["mo_coeff"]
 # uhf_trial Y = ghf_trial
 Y = np.linalg.solve(uhf_trial, ghf_trial)
 
@@ -160,7 +160,7 @@ assert res < 1e-14
 uhf_a = ucisd.wave_data["mo_coeff"][0][:,:na]
 uhf_b = ucisd.wave_data["mo_coeff"][1][:,:nb]
 uhf_trial = la.block_diag(uhf_a, uhf_b)
-ghf_trial = gcisd.wave_data["mo_coeff"][0][:,:nelec]
+ghf_trial = gcisd.wave_data["mo_coeff"][:,:nelec]
 
 def assert_ghf(w_ghf):
     res = np.linalg.norm(w_ghf - X.T @ Y @ Y.T @ X @ w_ghf)
@@ -235,6 +235,7 @@ def check_energy_uhf_walker(w_a, w_b, display=True):
     w_ghf = X.T @ Y @ w_uhf
     assert_ghf(w_ghf)
     assert_uhf(w_uhf)
+
     ghf_e   = ghf.trial._calc_energy_generalized(w_ghf, ghf.ham_data, ghf.wave_data)
     uhf_u_e   = uhf.trial._calc_energy_unrestricted(w_a, w_b, uhf.ham_data, uhf.wave_data)
     uhf_g_e   = uhf.trial._calc_energy_generalized(w_uhf, uhf.ham_data, uhf.wave_data)

@@ -80,6 +80,7 @@ class PrepAfqmc:
         prep.set_basis_coeff(basis_coeff)
         prep.set_frozen_core(norb_frozen)
         prep.set_chol_cut(chol_cut)
+        if integrals is not None: prep.set_custom_integrals(integrals)
         prep.set_tmpdir(tmpdir)
         prep.options = {}
 
@@ -179,6 +180,12 @@ class PrepAfqmc:
             raise ValueError(f"chol_cut expected to be >= 0.")
 
         self.ao_basis.chol_cut = chol_cut
+
+    def set_custom_integrals(self, integrals):
+        if type(integrals) != dict:
+            raise TypeError(f"integrals expected to be a dict but has type '{type(integrals)}'.")
+
+        self.ao_basis.custom_integrals = integrals
 
     def set_tmpdir(self, tmpdir):
         self.path.set(tmpdir)
@@ -291,7 +298,11 @@ class PrepAfqmc:
         self.ao_basis.n_chol = n_chol
 
     def read_fcidump(self):
-        h0, h1, h1_mod, chol, norb, nelec_sp = utils.read_fcidump(self.path.fcidump)
+        h0, h1, h1_mod, chol, nbasis, nelec_sp = utils.read_fcidump(self.path.fcidump)
+        if self.options["walker_type"] == "generalized":
+            norb = nbasis // 2
+        else: 
+            norb = nbasis
         self.mo_basis.norb = norb
         self.mo_basis.h0 = h0
         self.mo_basis.h1 = h1
