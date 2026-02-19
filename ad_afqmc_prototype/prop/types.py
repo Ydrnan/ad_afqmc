@@ -30,8 +30,8 @@ class QmcParams:
     weight_cap: float = 100.0
     n_prop_steps: int = 50
     shift_ema: float = 0.1
-    n_eql_blocks: int = 50
-    n_blocks: int = 500
+    n_eql_blocks: int = 20
+    n_blocks: int = 200
     n_walkers: int = 200
     seed: int = 42
     ene0: float = 0

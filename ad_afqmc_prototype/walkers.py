@@ -33,7 +33,7 @@ def init_walkers(sys: System, rdm1: jax.Array, n_walkers: int) -> walkers:
                 raise ValueError(
                     "For generalized walkers, a 2D rdm1 must have shape (2*norb, 2*norb)."
                 )
-            w0 = _natorbs(rdm1, ne)  # (2*norb, ne)
+            w0 = _natorbs(rdm1, ne) + 0.0j # (2*norb, ne)
             return jnp.broadcast_to(w0, (n_walkers, *w0.shape))
 
         if rdm1.ndim != 3 or rdm1.shape[0] != 2:

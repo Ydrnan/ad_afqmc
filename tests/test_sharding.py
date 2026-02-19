@@ -9,7 +9,8 @@ from jax.sharding import NamedSharding
 from jax.sharding import PartitionSpec as P
 
 import ad_afqmc_prototype.walkers as wk
-from ad_afqmc_prototype.core.ops import MeasOps, TrialOps, k_energy, k_force_bias
+from ad_afqmc_prototype import testing
+from ad_afqmc_prototype.core.ops import MeasOps, k_energy, k_force_bias
 from ad_afqmc_prototype.core.system import System
 from ad_afqmc_prototype.ham.chol import HamChol
 from ad_afqmc_prototype.prop.afqmc import afqmc_step, init_prop_state
@@ -17,16 +18,6 @@ from ad_afqmc_prototype.prop.blocks import block
 from ad_afqmc_prototype.prop.chol_afqmc_ops import _build_prop_ctx, make_trotter_ops
 from ad_afqmc_prototype.prop.types import PropOps, QmcParams
 from ad_afqmc_prototype.sharding import make_data_mesh, shard_prop_state
-
-
-def _dummy_trial_ops() -> TrialOps:
-    def get_rdm1(trial_data):
-        return trial_data["rdm1"]
-
-    def overlap(walker, trial_data):
-        return jnp.asarray(1.0 + 0.0j, dtype=jnp.complex64)
-
-    return TrialOps(overlap=overlap, get_rdm1=get_rdm1)
 
 
 def _dummy_meas_ops() -> MeasOps:
@@ -105,7 +96,7 @@ def test_block_runs_under_sharding(n_per_dev):
     )
     sys = System(norb=norb, nelec=(nocc, nocc), walker_kind="restricted")
 
-    trial_ops = _dummy_trial_ops()
+    trial_ops = testing.make_dummy_trial_ops()
     meas_ops = _dummy_meas_ops()
     trial_data = {"rdm1": jnp.zeros((2, norb, norb), dtype=jnp.float32)}
     meas_ctx = meas_ops.build_meas_ctx(ham, trial_data)
@@ -175,7 +166,7 @@ def test_block_runs_under_sharding(n_per_dev):
             meas_ctx=meas_ctx,
             prop_ops=prop_ops,
             prop_ctx=prop_ctx,
-            sr_fun=sr_sharded,
+            sr_fn=sr_sharded,
         )
 
     run_block_u = jax.jit(_call_block)

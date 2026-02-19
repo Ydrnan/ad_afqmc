@@ -40,12 +40,13 @@ def _det(m: jax.Array) -> jax.Array:
     return jnp.linalg.det(m)
 
 
-def get_rdm1(trial_data: GhfTrial) -> jax.Array:
+def get_rdm1_block_diag(trial_data: GhfTrial) -> jax.Array:
     """
     Return spin-block 1RDM for use by AFQMC propagator code that expects
     (2, norb, norb) for restricted basis Hamiltonians.
 
     Note: This discards spin offdiagonal blocks in a true GHF density matrix.
+    See get_rdm1_generalized for the full 1RDM matrix.
     """
     c = trial_data.mo_coeff
     dm = c @ c.conj().T  # (2*norb, 2*norb)
@@ -53,6 +54,15 @@ def get_rdm1(trial_data: GhfTrial) -> jax.Array:
     dm_up = dm[:norb, :norb]
     dm_dn = dm[norb:, norb:]
     return jnp.stack([dm_up, dm_dn], axis=0)  # (2, norb, norb)
+
+
+def get_rdm1_generalized(trial_data: GhfTrial) -> jax.Array:
+    """
+    Full (2*norb, 2*norb) 1RDM.
+    """
+    c = trial_data.mo_coeff
+    dm = c @ c.conj().T  # (2*norb, 2*norb)
+    return dm
 
 
 def overlap_r(walker: jax.Array, trial_data: GhfTrial) -> jax.Array:
@@ -215,12 +225,12 @@ def make_ghf_trial_ops(sys: System) -> TrialOps:
     if wk == "restricted":
         if sys.nup != sys.ndn:
             raise ValueError("restricted walkers require nup == ndn.")
-        return TrialOps(overlap=overlap_r, get_rdm1=get_rdm1)
+        return TrialOps(overlap=overlap_r, get_rdm1=get_rdm1_block_diag)
 
     if wk == "unrestricted":
         return TrialOps(
             overlap=overlap_u,
-            get_rdm1=get_rdm1,
+            get_rdm1=get_rdm1_block_diag,
             calc_green=calc_green_u,
             update_green=update_green,
             calc_overlap_ratio=calc_overlap_ratio,
@@ -229,7 +239,7 @@ def make_ghf_trial_ops(sys: System) -> TrialOps:
     if wk == "generalized":
         return TrialOps(
             overlap=overlap_g,
-            get_rdm1=get_rdm1,
+            get_rdm1=get_rdm1_generalized,
             calc_green=calc_green_g,
             update_green=update_green,
             calc_overlap_ratio=calc_overlap_ratio,

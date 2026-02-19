@@ -63,13 +63,19 @@ def _as_total_rdm1_restricted(dm: jax.Array) -> jax.Array:
         return dm[0] + dm[1]
     return dm
 
+def _get_dm(rdm1: jax.Array, ham_basis: str) -> jax.Array:
+    match ham_basis:
+        case "restricted":
+            dm = _as_total_rdm1_restricted(rdm1)
+        case "generalized":
+            dm = rdm1
+        case _:
+            raise ValueError(f"Unknown Hamiltonian basis kind: {ham_basis}")
+    return dm
 
 def _mf_shifts(ham_data: HamChol, rdm1: jax.Array) -> jax.Array:
-    dm = rdm1
-    if ham_data.basis == "restricted":
-        dm = _as_total_rdm1_restricted(dm)
+    dm = _get_dm(rdm1, ham_data.basis)
     return 1.0j * jnp.einsum("gij,ji->g", ham_data.chol, dm, optimize="optimal")
-
 
 def _build_exp_h1_half_from_h1(h1: jax.Array, dt: jax.Array) -> jax.Array:
     return jax.scipy.linalg.expm(-0.5 * dt * h1)
@@ -81,6 +87,19 @@ def _make_vhs_split_flat(*, chol_flat: jax.Array, x: jax.Array, n: int) -> jax.A
     v_im = jnp.imag(x) @ chol_flat  # (n*n,)
     return lax.complex(v_re, v_im).reshape(n, n)
 
+def _get_h1_eff(ham_data: HamChol, mf: jax.Array, h0_prop: jax.Array, rdm1: jax.Array) -> jax.Array:
+    match ham_data.basis:
+        case "restricted" | "generalized":
+            v0m = 0.5 * jnp.einsum(
+                "gik,gkj->ij", ham_data.chol, ham_data.chol, optimize="optimal"
+            )
+            mf_r = (1.0j * mf).real
+            v1m = jnp.einsum("g,gik->ik", mf_r, ham_data.chol, optimize="optimal")
+            h1_eff = ham_data.h1 - v0m - v1m
+        case _:
+            raise ValueError(f"Unknown Hamiltonian basis kind: {ham_data.basis}")
+
+    return h1_eff
 
 def _build_prop_ctx(
     ham_data: HamChol,
@@ -94,16 +113,7 @@ def _build_prop_ctx(
     mf = _mf_shifts(ham_data, rdm1)
     print("cholesky flat precision",chol_flat_precision)
     h0_prop = -ham_data.h0 - 0.5 * jnp.sum(mf**2)
-
-    h1_eff = ham_data.h1
-
-    if ham_data.basis == "restricted":
-        v0m = 0.5 * jnp.einsum(
-            "gik,gkj->ij", ham_data.chol, ham_data.chol, optimize="optimal"
-        )
-        mf_r = (1.0j * mf).real
-        v1m = jnp.einsum("g,gik->ik", mf_r, ham_data.chol, optimize="optimal")
-        h1_eff = h1_eff - v0m - v1m
+    h1_eff = _get_h1_eff(ham_data, mf, h0_prop, rdm1)
 
     exp_h1_half = _build_exp_h1_half_from_h1(h1_eff, dt_a)
     chol_flat = ham_data.chol.reshape(ham_data.chol.shape[0], -1).astype(
@@ -232,6 +242,10 @@ def _apply_trotter_g_from_restricted(
 def make_trotter_ops(
     ham_basis: str, walker_kind: str, mixed_precision: bool = False
 ) -> TrotterOps:
+    assert type(ham_basis) == str
+    assert type(walker_kind) == str
+    assert type(mixed_precision) == bool
+
     walker_kind = walker_kind.lower()
 
     if mixed_precision:
@@ -246,31 +260,30 @@ def make_trotter_ops(
             n=ctx.norb,
         )
 
-    if ham_basis == "generalized" and walker_kind != "generalized":
-        raise ValueError("ham_basis='generalized' requires walker_kind='generalized'")
+    if walker_kind not in ("restricted", "unrestricted", "generalized"):
+        raise ValueError(f"unknown walker_kind: {walker_kind}")
 
-    if ham_basis == "restricted":
-        if walker_kind == "restricted":
+    if ham_basis not in ("restricted", "generalized"):
+        raise ValueError(f"unknown ham_basis: {ham_basis}")
+
+    match ham_basis, walker_kind:
+        case "restricted", "restricted":
             apply_trotter = lambda w, f, ctx, n_terms, mv=make_vhs: _apply_trotter_r(
                 w, f, ctx, n_terms, make_vhs=mv
             )
-            return TrotterOps(apply_trotter)
-
-        if walker_kind == "unrestricted":
+        case "restricted", "unrestricted":
             apply_trotter = lambda w, f, ctx, n_terms, mv=make_vhs: _apply_trotter_u(
                 w, f, ctx, n_terms, make_vhs=mv
             )
-            return TrotterOps(apply_trotter)
-
-        if walker_kind == "generalized":
+        case "restricted", "generalized":
             apply_trotter = lambda w, f, ctx, n_terms, mv=make_vhs: _apply_trotter_g_from_restricted(
                 w, f, ctx, n_terms, make_vhs=mv
             )
-            return TrotterOps(apply_trotter)
-        raise ValueError(f"unknown walker_kind: {walker_kind}")
+        case "generalized", "generalized":
+            apply_trotter = lambda w, f, ctx, n_terms, mv=make_vhs: _apply_trotter_r(
+                w, f, ctx, n_terms, make_vhs=mv
+            )
+        case _:
+            raise NotImplementedError(f"Not implemented for ham_basis={ham_basis} and walker_kind={walker_kind}")
 
-    # ham_data.basis == "generalized" (so walker_kind must be generalized):
-    apply_trotter = lambda w, f, ctx, n_terms, mv=make_vhs: _apply_trotter_r(
-        w, f, ctx, n_terms, make_vhs=mv
-    )
     return TrotterOps(apply_trotter)

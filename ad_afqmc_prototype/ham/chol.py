@@ -6,7 +6,7 @@ from typing import Literal
 import jax
 from jax import tree_util
 
-ham_basis = Literal["restricted", "generalized"]
+HamBasis = Literal["restricted", "generalized"]
 
 
 @tree_util.register_pytree_node_class
@@ -27,7 +27,7 @@ class HamChol:
     h0: jax.Array
     h1: jax.Array
     chol: jax.Array
-    basis: ham_basis = "restricted"
+    basis: HamBasis = "restricted"
 
     def __post_init__(self):
         if self.basis not in ("restricted", "generalized"):

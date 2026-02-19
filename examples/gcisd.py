@@ -3,15 +3,19 @@ from pyscf import cc, gto, scf
 from ad_afqmc_prototype.afqmc import AFQMC
 
 mol = gto.M(
-    atom=f"O 0 0 0; H 0 -0.757 0.587; H 0 0.757 0.587",
+    atom="""
+    N        0.0000000000      0.0000000000      0.0000000000
+    H        1.0225900000      0.0000000000      0.0000000000
+    H       -0.2281193615      0.9968208791      0.0000000000
+    """,
     basis="6-31g",
+    spin=1,
     verbose=3,
 )
-mf = scf.RHF(mol)
+mf = scf.GHF(mol).newton()
 mf.kernel()
 
-mycc = cc.CCSD(mf)
-mycc.frozen = 1  # freeze O 1s core
+mycc = cc.GCCSD(mf)
 mycc.kernel()
 et = mycc.ccsd_t()  # for comparison
 print(f"CCSD(T) total energy: {mycc.e_tot + et}")

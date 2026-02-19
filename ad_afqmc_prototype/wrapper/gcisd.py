@@ -7,24 +7,27 @@ from ..ham.chol import HamChol
 from ..prop.afqmc import make_prop_ops
 from ..prop.blocks import block
 from ..prop.types import QmcParams
-from ..prep.pyscf_interface import get_integrals, get_cisd
-from ..trial.cisd import CisdTrial, make_cisd_trial_ops
-from ..meas.cisd import make_cisd_meas_ops
+from ..prep.pyscf_interface import get_integrals, get_gcisd, get_trial_coeff
+from ..trial.gcisd import GcisdTrial, make_gcisd_trial_ops
+from ..meas.gcisd import make_gcisd_meas_ops
 
-class Cisd:
+class Gcisd:
     def __init__(self, cc):
         config.setup_jax()
 
+        mf = cc._scf
         mol = cc.mol
-        h0, h1, chol = get_integrals(cc._scf)
-        ci1, ci2 = get_cisd(cc)
+        h0, h1, chol = get_integrals(mf, 1e-12)
+        ci1, ci2 = get_gcisd(cc)
 
-        sys = System(norb=mol.nao, nelec=mol.nelec, walker_kind="restricted")
-        ham_data = HamChol(h0, h1, chol)
-        self.trial_data = CisdTrial(ci1, ci2)
-        self.trial_ops = make_cisd_trial_ops(sys=sys)
-        self.meas_ops = make_cisd_meas_ops(sys=sys)
-        self.prop_ops = make_prop_ops(ham_data, sys.walker_kind)
+        c = get_trial_coeff(mf)
+
+        sys = System(norb=mol.nao, nelec=mol.nelec, walker_kind="generalized")
+        ham_data = HamChol(h0, h1, chol, basis="generalized")
+        self.trial_data = GcisdTrial(mo_coeff=c, c1=ci1, c2=ci2)
+        self.trial_ops = make_gcisd_trial_ops(sys=sys)
+        self.meas_ops = make_gcisd_meas_ops(sys=sys)
+        self.prop_ops = make_prop_ops(ham_data.basis, sys.walker_kind)
         self.params = QmcParams(
             n_eql_blocks=20, n_blocks=200, seed=np.random.randint(0, int(1e6))
         )

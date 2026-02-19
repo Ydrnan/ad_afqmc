@@ -8,17 +8,7 @@ from ad_afqmc_prototype.ham.chol import HamChol
 from ad_afqmc_prototype.prop.afqmc import afqmc_step
 from ad_afqmc_prototype.prop.chol_afqmc_ops import _build_prop_ctx, make_trotter_ops
 from ad_afqmc_prototype.prop.types import PropState, QmcParams
-
-
-def _make_dummy_trial_ops():
-    def get_rdm1(trial_data):
-        return trial_data["rdm1"]
-
-    def overlap(walker, trial_data):
-        return jnp.asarray(1.0 + 0.0j)
-
-    return TrialOps(overlap=overlap, get_rdm1=get_rdm1)
-
+from ad_afqmc_prototype import testing
 
 def _make_dummy_meas_ops():
     def build_meas_ctx(_ham, _trial):
@@ -56,7 +46,7 @@ def test_weight_update_matches_h0_prop_and_pop_control_update():
         pop_control_damping=0.1,
     )
 
-    trial_ops_ = _make_dummy_trial_ops()
+    trial_ops_ = testing.make_dummy_trial_ops()
     meas_ops = _make_dummy_meas_ops()
     trial_data = {"rdm1": jnp.zeros((norb, norb))}
 
@@ -107,7 +97,7 @@ def test_step_matches_manual_walker_propagation_and_is_chunk_invariant():
     params1 = QmcParams(dt=0.1, n_chunks=1, n_exp_terms=6)
     params2 = QmcParams(dt=0.1, n_chunks=3, n_exp_terms=6)
 
-    trial_ops_ = _make_dummy_trial_ops()
+    trial_ops_ = testing.make_dummy_trial_ops()
     meas_ops = _make_dummy_meas_ops()
     trial_data = {"rdm1": jnp.zeros((norb, norb))}
 

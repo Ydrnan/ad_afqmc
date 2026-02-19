@@ -134,10 +134,6 @@ def run_qmc_energy(
     Returns:
       (mean_energy, stderr, block_energies, block_weights)
     """
-    print("Starting QMC driver...")
-    print(f"Parameters:")
-    pprint(params)
-    print("")
     # build ctx
     prop_ctx = prop_ops.build_prop_ctx(ham_data, trial_ops.get_rdm1(trial_data), params)
     if meas_ctx is None:
@@ -195,7 +191,7 @@ def run_qmc_energy(
         f"{int(state.node_encounters):10d}  "
         f"{0.0:8.1f}"
     )
-    chunk = print_every
+    chunk = print_every if print_every > 0 else 1
     for start in range(0, params.n_eql_blocks, chunk):
         n = min(chunk, params.n_eql_blocks - start)
         state, e_chunk, w_chunk = run_blocks(
@@ -234,7 +230,7 @@ def run_qmc_energy(
             f"{'W':>12s}    {'nodes':>10s}  {'dt[s/bl]':>10s}  {'t[s]':>7s}"
         )
 
-    chunk = print_every
+    chunk = print_every if print_every > 0 else 1
     for start in range(0, params.n_blocks, chunk):
         n = min(chunk, params.n_blocks - start)
         state, e_chunk, w_chunk = run_blocks(
@@ -255,20 +251,20 @@ def run_qmc_energy(
         stats = blocking_analysis_ratio(
             jnp.asarray(block_e_s), jnp.asarray(block_w_s), print_q=False
         )
-        mu = float(stats["mu"])
-        se = float(stats["se_star"])
+        mu = stats["mu"]
+        se = stats["se_star"]
         nodes = int(state.node_encounters)
         print(
             f"[blk {start + n:4d}/{params.n_blocks}]  "
             f"{mu:14.10f}  "
-            f"{se:10.3e}  "
-            f"{float(e_chunk_avg):14.10f}  "
+            f"{(f'{se:10.3e}' if se is not None else ' ' * 10)}  "
+            f"{float(e_chunk_avg):16.10f}  "
             f"{float(w_chunk_avg):12.6e}  "
             f"{nodes:10d}  "
             f"{dt_per_block:9.3f}  "
             f"{elapsed:8.1f}"
         )
-        if se <= target_error and target_error > 0.0:
+        if se is not None and se <= target_error and target_error > 0.0:
             print(f"\nTarget error {target_error:.3e} reached at block {start + n}.")
             break
     block_e_s = jnp.asarray(block_e_s)

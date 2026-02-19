@@ -9,7 +9,7 @@ from jax.sharding import Mesh
 from .. import walkers as wk
 from ..core.ops import MeasOps, TrialOps, k_energy, k_force_bias
 from ..core.system import System
-from ..ham.chol import HamChol
+from ..ham.chol import HamBasis, HamChol
 from ..sharding import shard_prop_state
 from ..walkers import init_walkers
 from .chol_afqmc_ops import CholAfqmcCtx, TrotterOps, _build_prop_ctx, make_trotter_ops
@@ -212,7 +212,6 @@ def afqmc_step(
         e_estimate=state.e_estimate,
         node_encounters=node_encounters_new,
     )
-
 
 
 def make_prop_ops(ham_basis: str, walker_kind: str, mixed_precision=False) -> PropOps:

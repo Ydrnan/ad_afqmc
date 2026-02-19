@@ -4,6 +4,7 @@ import numpy as np
 
 
 def _pick_plateau(Bs, SEs, Gs, *, min_blocks=20, min_rise=0.20, flat_tol=0.03, k=3):
+    assert Bs.size > 0
     Bs, SEs, Gs = map(np.asarray, (Bs, SEs, Gs))
     ok = Gs >= min_blocks
     Bs2, SEs2, Gs2 = Bs[ok], SEs[ok], Gs[ok]
@@ -83,10 +84,29 @@ def blocking_analysis_ratio(
     Bs = np.array(Bs, int)
     SEs = np.array(SEs, float)
     Gs = np.array(Gs, int)
-    B_star, se_star, G_star = _pick_plateau(
-        Bs, SEs, Gs, min_blocks=min_blocks, min_rise=min_rise, flat_tol=flat_tol, k=k
-    )
-    ci95 = (mu_full - 1.96 * se_star, mu_full + 1.96 * se_star)
+    if Bs.size == 0:
+        B_star, se_star, G_star = None, None, None
+    else:
+        B_star, se_star, G_star = _pick_plateau(
+            Bs, SEs, Gs, min_blocks=min_blocks, min_rise=min_rise, flat_tol=flat_tol, k=k
+        )
+        ci95 = (mu_full - 1.96 * se_star, mu_full + 1.96 * se_star)
+
+    if B_star is None:
+        # Blocking analysis not possible
+        out = {
+            "mu": float(mu_full),
+            "block_sizes": None,
+            "se_curve": None,
+            "n_blocks": None,
+            "B_star": None,
+            "se_star": None,
+            "ci95_star": (None, None),
+            "estimator_scale_samples": None,
+            "bias": None,
+            "z_score": None,
+        }
+        return out
 
     mu_loo, mu_bar, G = LOO_cache[B_star]
     est_samples = mu_full + (G - 1) / np.sqrt(G) * (mu_loo - mu_bar)
