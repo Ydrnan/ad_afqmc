@@ -35,6 +35,7 @@ def init_prop_state(
     n_walkers = params.n_walkers
     seed = params.seed
     key = jax.random.PRNGKey(int(seed))
+    # jax.debug.print("key {a}", a=key)
     weights = jnp.ones((n_walkers,))
 
     if initial_walkers is None:
@@ -45,6 +46,7 @@ def init_prop_state(
     overlaps = wk.vmap_chunked(
         meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
     )(initial_walkers, trial_data)
+#    jax.debug.print("Initial overlaps {a}", a=overlaps)
 
     e_est = None
     if initial_e_estimate is not None:
@@ -58,7 +60,10 @@ def init_prop_state(
                 walker_0, ham_data, meas_ctx, trial_data
             )
         )
+#        jax.debug.print("Initial energy estimate from walkers: {a}", a=e_samples)
         e_est = jnp.mean(e_samples)
+#        jax.debug.print("Initial energy estimate: {a}", a=e_est)
+        #jax.debug.print("Initial energy estimate from params: {}", ham_data.chol)
 
     pop_shift = e_est
 
@@ -75,6 +80,70 @@ def init_prop_state(
     )
     return shard_prop_state(state, mesh)
 
+
+def fp_init_prop_state(
+    *,
+    sys: System,
+    ham_data: HamChol,
+    trial_ops: TrialOps,
+    trial_data: Any,
+    meas_ops: MeasOps,
+    params: QmcParams,
+    initial_walkers: Any | None = None,
+    initial_e_estimate: jax.Array | None = None,
+    rdm1: jax.Array | None = None,
+    mesh: Mesh | None = None,
+) -> PropState:
+    """
+    Initialize AFQMC propagation state.
+    """
+    n_walkers = params.n_walkers
+    seed = params.seed
+    key = seed
+    # jax.debug.print("key in fp {a}", a=key)
+    weights = jnp.ones((n_walkers,))
+
+    if initial_walkers is None:
+        if rdm1 is None:
+            rdm1 = trial_ops.get_rdm1(trial_data)
+        initial_walkers = init_walkers(sys=sys, rdm1=rdm1, n_walkers=n_walkers)
+
+    overlaps = wk.vmap_chunked(
+        meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
+    )(initial_walkers, trial_data)
+#    jax.debug.print("Initial overlaps {a}", a=overlaps)
+
+    e_est = None
+    if initial_e_estimate is not None:
+        e_est = jnp.asarray(initial_e_estimate)
+    else:
+        meas_ctx = meas_ops.build_meas_ctx(ham_data, trial_data)
+        e_kernel = meas_ops.require_kernel(k_energy)
+        walker_0 = wk.take_walkers(initial_walkers, jnp.array([0]))
+        e_samples = jnp.real(
+            wk.vmap_chunked(e_kernel, n_chunks=1, in_axes=(0, None, None, None))(
+                walker_0, ham_data, meas_ctx, trial_data
+            )
+        )
+#        jax.debug.print("Initial energy estimate from walkers: {a}", a=e_samples)
+        e_est = jnp.mean(e_samples)
+#        jax.debug.print("Initial energy estimate: {a}", a=e_est)
+        #jax.debug.print("Initial energy estimate from params: {}", ham_data.chol)
+
+    pop_shift = e_est
+
+    node_encounters = jnp.asarray(0)
+
+    state = PropState(
+        walkers=initial_walkers,
+        weights=weights,
+        overlaps=overlaps,
+        rng_key=key,
+        pop_control_ene_shift=pop_shift,
+        e_estimate=e_est,
+        node_encounters=node_encounters,
+    )
+    return shard_prop_state(state, mesh)
 
 def afqmc_step(
     state: PropState,
@@ -145,11 +214,12 @@ def afqmc_step(
     )
 
 
+
 def make_prop_ops(ham_basis: str, walker_kind: str, mixed_precision=False) -> PropOps:
     trotter_ops = make_trotter_ops(
         ham_basis, walker_kind, mixed_precision=mixed_precision
     )
-
+        
     def step(
         state: PropState,
         *,
@@ -183,5 +253,5 @@ def make_prop_ops(ham_basis: str, walker_kind: str, mixed_precision=False) -> Pr
         )
 
     return PropOps(
-        init_prop_state=init_prop_state, build_prop_ctx=build_prop_ctx, step=step
+            init_prop_state=init_prop_state, build_prop_ctx=build_prop_ctx, step=step
     )

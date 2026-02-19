@@ -12,3 +12,4 @@ mf.kernel()
 
 afqmc = Rhf(mf)
 mean, err, block_e_all, block_w_all = afqmc.kernel()
+

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, NamedTuple, Tuple
+from typing import Any, Callable, NamedTuple, Tuple, Optional
 
 import jax
 import jax.numpy as jnp
@@ -9,6 +9,8 @@ from jax import lax, tree_util
 
 from ..ham.chol import HamChol
 from .utils import taylor_expm_action
+
+from ..core.system import System
 
 # contains low level details of AFQMC chol propagation
 
@@ -38,6 +40,7 @@ class CholAfqmcCtx:
     def tree_unflatten(cls, aux, children):
         dt, sqrt_dt, exp_h1_half, mf_shifts, h0_prop, chol_flat = children
         (norb,) = aux
+        
         return cls(
             dt=dt,
             sqrt_dt=sqrt_dt,
@@ -89,6 +92,7 @@ def _build_prop_ctx(
     sqrt_dt = jnp.sqrt(dt_a)
 
     mf = _mf_shifts(ham_data, rdm1)
+    print("cholesky flat precision",chol_flat_precision)
     h0_prop = -ham_data.h0 - 0.5 * jnp.sum(mf**2)
 
     h1_eff = ham_data.h1
@@ -115,7 +119,6 @@ def _build_prop_ctx(
         chol_flat=chol_flat,
         norb=norb,
     )
-
 
 def _apply_one_body_half_array(w: jax.Array, prop_ctx: CholAfqmcCtx) -> jax.Array:
     return prop_ctx.exp_h1_half @ w
