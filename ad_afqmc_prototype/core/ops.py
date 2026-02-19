@@ -118,6 +118,8 @@ class MeasKernel(Protocol):
 # usual kernel names
 k_energy = "energy"
 k_force_bias = "force_bias"
+o_rdm1 = "rdm1"
+o_density_corr = "density_corr"
 
 
 @dataclass(frozen=True)
@@ -137,7 +139,7 @@ class MeasOps:
     # algorithm kernels (e.g. "energy", "force_bias")
     kernels: Mapping[str, MeasKernel] = field(default_factory=dict)
 
-    # optional observables (e.g. "mixed_rdm1", "nn_corr", ...)
+    # optional observables (e.g. "rdm1", "density_corr", ...)
     observables: Mapping[str, MeasKernel] = field(default_factory=dict)
 
     def has_kernel(self, name: str) -> bool:
