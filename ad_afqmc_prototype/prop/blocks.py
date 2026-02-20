@@ -100,6 +100,17 @@ def block(
         e_estimate=(1.0 - alpha) * state.e_estimate + alpha * e_block
     )
 
+    obs_samples: dict[str, jax.Array] = {}
+    for name in observable_names:
+        kernel = meas_ops.require_observable(name)
+        samples = wk.vmap_chunked(
+            kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None)
+        )(state.walkers, ham_data, meas_ctx, trial_data)
+        w_shape = (weights.shape[0],) + (1,) * max(samples.ndim - 1, 0)
+        num = jnp.sum(weights.reshape(w_shape) * samples, axis=0)
+        zero = jnp.zeros_like(num)
+        obs_samples[name] = jnp.where(w_sum == 0, zero, num / w_sum_safe)
+
     key, subkey = jax.random.split(state.rng_key)
     zeta = jax.random.uniform(subkey)
     w_sr, weights_sr = sr_fn(state.walkers, state.weights, zeta, sys.walker_kind)
@@ -112,17 +123,6 @@ def block(
         overlaps=overlaps_sr,
         rng_key=key,
     )
-
-    obs_samples: dict[str, jax.Array] = {}
-    for name in observable_names:
-        kernel = meas_ops.require_observable(name)
-        samples = wk.vmap_chunked(
-            kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None)
-        )(state.walkers, ham_data, meas_ctx, trial_data)
-        w_shape = (weights.shape[0],) + (1,) * max(samples.ndim - 1, 0)
-        num = jnp.sum(weights.reshape(w_shape) * samples, axis=0)
-        zero = jnp.zeros_like(num)
-        obs_samples[name] = jnp.where(w_sum == 0, zero, num / w_sum_safe)
 
     obs = BlockObs(
         scalars={"energy": e_block, "weight": w_sum},
