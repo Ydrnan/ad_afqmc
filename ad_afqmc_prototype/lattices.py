@@ -172,6 +172,18 @@ class OneDimensionalChain(Lattice):
                 h[nr, r] = 1
         return h
 
+    def build_pg_ops(self, parity=1.0):
+        """
+        Build symmetry operations for the 1D chain, identity and reflection.
+        """
+        n_sites = self.n_sites
+        E = np.eye(n_sites, dtype=float)
+        perm_c2 = np.arange(n_sites - 1, -1, -1)
+        U_c2 = E[:, perm_c2]
+        pg_ops = [E, U_c2]
+        pg_chars = [1.0, parity]
+        return pg_ops, pg_chars
+
     def __hash__(self):
         return hash((self.n_sites, self.shape, self.sites, self.bonds))
 
