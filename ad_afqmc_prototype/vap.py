@@ -833,7 +833,7 @@ def _accumulate_weighted(kets, coeffs, property_fn, n_chunks=1):
 
         overlaps_col, values_col = jax.vmap(col_fn)(kets)
         w = coeffs.conj() * c_j * overlaps_col
-        return jnp.dot(w, values_col), jnp.sum(w)
+        return jnp.einsum("i,i...->...", w, values_col), jnp.sum(w)
 
     def f(x):
         return row_contribution(x[0], x[1])
