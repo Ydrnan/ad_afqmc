@@ -10,6 +10,8 @@ import numpy as np
 import optax
 from jax import tree_util
 
+from .walkers import vmap_chunked
+
 print = partial(print, flush=True)
 
 
@@ -828,6 +830,7 @@ def _evaluate_projected_property(
     psi: jnp.ndarray,
     projectors: tuple[projector, ...],
     property_fn: callable,
+    n_chunks: int = 1,
 ) -> jnp.ndarray:
     """
     Generic evaluation of projected observables using weighted sums over
@@ -838,12 +841,13 @@ def _evaluate_projected_property(
     def calc_overlap(bra, ket):
         return jnp.linalg.det(bra.T.conj() @ ket)
 
-    overlaps = jax.vmap(lambda ket: jax.vmap(lambda bra: calc_overlap(bra, ket))(kets))(
-        kets
-    )
-    values = jax.vmap(lambda ket: jax.vmap(lambda bra: property_fn(bra, ket))(kets))(
-        kets
-    )
+    overlaps = vmap_chunked(
+        lambda ket: jax.vmap(lambda bra: calc_overlap(bra, ket))(kets),
+        n_chunks=n_chunks,
+    )(kets)
+    values = vmap_chunked(
+        lambda ket: jax.vmap(lambda bra: property_fn(bra, ket))(kets), n_chunks=n_chunks
+    )(kets)
     weights = coeffs.conj()[:, None] * coeffs[None, :] * overlaps
     value_num = jnp.tensordot(weights, values, axes=([0, 1], [0, 1]))
     value_denom = jnp.sum(weights)
@@ -853,6 +857,7 @@ def _evaluate_projected_property(
 def calculate_projected_1rdm(
     psi: jnp.ndarray,
     projectors: tuple[projector, ...],
+    n_chunks: int = 1,
 ) -> np.ndarray:
     """
     Calculate the projected one-body reduced density matrix (1RDM)
@@ -868,7 +873,9 @@ def calculate_projected_1rdm(
 
     @jax.jit
     def rdm1_function(psi_var: jnp.ndarray) -> jnp.ndarray:
-        return _evaluate_projected_property(psi_var, projectors, _mixed_green)
+        return _evaluate_projected_property(
+            psi_var, projectors, _mixed_green, n_chunks=n_chunks
+        )
 
     rdm1 = rdm1_function(psi)
     return np.array(rdm1)
@@ -877,6 +884,7 @@ def calculate_projected_1rdm(
 def calculate_projected_density_correlations(
     psi: jnp.ndarray,
     projectors: tuple[projector, ...],
+    n_chunks: int = 1,
 ) -> np.ndarray:
     """
     Calculate the projected density-density correlation matrix
@@ -902,7 +910,9 @@ def calculate_projected_density_correlations(
             )
             return density_corr
 
-        return _evaluate_projected_property(psi_var, projectors, calc_density_corr)
+        return _evaluate_projected_property(
+            psi_var, projectors, calc_density_corr, n_chunks=n_chunks
+        )
 
     density_corr = density_corr_function(psi)
     return np.array(density_corr)
@@ -956,38 +966,38 @@ def _SdotS_from_G(G):
     return _SzSz_from_G(G) + 0.5 * (_SpSm_from_G(G) + _SmSp_from_G(G))
 
 
-def calculate_projected_sz_correlations(psi, projectors):
+def calculate_projected_sz_correlations(psi, projectors, n_chunks=1):
     @jax.jit
     def evaluate():
         def prop_fn(bra, ket):
             return _SzSz_from_G(_mixed_green(bra, ket))
 
-        return _evaluate_projected_property(psi, projectors, prop_fn)
+        return _evaluate_projected_property(psi, projectors, prop_fn, n_chunks=n_chunks)
 
     corr = evaluate()
     return np.array(corr)
 
 
-def calculate_projected_s_correlations(psi, projectors):
+def calculate_projected_s_correlations(psi, projectors, n_chunks=1):
     @jax.jit
     def evaluate():
         def prop_fn(bra, ket):
             return _SdotS_from_G(_mixed_green(bra, ket))
 
-        return _evaluate_projected_property(psi, projectors, prop_fn)
+        return _evaluate_projected_property(psi, projectors, prop_fn, n_chunks=n_chunks)
 
     corr = evaluate()
     return np.array(corr)
 
 
-def calculate_projected_s2(psi, projectors):
+def calculate_projected_s2(psi, projectors, n_chunks=1):
     @jax.jit
     def evaluate():
         def prop_fn(bra, ket):
             G = _mixed_green(bra, ket)
             return jnp.sum(_SdotS_from_G(G))
 
-        return _evaluate_projected_property(psi, projectors, prop_fn)
+        return _evaluate_projected_property(psi, projectors, prop_fn, n_chunks=n_chunks)
 
     s2 = evaluate()
     return float(s2)
