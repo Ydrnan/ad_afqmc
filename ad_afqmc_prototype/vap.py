@@ -825,35 +825,35 @@ def optimize(
 
 
 def _accumulate_weighted(kets, coeffs, property_fn, n_chunks=1):
-    def row_contribution(ket_j, c_j):
-        def col_fn(bra_i):
-            o = jnp.linalg.det(bra_i.T.conj() @ ket_j)
-            v = property_fn(bra_i, ket_j)
-            return o, v
-
-        overlaps_col, values_col = jax.vmap(col_fn)(kets)
-        w = coeffs.conj() * c_j * overlaps_col
-        return jnp.einsum("i,i...->...", w, values_col), jnp.sum(w)
-
-    def f(x):
-        return row_contribution(x[0], x[1])
-
     N = kets.shape[0]
     batch_size = (N + n_chunks - 1) // n_chunks
-    nums, denoms = lax.map(f, (kets, coeffs), batch_size=batch_size)
+
+    def row_contribution(ket_j, c_j):
+        def col_fn(bra_i, c_i):
+            o = jnp.linalg.det(bra_i.T.conj() @ ket_j)
+            v = property_fn(bra_i, ket_j)
+            w = c_j.conj() * c_i * o
+            return w * v, w
+
+        def inner_f(x):
+            return col_fn(x[0], x[1])
+
+        w_vals, ws = lax.map(inner_f, (kets, coeffs), batch_size=batch_size)
+        return jnp.sum(w_vals, axis=0), jnp.sum(ws)
+
+    def outer_f(x):
+        return row_contribution(x[0], x[1])
+
+    nums, denoms = lax.map(outer_f, (kets, coeffs), batch_size=batch_size)
     return (jnp.sum(nums, axis=0) / jnp.sum(denoms)).real
 
 
 def _evaluate_projected_property(
     psi: jnp.ndarray,
-    projectors: tuple[projector, ...],
+    projectors: tuple,
     property_fn: callable,
     n_chunks: int = 1,
 ) -> jnp.ndarray:
-    """
-    Generic evaluation of projected observables using weighted sums over
-    projector-generated determinants.
-    """
     kets, coeffs = _apply_projector_sequence(psi, projectors)
     return _accumulate_weighted(kets, coeffs, property_fn, n_chunks=n_chunks)
 
