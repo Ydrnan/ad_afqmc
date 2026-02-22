@@ -841,7 +841,7 @@ def _accumulate_weighted(kets, coeffs, property_fn, n_chunks=1):
     N = kets.shape[0]
     batch_size = (N + n_chunks - 1) // n_chunks
     nums, denoms = lax.map(f, (kets, coeffs), batch_size=batch_size)
-    return (jnp.sum(nums) / jnp.sum(denoms)).real
+    return (jnp.sum(nums, axis=0) / jnp.sum(denoms)).real
 
 
 def _evaluate_projected_property(
