@@ -8,9 +8,7 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 import numpy as np
 import optax
-from jax import tree_util
-
-from .walkers import vmap_chunked
+from jax import lax, tree_util
 
 print = partial(print, flush=True)
 
@@ -826,6 +824,26 @@ def optimize(
     return float(energy), psi_opt_np
 
 
+def _accumulate_weighted(kets, coeffs, property_fn, n_chunks=1):
+    def row_contribution(ket_j, c_j):
+        def col_fn(bra_i):
+            o = jnp.linalg.det(bra_i.T.conj() @ ket_j)
+            v = property_fn(bra_i, ket_j)
+            return o, v
+
+        overlaps_col, values_col = jax.vmap(col_fn)(kets)
+        w = coeffs.conj() * c_j * overlaps_col
+        return jnp.dot(w, values_col), jnp.sum(w)
+
+    def f(x):
+        return row_contribution(x[0], x[1])
+
+    N = kets.shape[0]
+    batch_size = (N + n_chunks - 1) // n_chunks
+    nums, denoms = lax.map(f, (kets, coeffs), batch_size=batch_size)
+    return (jnp.sum(nums) / jnp.sum(denoms)).real
+
+
 def _evaluate_projected_property(
     psi: jnp.ndarray,
     projectors: tuple[projector, ...],
@@ -837,21 +855,7 @@ def _evaluate_projected_property(
     projector-generated determinants.
     """
     kets, coeffs = _apply_projector_sequence(psi, projectors)
-
-    def calc_overlap(bra, ket):
-        return jnp.linalg.det(bra.T.conj() @ ket)
-
-    overlaps = vmap_chunked(
-        lambda ket: jax.vmap(lambda bra: calc_overlap(bra, ket))(kets),
-        n_chunks=n_chunks,
-    )(kets)
-    values = vmap_chunked(
-        lambda ket: jax.vmap(lambda bra: property_fn(bra, ket))(kets), n_chunks=n_chunks
-    )(kets)
-    weights = coeffs.conj()[:, None] * coeffs[None, :] * overlaps
-    value_num = jnp.tensordot(weights, values, axes=([0, 1], [0, 1]))
-    value_denom = jnp.sum(weights)
-    return (value_num / value_denom).real
+    return _accumulate_weighted(kets, coeffs, property_fn, n_chunks=n_chunks)
 
 
 def calculate_projected_1rdm(
