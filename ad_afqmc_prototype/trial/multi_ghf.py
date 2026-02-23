@@ -406,10 +406,10 @@ def _build_pg_s2_expansion(
 
 
 def _apply_k_projection(
-    mo_coeffs: jax.Array, ci_coeffs: jax.Array
+    mo_coeffs: jax.Array, ci_coeffs: jax.Array, parity: int = 1
 ) -> tuple[jax.Array, jax.Array]:
     mo_all = jnp.concatenate([mo_coeffs, jnp.conj(mo_coeffs)], axis=0)
-    ci_all = jnp.concatenate([ci_coeffs, jnp.conj(ci_coeffs)], axis=0)
+    ci_all = jnp.concatenate([ci_coeffs, parity * jnp.conj(ci_coeffs)], axis=0)
     return mo_all, ci_all
 
 
@@ -447,6 +447,7 @@ def build_multi_ghf_expansion(
     n_beta: int | None = None,
     auto_grid: bool = False,
     k_projection: bool = False,
+    k_parity: int = 1,
     # optional convergence selection
     ham_data: Any | None = None,
     rdm1: jax.Array | None = None,
@@ -514,7 +515,9 @@ def build_multi_ghf_expansion(
                 mo_pg, ci_pg, a, b, norb=norb
             )
             if k_projection:
-                mo_coeffs_tmp, ci_tmp = _apply_k_projection(mo_coeffs_tmp, ci_tmp)
+                mo_coeffs_tmp, ci_tmp = _apply_k_projection(
+                    mo_coeffs_tmp, ci_tmp, parity=k_parity
+                )
 
             E = energy_fn((wu, wd), ham_data, mo_coeffs_tmp, ci_tmp)
             Es.append(float(E))
@@ -550,7 +553,9 @@ def build_multi_ghf_expansion(
 
     # k projection
     if k_projection:
-        mo_coeffs, ci_coeffs = _apply_k_projection(mo_coeffs, ci_coeffs)
+        mo_coeffs, ci_coeffs = _apply_k_projection(
+            mo_coeffs, ci_coeffs, parity=k_parity
+        )
 
     print(f"Final multi-GHF expansion: {ci_coeffs.shape[0]} determinants.")
 
