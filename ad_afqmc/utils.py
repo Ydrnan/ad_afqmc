@@ -11,7 +11,7 @@ import numpy as np
 import scipy
 from numpy.polynomial.legendre import leggauss
 from jax import numpy as jnp
-from pyscf import __config__, ao2mo, df, dft, lib, mcscf, scf
+from pyscf import __config__, ao2mo, df, dft, lib, mcscf, scf, fci
 from pyscf.cc.ccsd import CCSD
 from pyscf.cc.uccsd import UCCSD
 
@@ -741,6 +741,79 @@ def get_excitations(
     ref_det = np.array([d0a, d0b])
     return Acre, Ades, Bcre, Bdes, coeff, ref_det
 
+def get_full_casci_state(casci, ndet=None, tol=1e-4, root=0, verbose=False):
+    mol = casci.mol
+    nbsf = casci.mo_coeff.shape[0]
+    ncore = casci.ncore
+    ncas = casci.ncas
+    nextern = nbsf - ncore - ncas
+    nelecas = casci.nelecas
+    
+    # Dummy FCI object for `get_fci_state`.
+    ci = fci.FCI(mol)
+    ci.ci = casci.ci
+    #if isinstance(casci.ci, list): ci.ci = casci.ci[root]
+    ci.norb = ncas
+    ci.nelec = nelecas
+    casci_state = get_fci_state(ci, ndets=ndet, tol=tol, root=root)
+
+    if verbose: 
+        print(f'\n# Note that determinant coefficients may be unnormalized!\n')
+
+    full_state = {}
+
+    for det in casci_state:
+        nocc_a = ncore*(1,) + det[0] + nextern*(0,)
+        nocc_b = ncore*(1,) + det[1] + nextern*(0,)
+        coeff = casci_state[det]
+        if verbose: print(f'# {det} --> {nocc_a}, {nocc_b} : {coeff}')
+        full_state[(nocc_a, nocc_b)] = coeff
+    
+    return full_state
+
+def get_msd_trial_from_casci(
+    casci, _wave_data, casci_state=None, ndet=None, tol=1e-4, root=0, 
+    update=False, verbose=False
+):
+    # Create MSD state.
+    mo_coeff = casci.mo_coeff
+
+    if casci_state is None: 
+        casci_state = get_full_casci_state(
+            casci, ndet=ndet, tol=tol, root=root, verbose=verbose
+        )
+
+    else: ndet = len(casci_state)
+    wave_data_arr = []
+    coeffs = []
+
+    for det in casci_state:
+        nocc_a, nocc_b = np.array(det)
+        wave_data_i = _wave_data.copy()
+        wave_data_i['mo_coeff'] = [mo_coeff[:, nocc_a>0], mo_coeff[:, nocc_b>0]]
+        del wave_data_i['rdm1']
+        wave_data_arr.append(wave_data_i)
+        coeffs.append(casci_state[det])
+
+    wave_data = _wave_data.copy()
+    for i in range(ndet): wave_data[f'{i}'] = wave_data_arr[i]
+
+    # Check if coeffs are normalized.
+    coeffs = np.array(coeffs)
+    norm = np.sqrt(np.sum(coeffs**2))
+    try: np.testing.assert_allclose(norm, 1.)
+    except: coeffs /= norm
+    wave_data['coeffs'] = np.array(coeffs)
+
+    # Used to initialize initial walkers.
+    if update:
+        mo_coeff = wave_data['0']['mo_coeff'].copy()
+        rdm1 = [mo_coeff[0] @ mo_coeff[0].T.conj(), mo_coeff[1] @ mo_coeff[1].T.conj()]
+        wave_data['mo_coeff'] = mo_coeff
+        wave_data['rdm1'] = rdm1
+
+    if verbose: print(wave_data['coeffs'])
+    return wave_data
 
 # a_i^dag a_j
 def ci_parity(det, i, j):
@@ -969,17 +1042,33 @@ def compute_cholesky_integrals(mol, mf, basis_coeff, integrals, norb_frozen, cho
         eri = integrals["h2"]
         nelec = mol.nelec
         nbasis = h1e.shape[-1]
-        norb = nbasis
+        if isinstance(mf, scf.ghf.GHF):
+            norb = nbasis // 2
+        else:
+            norb = nbasis
         eri = ao2mo.restore(4, eri, norb)
         chol0 = modified_cholesky(eri, chol_cut)
         nchol = chol0.shape[0]
-        chol = np.zeros((nchol, norb, norb))
-        for i in range(nchol):
-            for m in range(norb):
-                for n in range(m + 1):
-                    triind = m * (m + 1) // 2 + n
-                    chol[i, m, n] = chol0[i, triind]
-                    chol[i, n, m] = chol0[i, triind]
+
+        if isinstance(mf, scf.ghf.GHF):
+            chol = np.zeros((nchol, 2*norb, 2*norb))
+            for i in range(nchol):
+                chol_i = np.zeros((norb, norb))
+                for m in range(norb):
+                    for n in range(m + 1):
+                        triind = m * (m + 1) // 2 + n
+                        chol_i[m, n] = chol0[i, triind]
+                        chol_i[n, m] = chol0[i, triind]
+                chol[i] = scipy.linalg.block_diag(chol_i, chol_i)
+
+        else:
+            chol = np.zeros((nchol, norb, norb))
+            for i in range(nchol):
+                for m in range(norb):
+                    for n in range(m + 1):
+                        triind = m * (m + 1) // 2 + n
+                        chol[i, m, n] = chol0[i, triind]
+                        chol[i, n, m] = chol0[i, triind]
 
         # basis transformation
         h1e = basis_coeff.T @ h1e @ basis_coeff
@@ -1016,22 +1105,29 @@ def compute_cholesky_integrals(mol, mf, basis_coeff, integrals, norb_frozen, cho
 
 def get_trial_coeffs(mol, mf, basis_coeff, nbasis, norb_frozen):
     assert basis_coeff.dtype == "float", "Only implemented for real-valued MOs"
-    trial_coeffs = np.empty((2, nbasis, nbasis))
     overlap = mf.get_ovlp(mol)
+    trial_coeffs = np.empty((2, nbasis, nbasis))
     if isinstance(mf, (scf.rohf.ROHF, scf.rhf.RHF)):
         uhfCoeffs = construct_uhf_coeffs_from_rhf(
             basis_coeff, mf.mo_coeff, overlap, norb_frozen, nbasis
         )
+        trial_coeffs[0] = uhfCoeffs[:, :nbasis]
+        trial_coeffs[1] = uhfCoeffs[:, nbasis:]
     elif isinstance(mf, scf.uhf.UHF):
         uhfCoeffs = construct_uhf_coeffs_from_uhf(
             basis_coeff, mf.mo_coeff, overlap, norb_frozen, nbasis
         )
+        trial_coeffs[0] = uhfCoeffs[:, :nbasis]
+        trial_coeffs[1] = uhfCoeffs[:, nbasis:]
+    elif isinstance(mf, scf.ghf.GHF):
+        ghfCoeffs = construct_ghf_coeffs_from_ghf(
+            basis_coeff, mf.mo_coeff, overlap, norb_frozen, nbasis
+        )
+        trial_coeffs = ghfCoeffs
     else:
         print("Cannot recognize type for mf object in write_trial")
         exit(1)
 
-    trial_coeffs[0] = uhfCoeffs[:, :nbasis]
-    trial_coeffs[1] = uhfCoeffs[:, nbasis:]
     return trial_coeffs
 
 
@@ -1081,6 +1177,21 @@ def construct_uhf_coeffs_from_rhf(basis_coeff, mo_coeff, overlap, norb_frozen, n
     return uhfCoeffs
 
 
+def construct_ghf_coeffs_from_ghf(basis_coeff, mo_coeff, overlap, norb_frozen, nbasis):
+    # Constructs GHF orbital coefficients relative to the
+    # spinless basis
+    ghfCoeffs = np.empty((2*nbasis, 2*nbasis))
+
+    q, r = np.linalg.qr(
+        basis_coeff[:, norb_frozen:].T.dot(overlap).dot(mo_coeff[:, norb_frozen:])
+    )
+    sgn = np.sign(r.diagonal())
+    q = np.einsum("ij,j->ij", q, sgn)
+    ghfCoeffs = q
+
+    return ghfCoeffs
+
+
 def prep_afqmc_ghf_complex(mol, gmf: scf.ghf.GHF, tmpdir, chol_cut=1e-5):
     import scipy.linalg as la
 
@@ -1127,7 +1238,8 @@ def prep_afqmc_ghf_complex(mol, gmf: scf.ghf.GHF, tmpdir, chol_cut=1e-5):
     q, r = np.linalg.qr(mo_coeff.T.conj() @ ovlp @ mo_coeff)
     sgn = np.sign(r.diagonal())
     q = np.einsum("ij,j->ij", q, sgn)
-    np.savez(tmpdir + "/mo_coeff.npz", mo_coeff=[q, q])
+    #np.savez(tmpdir + "/mo_coeff.npz", mo_coeff=[q, q])
+    np.savez(tmpdir + "/mo_coeff.npz", mo_coeff=q)
 
     return h, h_mod, chol
 
@@ -1241,7 +1353,7 @@ def read_fcidump(tmp_dir: str = ".") -> Tuple:
             h0: Core energy
             h1: One-body Hamiltonian matrix
             chol: Cholesky vectors
-            norb: Number of molecular orbitals
+            nbasis: Number of molecular orbitals
             nelec_sp: Tuple of electrons per spin (alpha, beta)
     """
     directory = tmp_dir
@@ -1250,21 +1362,21 @@ def read_fcidump(tmp_dir: str = ".") -> Tuple:
         directory + "/FCIDUMP_chol"
     ), f"File '{directory}/FCIDUMP_chol' does not exist."
     with h5py.File(directory + "/FCIDUMP_chol", "r") as fh5:
-        [nelec, norb, ms, nchol] = fh5["header"]
+        [nelec, nbasis, ms, nchol] = fh5["header"]
         h0 = jnp.array(fh5.get("energy_core"))
-        h1 = jnp.array(fh5.get("hcore")).reshape(norb, norb)
-        h1_mod = jnp.array(fh5.get("hcore_mod")).reshape(norb, norb)
-        chol = jnp.array(fh5.get("chol")).reshape(-1, norb, norb)
+        h1 = jnp.array(fh5.get("hcore")).reshape(nbasis, nbasis)
+        h1_mod = jnp.array(fh5.get("hcore_mod")).reshape(nbasis, nbasis)
+        chol = jnp.array(fh5.get("chol")).reshape(-1, nbasis, nbasis)
 
     assert type(ms) is np.int64
     assert type(nelec) is np.int64
-    assert type(norb) is np.int64
-    ms, nelec, norb = int(ms), int(nelec), int(norb)
+    assert type(nbasis) is np.int64
+    ms, nelec, nbasis = int(ms), int(nelec), int(nbasis)
 
     # Calculate electrons per spin channel
     nelec_sp = ((nelec + abs(ms)) // 2, (nelec - abs(ms)) // 2)
 
-    return h0, h1, h1_mod, chol, norb, nelec_sp
+    return h0, h1, h1_mod, chol, nbasis, nelec_sp
 
 
 def read_options(options: Optional[Dict] = None, tmp_dir: str = ".") -> Dict:
@@ -1323,6 +1435,8 @@ def get_options(options: Dict):
         options["walker_type"] = "restricted"
     elif options["walker_type"] == "uhf":
         options["walker_type"] = "unrestricted"
+    elif options["walker_type"] == "ghf":
+        options["walker_type"] = "generalized"
     assert options["walker_type"] in ["restricted", "unrestricted", "generalized"]
 
     options["symmetry"] = options.get("symmetry", False)
@@ -1335,6 +1449,7 @@ def get_options(options: Dict):
         "noci",
         "cisd",
         "ucisd",
+        "ghf",
         "ghf_complex",
         "gcisd_complex",
         "UCISD",
@@ -1411,13 +1526,22 @@ def set_ham(
             ham_data: Dictionary of Hamiltonian data
     """
     ham = hamiltonian.hamiltonian(norb)
+    nbasis = h1.shape[-1]
     nchol = chol.shape[0]
-    ham_data = {
-        "h0": h0,
-        "h1": jnp.array([h1, h1]),  # Replicate for up/down spins
-        "chol": chol.reshape(nchol, -1),
-        "ene0": ene0,
-    }
+    if nbasis == 2*norb: # GHF-type
+        ham_data = {
+            "h0": h0,
+            "h1": h1,
+            "chol": chol.reshape(nchol, -1),
+            "ene0": ene0,
+        }
+    else:
+        ham_data = {
+            "h0": h0,
+            "h1": jnp.array([h1, h1]),  # Replicate for up/down spins
+            "chol": chol.reshape(nchol, -1),
+            "ene0": ene0,
+        }
     return ham, ham_data
 
 
@@ -1445,6 +1569,7 @@ def set_1rdm(
     nelec_sp,
     mo_coeff,
     options_trial,
+    options_walker,
     directory,
     ):
     # Try to read RDM1 from file
@@ -1455,15 +1580,21 @@ def set_1rdm(
         print(f"# Read RDM1 from disk")
     except:
         # Construct RDM1 from mo_coeff if file not found
-        if options_trial in ["ghf_complex", "gcisd_complex"]:
-            wave_data["rdm1"] = jnp.array(
-                [
-                    mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
-                    @ mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]].T.conj(),
-                    mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
-                    @ mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]].T.conj(),
-                ]
-            )
+        if options_trial in ["ghf", "ghf_complex", "gcisd_complex"]:
+            if options_walker == "generalized":
+                wave_data["rdm1"] = jnp.array(
+                        mo_coeff[:, : nelec_sp[0] + nelec_sp[1]]
+                        @ mo_coeff[:, : nelec_sp[0] + nelec_sp[1]].T.conj()
+                )
+            else:
+                wave_data["rdm1"] = jnp.array(
+                    [
+                        mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
+                        @ mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]].T.conj(),
+                        mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
+                        @ mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]].T.conj(),
+                    ]
+                )
         else:
             wave_data["rdm1"] = jnp.array(
                 [
@@ -1557,14 +1688,17 @@ def set_trial(prep) -> Tuple[Any, Dict]:
     mo_coeff = prep.mo_basis.trial_coeff
     options = prep.options
     options_trial = prep.options["trial"]
-    if hasattr(prep.tmp, "trial"): # Dirty
+    options_walker = prep.options["walker_type"]
+    if hasattr(prep.tmp, "trial") and (prep.options["trial_ket"] is not None): # Dirty
          options_trial = prep.options["trial_ket"]
     if hasattr(prep.tmp, "amplitudes"):
         amplitudes = prep.tmp.amplitudes
     directory = prep.path.tmpdir
 
     wave_data = {}
-    wave_data = set_1rdm(wave_data, norb, nelec_sp, mo_coeff, options_trial, directory)
+    wave_data = set_1rdm(
+        wave_data, norb, nelec_sp, mo_coeff, options_trial, options_walker, directory
+    )
 
     if options.get("symmetry_projector", None) is not None:
         wave_data = set_symmetry_projector(wave_data, nelec_sp, options)
@@ -1764,7 +1898,7 @@ def set_trial(prep) -> Tuple[Any, Dict]:
             n_chunks=options["n_chunks"],
             projector=options["symmetry_projector"],
         )
-        wave_data["mo_coeff"] = mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
+        wave_data["mo_coeff"] = mo_coeff[:, : nelec_sp[0] + nelec_sp[1]]
 
     elif options_trial == "ghf_complex":
         trial = wavefunctions.ghf_complex(
@@ -1773,7 +1907,7 @@ def set_trial(prep) -> Tuple[Any, Dict]:
             n_chunks=options["n_chunks"],
             projector=options["symmetry_projector"],
         )
-        wave_data["mo_coeff"] = mo_coeff[0][:, : nelec_sp[0] + nelec_sp[1]]
+        wave_data["mo_coeff"] = mo_coeff[:, : nelec_sp[0] + nelec_sp[1]]
 
     elif options_trial == "gcisd_complex":
 
