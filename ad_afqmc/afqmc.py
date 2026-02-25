@@ -392,6 +392,8 @@ class AFQMC:
 
         prep.prep()
 
+        self.prep = prep
+
         if dry_run:
             #with open("tmpdir.txt", "w") as f:
             #    f.write(self.tmpdir)

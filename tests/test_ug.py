@@ -8,6 +8,7 @@ from jax._src.typing import DTypeLike
 import pickle
 from pyscf import gto, scf, cc
 from ad_afqmc import utils, launch_script
+from ad_afqmc.prep import PrepAfqmc
 
 config.update("jax_enable_x64", True)
 
@@ -94,14 +95,27 @@ ghf.ham_data, ghf.ham, ghf.prop, ghf.trial, ghf.wave_data, ghf.sampler, ghf.obse
 ghf.ham_data = ghf.trial._build_measurement_intermediates(ghf.ham_data, ghf.wave_data)
 
 # uhf
-utils.prep_afqmc(mf, chol_cut=chol_cut, tmpdir=tmp_uhf, write_to_disk=True)
+prep = PrepAfqmc.prep_afqmc(mf, chol_cut=chol_cut, tmpdir=tmp_uhf)
+options = options
+options["trial"] = "uhf"
+options["walker_type"] = "unrestricted"
+prep.options = options
+prep.setup_afqmc()
+
 uhf = Obj()
-uhf.options = options
-uhf.options["trial"] = "uhf"
-uhf.options["walker_type"] = "unrestricted"
-uhf.ham_data, uhf.ham, uhf.prop, uhf.trial, uhf.wave_data, uhf.sampler, uhf.observable, uhf.options = utils.setup_afqmc(
-    options=uhf.options, tmp_dir=tmp_uhf
-)
+(
+    uhf.ham_data,
+    uhf.ham,
+    uhf.prop,
+    uhf.trial,
+    uhf.wave_data,
+    uhf.trial_ket,
+    uhf.wave_data_ket,
+    uhf.sampler,
+    uhf.observable,
+    uhf.options,
+) = prep.get_setup_data()
+
 uhf.ham_data = uhf.trial._build_measurement_intermediates(uhf.ham_data, uhf.wave_data)
 
 # gcisd
@@ -115,14 +129,27 @@ gcisd.ham_data, gcisd.ham, gcisd.prop, gcisd.trial, gcisd.wave_data, gcisd.sampl
 )
 
 # ucisd
-utils.prep_afqmc(ucc, chol_cut=chol_cut, tmpdir=tmp_uhf, write_to_disk=True)
+prep = PrepAfqmc.prep_afqmc(ucc, chol_cut=chol_cut, tmpdir=tmp_uhf)
+options = options
+options["trial"] = "ucisd"
+options["walker_type"] = "unrestricted"
+prep.options = options
+prep.setup_afqmc()
+
 ucisd = Obj()
-ucisd.options = options
-ucisd.options["trial"] = "ucisd"
-ucisd.options["walker_type"] = "unrestricted"
-ucisd.ham_data, ucisd.ham, ucisd.prop, ucisd.trial, ucisd.wave_data, ucisd.sampler, ucisd.observable, ucisd.options = utils.setup_afqmc(
-    options=ucisd.options, tmp_dir=tmp_uhf
-)
+(
+    ucisd.ham_data,
+    ucisd.ham,
+    ucisd.prop,
+    ucisd.trial,
+    ucisd.wave_data,
+    ucisd.trial_ket,
+    ucisd.wave_data_ket,
+    ucisd.sampler,
+    ucisd.observable,
+    ucisd.options,
+) = prep.get_setup_data()
+
 ucisd.ham_data = ucisd.trial._build_measurement_intermediates(ucisd.ham_data, ucisd.wave_data)
 ucisd.trial._mixed_real_dtype_checking: DTypeLike = jnp.float64
 ucisd.trial._mixed_complex_dtype_checking: DTypeLike = jnp.complex128
@@ -257,7 +284,8 @@ def check_energy_uhf_walker(w_a, w_b, display=True):
 ### Test 0
 def test_0():
     print("\n### 0 ###")
-    w_a, w_b = ucisd.wave_data["mo_coeff"][0][:,:na], ucisd.wave_data["mo_coeff"][1][:,:nb] 
+    w_a = ucisd.wave_data["mo_coeff"][0][:,:na] + 0.0j
+    w_b = ucisd.wave_data["mo_coeff"][1][:,:nb] + 0.0j
 
     check_overlap_uhf_walker(w_a, w_b)
     check_energy_uhf_walker(w_a, w_b)
