@@ -347,33 +347,31 @@ def apply_s0_projector_gauss(
     n_gamma: int = 8,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
-    S=0 projector with Gauss–Legendre quadrature in β (via t = cos β).
-    α, γ use uniform trapezoidal grids.
+    S=0 projector with Gauss–Legendre quadrature in beta (via t = cos beta).
+    alpha, gamma use uniform trapezoidal grids.
 
     Returns:
       kets   : (n_alpha * n_beta * n_gamma, 2*norb, nocc)
       coeffs : (n_alpha * n_beta * n_gamma,) complex weights
-               equal to (1/8π^2) * (2π/n_alpha) * (2π/n_gamma) * w_beta[j]
+               equal to (1/8pi^2) * (2pi/n_alpha) * (2pi/n_gamma) * w_beta[j]
     """
     norb = input_ket.shape[0] // 2
-    dtype_f = input_ket.real.dtype
-    dtype_c = input_ket.dtype
 
-    # α, γ: uniform on [0, 2π)
+    # alpha, gamma: uniform on [0, 2pi)
     dalpha = (2.0 * jnp.pi) / n_alpha
     dgamma = (2.0 * jnp.pi) / n_gamma
     alpha = jnp.arange(n_alpha) * dalpha
     gamma = jnp.arange(n_gamma) * dgamma
 
-    # β: Gauss–Legendre on t = cos β ∈ [-1, 1]
+    # beta: Gauss–Legendre on t = cos beta in [-1, 1]
     t, w_beta = _gauss_legendre_nodes_weights(n_beta)
-    beta = jnp.arccos(t)  # maps [-1,1] → [0,π]
+    beta = jnp.arccos(t)  # maps [-1,1] → [0,pi]
 
     # full tensor grid, then flatten
     A, B, G = jnp.meshgrid(alpha, beta, gamma, indexing="ij")
     angles = jnp.stack([A.ravel(), B.ravel(), G.ravel()], axis=1)
 
-    # weights: (1/8π^2) * dα * dγ * w_beta[j]
+    # weights: (1/8pi^2) * dalpha * dgamma * w_beta[j]
     W = (1.0 / (8.0 * jnp.pi**2)) * dalpha * dgamma
     weights = (W * jnp.tile(w_beta[None, :, None], (n_alpha, 1, n_gamma))).ravel()
 
@@ -383,6 +381,50 @@ def apply_s0_projector_gauss(
     def rotate_one(ang):
         a, b, g = ang
         u11, u12, u21, u22 = _spin_rot_elements(a, b, g)
+        alpha_block = u11 * up + u12 * dn
+        beta_block = u21 * up + u22 * dn
+        return jnp.vstack([alpha_block, beta_block])
+
+    kets = jax.vmap(rotate_one)(angles)
+    return kets, weights
+
+
+def apply_s0_projector_gauss_reduced(
+    input_ket: jnp.ndarray,
+    n_beta: int = 16,
+    n_gamma: int = 8,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """
+    Reduced S=0 projector for bra-side use when [O, Sz] = 0 and m = 0.
+
+    The alpha Euler angle integral is trivial (gives factor 2pi), leaving
+    only n_beta * n_gamma grid points instead of n_alpha * n_beta * n_gamma.
+    Weights become (1/4pi) * (2pi/n_gamma) * w_beta[j].
+
+    Returns:
+      kets   : (n_beta * n_gamma, 2*norb, nocc)
+      coeffs : (n_beta * n_gamma,) real weights
+    """
+    norb = input_ket.shape[0] // 2
+
+    dgamma = (2.0 * jnp.pi) / n_gamma
+    gamma = jnp.arange(n_gamma) * dgamma
+
+    t, w_beta = _gauss_legendre_nodes_weights(n_beta)
+    beta = jnp.arccos(t)
+
+    B, G = jnp.meshgrid(beta, gamma, indexing="ij")
+    angles = jnp.stack([B.ravel(), G.ravel()], axis=1)
+
+    W = (1.0 / (4.0 * jnp.pi)) * dgamma
+    weights = (W * jnp.tile(w_beta[:, None], (1, n_gamma))).ravel()
+
+    up = input_ket[:norb, :]
+    dn = input_ket[norb:, :]
+
+    def rotate_one(ang):
+        b, g = ang
+        u11, u12, u21, u22 = _spin_rot_elements(0.0, b, g)
         alpha_block = u11 * up + u12 * dn
         beta_block = u21 * up + u22 * dn
         return jnp.vstack([alpha_block, beta_block])
@@ -442,6 +484,28 @@ class singlet_projector(projector):
         def rotate_single(ket):
             return apply_s0_projector_gauss(
                 ket, n_alpha=self.n_alpha, n_beta=self.n_beta, n_gamma=self.n_gamma
+            )
+
+        rot_kets, rot_coeffs = jax.vmap(rotate_single, in_axes=0)(kets)
+        batch, nterms, norb2, nocc = rot_kets.shape
+        new_kets = rot_kets.reshape(batch * nterms, norb2, nocc)
+        new_coeffs = (coeffs[:, None] * rot_coeffs).reshape(batch * nterms)
+        return new_kets, new_coeffs
+
+
+@dataclass
+class reduced_singlet_projector(projector):
+    """Reduced S=0 projector (beta, gamma only) for bra-side use when [O, Sz] = 0."""
+
+    n_beta: int = 8
+    n_gamma: int = 8
+
+    def apply(
+        self, kets: jnp.ndarray, coeffs: jnp.ndarray
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+        def rotate_single(ket):
+            return apply_s0_projector_gauss_reduced(
+                ket, n_beta=self.n_beta, n_gamma=self.n_gamma
             )
 
         rot_kets, rot_coeffs = jax.vmap(rotate_single, in_axes=0)(kets)
@@ -523,21 +587,38 @@ def _apply_projector_sequence(
 
 def _split_projectors(
     projectors: tuple[projector, ...], commuting_types: set[type]
-) -> tuple[tuple[projector, ...], tuple[projector, ...]]:
+) -> tuple[tuple[projector, ...], tuple[projector, ...], bool]:
     """
     Split projectors for asymmetric bra/ket evaluation.
 
-    Projectors whose type is in commuting_types commute with the operator
-    being measured, so they can be absorbed from the bra side into the ket
-    side via P^2 = P.  Only valid for linear (unitary) projectors — do NOT
-    include k_projector (anti-linear).
+    Projectors whose type is in *commuting_types* commute with the operator
+    being measured and are dropped from the bra side (absorbed via P^2 = P).
+
+    Additionally, if sz_projector is in commuting_types but singlet_projector
+    is not, the singlet projector on the bra side is replaced by a reduced
+    version that omits the alpha Euler angle integral (since e^{i*alpha*Sz}
+    commutes through O and is absorbed by P_Sz on the ket side).
 
     Returns:
-        (bra_projectors, ket_projectors) where ket_projectors is the full
-        original tuple and bra_projectors has the commuting ones removed.
+        (bra_projectors, ket_projectors, changed) where ket_projectors is the
+        full original tuple, bra_projectors has commuting ones removed/reduced,
+        and changed indicates whether the bra differs from the ket.
     """
-    bra_projs = tuple(p for p in projectors if type(p) not in commuting_types)
-    return bra_projs, tuple(projectors)
+    sz_commutes = sz_projector in commuting_types
+    bra_projs = []
+    changed = False
+    for p in projectors:
+        if type(p) in commuting_types:
+            changed = True
+            continue
+        if isinstance(p, singlet_projector) and sz_commutes:
+            bra_projs.append(
+                reduced_singlet_projector(n_beta=p.n_beta, n_gamma=p.n_gamma)
+            )
+            changed = True
+        else:
+            bra_projs.append(p)
+    return tuple(bra_projs), tuple(projectors), changed
 
 
 def _has_k_projector(projectors: tuple[projector, ...]) -> bool:
@@ -911,9 +992,8 @@ def _evaluate_projected_property(
         kets, coeffs = _apply_projector_sequence(psi, projectors)
         return _accumulate_weighted(kets, coeffs, property_fn, n_chunks=n_chunks)
 
-    bra_projs, ket_projs = _split_projectors(projectors, commuting_types)
-    if len(bra_projs) == len(ket_projs):
-        # fall back to symmetric
+    bra_projs, ket_projs, changed = _split_projectors(projectors, commuting_types)
+    if not changed:
         kets, coeffs = _apply_projector_sequence(psi, projectors)
         return _accumulate_weighted(kets, coeffs, property_fn, n_chunks=n_chunks)
 
@@ -935,7 +1015,8 @@ def calculate_projected_1rdm(
     Returns the up-up and down-down blocks as a (2, norb, norb) array.
     The spin-flip blocks vanish by symmetry for Sz=0 projected states
     and are not computed.  Since each a_{is}^dag a_{js} commutes with
-    P_Sz, that projector is absorbed from the bra side.
+    P_Sz, that projector is absorbed from the bra side.  When a singlet
+    projector is present, its alpha integral is also reduced on the bra.
 
     Args:
         psi: GHF determinant, shape (2*norb, nocc).
