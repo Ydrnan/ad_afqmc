@@ -8,6 +8,7 @@ from pyscf import gto, scf
 from ad_afqmc_prototype.afqmc import AFQMC, from_staged
 from ad_afqmc_prototype.prop.types import QmcParams
 
+
 def mf():
     mol = gto.M(
         atom="""
@@ -21,6 +22,7 @@ def mf():
     mf = scf.UHF(mol).newton()
     mf.kernel()
     return mf
+
 
 mf = mf()  # type: ignore
 
@@ -58,4 +60,3 @@ def params():
 
 if __name__ == "__main__":
     pytest.main([__file__])
-

@@ -22,6 +22,7 @@ class GcisdTrial:
       c1: (nocc, nvir)                singles coefficients c_{i a}
       c2: (nocc, nvir, nocc, nvir)    doubles coefficients c_{i a j b}
     """
+
     mo_coeff: jax.Array
     c1: jax.Array
     c2: jax.Array
@@ -58,17 +59,19 @@ class GcisdTrial:
             c2=c2,
         )
 
+
 def get_rdm1(trial_data: GcisdTrial) -> jax.Array:
     c = trial_data.mo_coeff
     nocc = trial_data.nocc
-    dm = c[:,:nocc] @ c[:,:nocc].conj().T  # (2*norb, 2*norb)
+    dm = c[:, :nocc] @ c[:, :nocc].conj().T  # (2*norb, 2*norb)
     return dm
+
 
 def overlap_g(walker: jax.Array, trial_data: GcisdTrial) -> jax.Array:
     nocc = trial_data.nocc
     c1 = trial_data.c1
     c2 = trial_data.c2
-    g =  (walker @ jnp.linalg.inv(walker[:nocc, :])).T
+    g = (walker @ jnp.linalg.inv(walker[:nocc, :])).T
     o0 = jnp.linalg.det(walker[:nocc, :])
     o1 = jnp.einsum("ia,ia", c1.conj(), g[:, nocc:])
     o2 = 2.0 * jnp.einsum("iajb, ia, jb", c2.conj(), g[:, nocc:], g[:, nocc:])

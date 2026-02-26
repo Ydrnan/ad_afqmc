@@ -72,11 +72,7 @@ class OneDimensionalChain(Lattice):
         return (-1) ** jnp.sum(jnp.where(walker_a > 0, 1, 0))
 
     def get_symm_fac(self, pos, k):
-        return (
-            jnp.exp(2 * jnp.pi * 1.0j * k[0] * pos[0] / self.n_sites)
-            if k is not None
-            else 1.0
-        )
+        return jnp.exp(2 * jnp.pi * 1.0j * k[0] * pos[0] / self.n_sites) if k is not None else 1.0
 
     @partial(jit, static_argnums=(0,))
     def get_neighboring_bonds(self, pos):
@@ -96,9 +92,7 @@ class OneDimensionalChain(Lattice):
     # ordering is used in the ssh model
     @partial(jit, static_argnums=(0,))
     def get_nearest_neighbors(self, pos):
-        return jnp.array(
-            [((pos[0] - 1) % self.n_sites,), ((pos[0] + 1) % self.n_sites,)]
-        )
+        return jnp.array([((pos[0] - 1) % self.n_sites,), ((pos[0] + 1) % self.n_sites,)])
 
     def get_nearest_neighbor_modes(self, pos):
         return (
@@ -221,9 +215,7 @@ class TwoDimensionalGrid(Lattice):
         distances = [*set(distances)]
         distances.sort()
         self.shell_distances = tuple(distances)
-        self.sites = tuple(
-            [(i // self.l_x, i % self.l_x) for i in range(self.l_x * self.l_y)]
-        )
+        self.sites = tuple([(i // self.l_x, i % self.l_x) for i in range(self.l_x * self.l_y)])
 
         bond_distances = []
         for x in range(self.l_x + 1):
@@ -273,14 +265,10 @@ class TwoDimensionalGrid(Lattice):
     @partial(jit, static_argnums=(0,))
     def get_distance(self, pos_1, pos_2):
         dist_y = jnp.min(
-            jnp.array(
-                [jnp.abs(pos_1[0] - pos_2[0]), self.l_y - jnp.abs(pos_1[0] - pos_2[0])]
-            )
+            jnp.array([jnp.abs(pos_1[0] - pos_2[0]), self.l_y - jnp.abs(pos_1[0] - pos_2[0])])
         )
         dist_x = jnp.min(
-            jnp.array(
-                [jnp.abs(pos_1[1] - pos_2[1]), self.l_x - jnp.abs(pos_1[1] - pos_2[1])]
-            )
+            jnp.array([jnp.abs(pos_1[1] - pos_2[1]), self.l_x - jnp.abs(pos_1[1] - pos_2[1])])
         )
         dist = dist_x**2 + dist_y**2
         shell_number = jnp.searchsorted(jnp.array(self.shell_distances), dist)
@@ -481,9 +469,7 @@ class TriangularGrid(Lattice):
     def __post_init__(self):
         self.shape = (self.l_x, self.l_y)
         self.n_sites = self.l_x * self.l_y
-        self.sites = tuple(
-            [(i // self.l_y, i % self.l_y) for i in range(self.l_x * self.l_y)]
-        )
+        self.sites = tuple([(i // self.l_y, i % self.l_y) for i in range(self.l_x * self.l_y)])
 
     def get_site_num(self, pos):
         return pos[1] + self.l_y * pos[0]
@@ -602,9 +588,7 @@ class TriangularGrid(Lattice):
             elif boundary == "yc":
                 sub = (x + (y & 1)) % 3
             else:
-                raise ValueError(
-                    "Neel guess only implemented for XC or OXC or YC boundaries."
-                )
+                raise ValueError("Neel guess only implemented for XC or OXC or YC boundaries.")
             if sub == 0:
                 sites_0.append(site_n)
             elif sub == 1:
@@ -643,9 +627,7 @@ class TriangularGrid(Lattice):
     def get_chiral_guess(self, tilt=np.pi / 3):
         boundary = self.boundary
         if boundary not in ("xc", "oxc", "yc"):
-            raise ValueError(
-                "Chiral guess only implemented for 'xc', 'oxc' or 'yc' boundaries."
-            )
+            raise ValueError("Chiral guess only implemented for 'xc', 'oxc' or 'yc' boundaries.")
         sites_0, sites_1, sites_2 = [], [], []
         for x, y in self.sites:
             site_n = self.get_site_num((x, y))
@@ -820,9 +802,7 @@ class TriangularGrid(Lattice):
             n_up, n_dn = nelec
         else:
             if nelec % 2 != 0:
-                raise ValueError(
-                    "For scalar nelec, require even nelec for spin-balanced state."
-                )
+                raise ValueError("For scalar nelec, require even nelec for spin-balanced state.")
             n_up = n_dn = nelec // 2
 
         if n_up > N or n_dn > N:
@@ -877,9 +857,7 @@ class TriangularGrid(Lattice):
 
         boundary = self.boundary
         if boundary not in ("xc", "oxc", "yc"):
-            raise ValueError(
-                "plot_observables only implemented for 'xc', 'oxc', or 'yc'."
-            )
+            raise ValueError("plot_observables only implemented for 'xc', 'oxc', or 'yc'.")
 
         r_uu = spin_rdm1[:n_sites, :n_sites]
         r_dd = spin_rdm1[n_sites:, n_sites:]
@@ -1192,9 +1170,7 @@ class TriangularGrid(Lattice):
 
         irrep = irrep.upper()
         if irrep not in ("A1", "A2", "B1", "B2"):
-            raise ValueError(
-                f"Unknown abelian irrep '{irrep}'. Must be A1, A2, B1, or B2."
-            )
+            raise ValueError(f"Unknown abelian irrep '{irrep}'. Must be A1, A2, B1, or B2.")
 
         #                    E*T2^n  C2*T2^n  G*T2^n  C2G*T2^n
         # base_op index:       0        1        2        3
@@ -1273,9 +1249,7 @@ class TriangularGrid(Lattice):
 
         irrep = irrep.upper()
         if irrep not in ("A1", "A2", "B1", "B2"):
-            raise ValueError(
-                f"Unknown abelian irrep '{irrep}'. Must be A1, A2, B1, or B2."
-            )
+            raise ValueError(f"Unknown abelian irrep '{irrep}'. Must be A1, A2, B1, or B2.")
 
         # G^2 = T, so G has order 2*nx -> group is D_{2*nx}
         # Base ops: [E, C2, G, C2*G]
@@ -1386,7 +1360,7 @@ class TriangularGrid(Lattice):
         for x in range(nx):
             for y in range(ny):
                 perm_g[idx(x, y)] = idx((x + 1) % nx, ny - 1 - y)
-        U_g = E[:, perm_g]
+        _ = E[:, perm_g]
 
         step = nx // 2
         perm_a = np.empty(n_sites, dtype=int)
@@ -1487,9 +1461,7 @@ class TriangularGrid(Lattice):
         if nx % 2 != 0:
             raise ValueError("nx must be even for this D_{2N} YC lattice.")
         if ny % 2 != 0:
-            print(
-                "Warning: ny is odd; C2 may not be an exact symmetry of this YC cluster."
-            )
+            print("Warning: ny is odd; C2 may not be an exact symmetry of this YC cluster.")
 
         def idx(x, y):
             return x * ny + y
@@ -1678,19 +1650,13 @@ class ThreeDimensionalGrid(Lattice):
 
     def get_distance(self, pos_1, pos_2):
         dist_z = jnp.min(
-            jnp.array(
-                [jnp.abs(pos_1[0] - pos_2[0]), self.l_z - jnp.abs(pos_1[0] - pos_2[0])]
-            )
+            jnp.array([jnp.abs(pos_1[0] - pos_2[0]), self.l_z - jnp.abs(pos_1[0] - pos_2[0])])
         )
         dist_y = jnp.min(
-            jnp.array(
-                [jnp.abs(pos_1[1] - pos_2[1]), self.l_y - jnp.abs(pos_1[1] - pos_2[1])]
-            )
+            jnp.array([jnp.abs(pos_1[1] - pos_2[1]), self.l_y - jnp.abs(pos_1[1] - pos_2[1])])
         )
         dist_x = jnp.min(
-            jnp.array(
-                [jnp.abs(pos_1[2] - pos_2[2]), self.l_x - jnp.abs(pos_1[2] - pos_2[2])]
-            )
+            jnp.array([jnp.abs(pos_1[2] - pos_2[2]), self.l_x - jnp.abs(pos_1[2] - pos_2[2])])
         )
         dist = dist_x**2 + dist_y**2 + dist_z**2
         shell_number = jnp.searchsorted(jnp.array(self.shell_distances), dist)

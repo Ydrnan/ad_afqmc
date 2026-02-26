@@ -85,11 +85,7 @@ def energy_kernel_uw_rh(
     exc_dn = jnp.sum(jax.vmap(lambda x: x * x.T)(f_dn))
 
     e2 = (
-        jnp.sum(c_up * c_up)
-        + jnp.sum(c_dn * c_dn)
-        + 2.0 * jnp.sum(c_up * c_dn)
-        - exc_up
-        - exc_dn
+        jnp.sum(c_up * c_up) + jnp.sum(c_dn * c_dn) + 2.0 * jnp.sum(c_up * c_dn) - exc_up - exc_dn
     ) / 2.0
 
     return e0 + e1 + e2

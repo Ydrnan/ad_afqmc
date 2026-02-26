@@ -203,9 +203,7 @@ def build_meas_ctx_chol(ham_data: HamChol, trial_data: GhfTrial) -> GhfCholMeasC
     return GhfCholMeasCtx(rot_h1=rot_h1, rot_chol=rot_chol, rot_chol_flat=rot_chol_flat)
 
 
-def force_bias_kernel_from_green(
-    g_half: jax.Array, meas_ctx: GhfCholMeasCtx
-) -> jax.Array:
+def force_bias_kernel_from_green(g_half: jax.Array, meas_ctx: GhfCholMeasCtx) -> jax.Array:
     return jnp.einsum("gij,ij->g", meas_ctx.rot_chol, g_half, optimize="optimal")
 
 
@@ -214,9 +212,7 @@ def energy_kernel_from_green(
 ) -> jax.Array:
     ene0 = ham_data.h0
     ene1 = jnp.sum(g_half * meas_ctx.rot_h1)
-    f = jnp.einsum(
-        "gij,jk->gik", meas_ctx.rot_chol, g_half.T, optimize="optimal"
-    )  # (nchol,ne,ne)
+    f = jnp.einsum("gij,jk->gik", meas_ctx.rot_chol, g_half.T, optimize="optimal")  # (nchol,ne,ne)
     coul = jnp.trace(f, axis1=1, axis2=2)  # (nchol,)
     exc = jnp.sum(f * jnp.swapaxes(f, 1, 2))
     ene2 = 0.5 * (jnp.sum(coul * coul) - exc)

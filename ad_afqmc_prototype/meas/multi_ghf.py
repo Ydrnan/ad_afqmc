@@ -36,9 +36,7 @@ def energy_kernel_hubbard_u(
     w_states = greens["w"]  # (nd,)
 
     norb = trial_data.norb
-    E_k = jax.vmap(lambda G: _energy_from_full_green(G, ham_data, norb), in_axes=0)(
-        G_states
-    )
+    E_k = jax.vmap(lambda G: _energy_from_full_green(G, ham_data, norb), in_axes=0)(G_states)
 
     num = jnp.sum(w_states * E_k)
     den = jnp.sum(w_states)
@@ -58,9 +56,7 @@ def energy_kernel_hubbard_g(
     w_states = greens["w"]
 
     norb = trial_data.norb
-    E_k = jax.vmap(lambda G: _energy_from_full_green(G, ham_data, norb), in_axes=0)(
-        G_states
-    )
+    E_k = jax.vmap(lambda G: _energy_from_full_green(G, ham_data, norb), in_axes=0)(G_states)
 
     num = jnp.sum(w_states * E_k)
     den = jnp.sum(w_states)
@@ -69,9 +65,7 @@ def energy_kernel_hubbard_g(
     return jnp.real(E)
 
 
-def _rdm1_from_weighted_greens(
-    g_states: jax.Array, w_states: jax.Array, norb: int
-) -> jax.Array:
+def _rdm1_from_weighted_greens(g_states: jax.Array, w_states: jax.Array, norb: int) -> jax.Array:
     den = jnp.sum(w_states)
     g_mix = jnp.where(
         jnp.abs(den) < 1.0e-16,

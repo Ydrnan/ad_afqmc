@@ -76,7 +76,6 @@ def force_bias_kernel_gw_rh(
     g = _half_green_from_overlap_matrix(w, bra.T.conj() @ w)
 
     g_aa, g_bb = g[:na, :norb], g[na:, norb:]
-    g_ab, g_ba = g[:na, norb:], g[na:, :norb]
 
     rot_chol_aa = meas_ctx.rot_chol_a
     rot_chol_bb = meas_ctx.rot_chol_b
@@ -219,11 +218,7 @@ def energy_kernel_rw_rh(
     exc_dn = jnp.sum(jax.vmap(lambda x: x * x.T)(f_dn))
 
     e2 = (
-        jnp.sum(c_up * c_up)
-        + jnp.sum(c_dn * c_dn)
-        + 2.0 * jnp.sum(c_up * c_dn)
-        - exc_up
-        - exc_dn
+        jnp.sum(c_up * c_up) + jnp.sum(c_dn * c_dn) + 2.0 * jnp.sum(c_up * c_dn) - exc_up - exc_dn
     ) / 2.0
 
     return e0 + e1 + e2
@@ -252,11 +247,7 @@ def energy_kernel_uw_rh(
     exc_dn = jnp.sum(jax.vmap(lambda x: x * x.T)(f_dn))
 
     e2 = (
-        jnp.sum(c_up * c_up)
-        + jnp.sum(c_dn * c_dn)
-        + 2.0 * jnp.sum(c_up * c_dn)
-        - exc_up
-        - exc_dn
+        jnp.sum(c_up * c_up) + jnp.sum(c_dn * c_dn) + 2.0 * jnp.sum(c_up * c_dn) - exc_up - exc_dn
     ) / 2.0
 
     return e0 + e1 + e2
@@ -296,9 +287,7 @@ def energy_kernel_gw_rh(
     c_dn = jax.vmap(jnp.trace)(f_dn)
     J = jnp.sum(c_up * c_up) + jnp.sum(c_dn * c_dn) + 2.0 * jnp.sum(c_up * c_dn)
 
-    K = jnp.sum(jax.vmap(lambda x: x * x.T)(f_up)) + jnp.sum(
-        jax.vmap(lambda x: x * x.T)(f_dn)
-    )
+    K = jnp.sum(jax.vmap(lambda x: x * x.T)(f_up)) + jnp.sum(jax.vmap(lambda x: x * x.T)(f_dn))
 
     f_ab = jnp.einsum("gip,pj->gij", rot_chol_a, g_ba.T, optimize="optimal")
     f_ba = jnp.einsum("gip,pj->gij", rot_chol_b, g_ab.T, optimize="optimal")

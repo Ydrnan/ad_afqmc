@@ -73,9 +73,7 @@ def build_meas_ctx(
     ham_data: HamChol, trial_data: CisdTrial, cfg: CisdMeasCfg = CisdMeasCfg()
 ) -> CisdMeasCtx:
     if ham_data.basis != "restricted":
-        raise ValueError(
-            "CISD MeasOps currently assumes HamChol.basis == 'restricted'."
-        )
+        raise ValueError("CISD MeasOps currently assumes HamChol.basis == 'restricted'.")
 
     chol = ham_data.chol  # (n_chol, norb, norb)
     nocc = trial_data.nocc
@@ -117,9 +115,7 @@ def make_level_pack(
         norb_keep = int(trial_data.nocc) + int(level.nvir_keep)
 
     if orb_fullchol_ham is None:
-        ham_orb_fullchol = slice_ham_level(
-            ham_data, norb_keep=norb_keep, nchol_keep=None
-        )
+        ham_orb_fullchol = slice_ham_level(ham_data, norb_keep=norb_keep, nchol_keep=None)
     else:
         ham_orb_fullchol = orb_fullchol_ham
 
@@ -132,9 +128,7 @@ def make_level_pack(
         ham_lvl = ham_orb_fullchol
         ctx_lvl = ctx_orb_fullchol
     else:
-        ham_lvl = slice_ham_level(
-            ham_orb_fullchol, norb_keep=None, nchol_keep=level.nchol_keep
-        )
+        ham_lvl = slice_ham_level(ham_orb_fullchol, norb_keep=None, nchol_keep=level.nchol_keep)
         ctx_lvl = slice_meas_ctx_chol(ctx_orb_fullchol, level.nchol_keep)
 
     return LevelPack(
@@ -267,9 +261,7 @@ def energy_kernel_rw_rh(
 
     # 2 body
     lg = jnp.einsum("gpj,pj->g", rot_chol, green, optimize="optimal")  # (n_chol,)
-    lg1 = jnp.einsum(
-        "gpj,qj->gpq", rot_chol, green, optimize="optimal"
-    )  # (n_chol,nocc,nocc)
+    lg1 = jnp.einsum("gpj,qj->gpq", rot_chol, green, optimize="optimal")  # (n_chol,nocc,nocc)
 
     e2_0_1 = 2.0 * (lg @ lg)
     e2_0_2 = -jnp.sum(lg1 * jnp.swapaxes(lg1, -1, -2))
@@ -313,13 +305,9 @@ def energy_kernel_rw_rh(
             chol_i, rot_chol_i = x  # (norb,norb), (nocc,norb)
 
             gl_i = jnp.einsum("pj,ji->pi", green, chol_i, optimize="optimal")
-            lci2_green_i = jnp.einsum(
-                "pi,ji->pj", rot_chol_i, ci2_green, optimize="optimal"
-            )
+            lci2_green_i = jnp.einsum("pi,ji->pj", rot_chol_i, ci2_green, optimize="optimal")
 
-            e22_acc = e22_acc + 0.5 * jnp.einsum(
-                "pi,pi->", gl_i, lci2_green_i, optimize="optimal"
-            )
+            e22_acc = e22_acc + 0.5 * jnp.einsum("pi,pi->", gl_i, lci2_green_i, optimize="optimal")
 
             glgp_i = jnp.einsum("pi,it->pt", gl_i, greenp, optimize="optimal").astype(
                 meas_ctx.cfg.mixed_complex_dtype_testing
@@ -454,9 +442,7 @@ def make_cisd_meas_ops(
 
     return MeasOps(
         overlap=cisd_overlap_r,
-        build_meas_ctx=lambda ham_data, trial_data: build_meas_ctx(
-            ham_data, trial_data, cfg
-        ),
+        build_meas_ctx=lambda ham_data, trial_data: build_meas_ctx(ham_data, trial_data, cfg),
         kernels={k_force_bias: force_bias_kernel_rw_rh, k_energy: energy_kernel_rw_rh},
         observables={o_rdm1: rdm1_kernel_rw},
     )

@@ -145,7 +145,6 @@ def get_energy_chol(
     """Return the mixed estimator <bra|H|ket>/<bra|ket> for a pair of determinants."""
     norb = h1[0].shape[0]
     n_chol = rotchol[0].shape[0]
-    nocc = bra.shape[1]
 
     # Calculate Green's function.
     Ghalf = ket @ jnp.linalg.inv(bra.T.conj() @ ket)
@@ -163,15 +162,11 @@ def get_energy_chol(
     # Two-body energy.
     def scan_fun(i, carry):
         ej, ek = carry
-        W = jnp.zeros((2, nocc, nocc), dtype=jnp.complex128)
         W0 = rotchol[0, i] @ Ghalfa
         W1 = rotchol[1, i] @ Ghalfb
         ej += 0.5 * (jnp.trace(W0) + jnp.trace(W1)) ** 2
         ek -= 0.5 * (
-            jnp.sum(W0 * W0.T)
-            + jnp.sum(W0 * W1.T)
-            + jnp.sum(W1 * W0.T)
-            + jnp.sum(W1 * W1.T)
+            jnp.sum(W0 * W0.T) + jnp.sum(W0 * W1.T) + jnp.sum(W1 * W0.T) + jnp.sum(W1 * W1.T)
         )
         return ej, ek
 
@@ -196,9 +191,7 @@ def get_energy_hubbard(
     """Return the mixed estimator <bra|H|ket>/<bra|ket> for a pair of determinants."""
     norb = h1[0].shape[0]
     green = _mixed_green(bra, ket)
-    energy_1 = jnp.sum(green[:norb, :norb] * h1[0]) + jnp.sum(
-        green[norb:, norb:] * h1[1]
-    )
+    energy_1 = jnp.sum(green[:norb, :norb] * h1[0]) + jnp.sum(green[norb:, norb:] * h1[1])
     energy_2 = u * (
         jnp.sum(green[:norb, :norb].diagonal() * green[norb:, norb:].diagonal())
         - jnp.sum(green[:norb, norb:].diagonal() * green[norb:, :norb].diagonal())
@@ -256,9 +249,7 @@ class hubbard_hamiltonian(hamiltonian):
         return get_energy_hubbard(bra, ket, self.h1, self.u, self.enuc)
 
 
-def _spin_rot_elements(
-    alpha: float, beta: float, gamma: float
-) -> tuple[jnp.ndarray, ...]:
+def _spin_rot_elements(alpha: float, beta: float, gamma: float) -> tuple[jnp.ndarray, ...]:
     """
     Spin-1/2 rotation (z-y-z Euler angles):
     U = e^{-i alpha sigma_z/2} e^{-i beta sigma_y/2} e^{-i gamma sigma_z/2}
@@ -444,9 +435,7 @@ def _apply_pg_to_ket(ket: jnp.ndarray, U: jnp.ndarray) -> jnp.ndarray:
 class projector:
     """Abstract projector that maps a batch of determinants to a new linear combination."""
 
-    def apply(
-        self, kets: jnp.ndarray, coeffs: jnp.ndarray
-    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def apply(self, kets: jnp.ndarray, coeffs: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         raise NotImplementedError
 
 
@@ -457,9 +446,7 @@ class sz_projector(projector):
     m: float = 0.0
     n_grid: int = 8
 
-    def apply(
-        self, kets: jnp.ndarray, coeffs: jnp.ndarray
-    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def apply(self, kets: jnp.ndarray, coeffs: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         def rotate_single(ket: jnp.ndarray):
             return apply_sz_projector(ket, self.m, self.n_grid)
 
@@ -478,9 +465,7 @@ class singlet_projector(projector):
     n_beta: int = 8
     n_gamma: int = 8
 
-    def apply(
-        self, kets: jnp.ndarray, coeffs: jnp.ndarray
-    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def apply(self, kets: jnp.ndarray, coeffs: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         def rotate_single(ket):
             return apply_s0_projector_gauss(
                 ket, n_alpha=self.n_alpha, n_beta=self.n_beta, n_gamma=self.n_gamma
@@ -500,13 +485,9 @@ class reduced_singlet_projector(projector):
     n_beta: int = 8
     n_gamma: int = 8
 
-    def apply(
-        self, kets: jnp.ndarray, coeffs: jnp.ndarray
-    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def apply(self, kets: jnp.ndarray, coeffs: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         def rotate_single(ket):
-            return apply_s0_projector_gauss_reduced(
-                ket, n_beta=self.n_beta, n_gamma=self.n_gamma
-            )
+            return apply_s0_projector_gauss_reduced(ket, n_beta=self.n_beta, n_gamma=self.n_gamma)
 
         rot_kets, rot_coeffs = jax.vmap(rotate_single, in_axes=0)(kets)
         batch, nterms, norb2, nocc = rot_kets.shape
@@ -532,9 +513,7 @@ class point_group_projector(projector):
         self._chars = chars
         self._norm = 1.0 / len(self.pg_ops)
 
-    def apply(
-        self, kets: jnp.ndarray, coeffs: jnp.ndarray
-    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def apply(self, kets: jnp.ndarray, coeffs: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
 
         def apply_one_op(U, kets_batch):
             return jax.vmap(_apply_pg_to_ket, in_axes=(0, None))(kets_batch, U)
@@ -552,14 +531,10 @@ class k_projector(projector):
 
     parity: int = 1
 
-    def apply(
-        self, kets: jnp.ndarray, coeffs: jnp.ndarray
-    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def apply(self, kets: jnp.ndarray, coeffs: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         kets_conj = jnp.conj(kets)
         new_kets = jnp.concatenate([kets, kets_conj], axis=0)
-        new_coeffs = 0.5 * jnp.concatenate(
-            [coeffs, self.parity * jnp.conj(coeffs)], axis=0
-        )
+        new_coeffs = 0.5 * jnp.concatenate([coeffs, self.parity * jnp.conj(coeffs)], axis=0)
         return new_kets, new_coeffs
 
 
@@ -612,9 +587,7 @@ def _split_projectors(
             changed = True
             continue
         if isinstance(p, singlet_projector) and sz_commutes:
-            bra_projs.append(
-                reduced_singlet_projector(n_beta=p.n_beta, n_gamma=p.n_gamma)
-            )
+            bra_projs.append(reduced_singlet_projector(n_beta=p.n_beta, n_gamma=p.n_gamma))
             changed = True
         else:
             bra_projs.append(p)
@@ -948,9 +921,7 @@ def _accumulate_weighted(kets, coeffs, property_fn, n_chunks=1):
     return (jnp.sum(nums, axis=0) / jnp.sum(denoms)).real
 
 
-def _accumulate_weighted_asymmetric(
-    bras, bra_coeffs, kets, ket_coeffs, property_fn, n_chunks=1
-):
+def _accumulate_weighted_asymmetric(bras, bra_coeffs, kets, ket_coeffs, property_fn, n_chunks=1):
     """Accumulate a projected property with different bra and ket expansions.
 
     Computes  sum_{i,j} c_i^* c_j <bra_i|O|ket_j> / sum_{i,j} c_i^* c_j <bra_i|ket_j>
@@ -1068,9 +1039,7 @@ def calculate_projected_density_correlations(
             green = _mixed_green(bra, ket)
             green_diag = jnp.diagonal(green)
             density_corr = (
-                green_diag[:, None] * green_diag[None, :]
-                - green * green.T
-                + jnp.diag(green_diag)
+                green_diag[:, None] * green_diag[None, :] - green * green.T + jnp.diag(green_diag)
             )
             return density_corr
 

@@ -197,11 +197,7 @@ def run_qmc(
     block_e_eq = jnp.asarray(block_e_eq)
     block_w_eq = jnp.asarray(block_w_eq)
     block_obs_eq = {
-        name: (
-            jnp.concatenate(block_obs_eq[name], axis=0)
-            if len(block_obs_eq[name]) > 0
-            else None
-        )
+        name: (jnp.concatenate(block_obs_eq[name], axis=0) if len(block_obs_eq[name]) > 0 else None)
         for name in observable_names
     }
 
@@ -261,24 +257,17 @@ def run_qmc(
     block_e_s = jnp.asarray(block_e_s)
     block_w_s = jnp.asarray(block_w_s)
     block_obs_s = {
-        name: (
-            jnp.concatenate(block_obs_s[name], axis=0)
-            if len(block_obs_s[name]) > 0
-            else None
-        )
+        name: (jnp.concatenate(block_obs_s[name], axis=0) if len(block_obs_s[name]) > 0 else None)
         for name in observable_names
     }
 
-    data_clean, keep_mask = reject_outliers(
-        jnp.column_stack((block_e_s, block_w_s)), obs=0
-    )
+    data_clean, keep_mask = reject_outliers(jnp.column_stack((block_e_s, block_w_s)), obs=0)
     print(f"\nRejected {block_e_s.shape[0] - data_clean.shape[0]} outlier blocks.")
     block_e_s = jnp.asarray(data_clean[:, 0])
     block_w_s = jnp.asarray(data_clean[:, 1])
     keep_mask = jnp.asarray(keep_mask)
     block_obs_s = {
-        name: (arr[keep_mask] if arr is not None else None)
-        for name, arr in block_obs_s.items()
+        name: (arr[keep_mask] if arr is not None else None) for name, arr in block_obs_s.items()
     }
     print("\nFinal blocking analysis:")
     stats = blocking_analysis_ratio(block_e_s, block_w_s, print_q=True)

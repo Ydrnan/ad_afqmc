@@ -44,12 +44,12 @@ def cpmc_step(
     damping = float(getattr(params, "pop_control_damping", 0.1))
 
     # one body half step
-    walkers = wk.vmap_chunked(
-        cpmc_ops.apply_one_body_half, params.n_chunks, in_axes=(0, None)
-    )(state.walkers, prop_ctx)
-    overlaps = wk.vmap_chunked(
-        meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
-    )(walkers, trial_data)
+    walkers = wk.vmap_chunked(cpmc_ops.apply_one_body_half, params.n_chunks, in_axes=(0, None))(
+        state.walkers, prop_ctx
+    )
+    overlaps = wk.vmap_chunked(meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None))(
+        walkers, trial_data
+    )
     overlaps = jnp.real(overlaps)
 
     # constrained-path weight update via real overlap ratio
@@ -115,9 +115,9 @@ def cpmc_step(
 
     # one body half step again
     walkers = cpmc_ops.apply_one_body_half(walkers, prop_ctx)
-    overlaps_new = wk.vmap_chunked(
-        meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
-    )(walkers, trial_data)
+    overlaps_new = wk.vmap_chunked(meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None))(
+        walkers, trial_data
+    )
     overlaps_new = jnp.real(overlaps_new)
 
     ratio = jnp.real(overlaps_new / overlaps)

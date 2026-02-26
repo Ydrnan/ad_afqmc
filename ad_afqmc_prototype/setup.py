@@ -77,7 +77,9 @@ def _make_prop(
     )
 
 
-def _make_trial_bundle(sys: System, staged: StagedInputs, mixed_precision: bool) -> tuple[Any, Any, Any]:
+def _make_trial_bundle(
+    sys: System, staged: StagedInputs, mixed_precision: bool
+) -> tuple[Any, Any, Any]:
     """
     Return (trial_data, trial_ops, meas_ops)
     """
@@ -117,7 +119,7 @@ def _make_trial_bundle(sys: System, staged: StagedInputs, mixed_precision: bool)
         from .trial.ghf import GhfTrial, make_ghf_trial_ops
 
         mo = jnp.asarray(data["mo"])
-        mo_occ = mo[:, :sys.ne]
+        mo_occ = mo[:, : sys.ne]
         trial_data = GhfTrial(mo_occ)
         trial_ops = make_ghf_trial_ops(sys=sys)
         meas_ops = make_ghf_meas_ops_chol(sys=sys)
@@ -157,9 +159,9 @@ def _make_trial_bundle(sys: System, staged: StagedInputs, mixed_precision: bool)
 
         ci1 = jnp.asarray(data["ci1"])
         ci2 = jnp.asarray(data["ci2"])
-        trial_data = GcisdTrial(data["mo_coeff"], ci1, ci2)
+        trial_data = GcisdTrial(jnp.asarray(data["mo_coeff"]), ci1, ci2)
         trial_ops = make_gcisd_trial_ops(sys=sys)
-        meas_ops = make_gcisd_meas_ops(sys=sys, mixed_precision=mixed_precision)
+        meas_ops = make_gcisd_meas_ops(sys=sys)
         return trial_data, trial_ops, meas_ops
 
     raise ValueError(f"Unsupported TrialInput.kind: {tr.kind!r}")
@@ -252,7 +254,7 @@ def setup(
         else:
             staged = stage(
                 obj_or_staged,
-                norb_frozen=norb_frozen,
+                norb_frozen=norb_frozen if norb_frozen is not None else 0,
                 chol_cut=chol_cut,
                 cache=cache,
                 overwrite=overwrite,
@@ -272,10 +274,7 @@ def setup(
     sys = System(norb=int(ham.norb), nelec=ham.nelec, walker_kind=walker_kind)
 
     ham_data = HamChol(
-        jnp.asarray(ham.h0),
-        jnp.asarray(ham.h1),
-        jnp.asarray(ham.chol),
-        basis=ham.basis
+        jnp.asarray(ham.h0), jnp.asarray(ham.h1), jnp.asarray(ham.chol), basis=ham.basis
     )
 
     if params_kwargs is None:

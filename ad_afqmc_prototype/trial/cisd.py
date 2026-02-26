@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Any, Literal
 
 import jax
 import jax.numpy as jnp
@@ -45,7 +44,7 @@ class CisdTrial:
 
     @classmethod
     def tree_unflatten(cls, aux, children):
-        (ci1, ci2) = children
+        ci1, ci2 = children
         return cls(
             ci1=ci1,
             ci2=ci2,
@@ -72,9 +71,7 @@ def overlap_r(walker: jax.Array, trial_data: CisdTrial) -> jax.Array:
 
     x = green[:, nocc:]  # (nocc, nvir)
     o1 = jnp.einsum("ia,ia->", ci1, x)
-    o2 = 2.0 * jnp.einsum("iajb,ia,jb->", ci2, x, x) - jnp.einsum(
-        "iajb,ib,ja->", ci2, x, x
-    )
+    o2 = 2.0 * jnp.einsum("iajb,ia,jb->", ci2, x, x) - jnp.einsum("iajb,ib,ja->", ci2, x, x)
 
     return (1.0 + 2.0 * o1 + o2) * o0
 
