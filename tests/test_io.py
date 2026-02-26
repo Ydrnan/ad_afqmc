@@ -31,12 +31,13 @@ mf = mf()  # type: ignore
         (mf, "unrestricted", -55.43066756011652, 0.00761980459817991),
     ],
 )
-def test_calc_rhf_hamiltonian(mf, params, walker_kind, e_ref, err_ref):
+def test_calc_rhf_hamiltonian(mf, tmp_path, params, walker_kind, e_ref, err_ref):
+    h5_file = str(tmp_path / "nh2.h5")
     myafqmc = AFQMC(mf)
     myafqmc.chol_cut = 1e-6
-    myafqmc.save_staged("nh2.h5")
+    myafqmc.save_staged(h5_file)
 
-    af = from_staged("nh2.h5")
+    af = from_staged(h5_file)
     af.params = params
     af.mixed_precision = False
     af.walker_kind = walker_kind
