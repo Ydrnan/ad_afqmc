@@ -521,6 +521,25 @@ def _apply_projector_sequence(
     return kets, coeffs
 
 
+def _split_projectors(
+    projectors: tuple[projector, ...], commuting_types: set[type]
+) -> tuple[tuple[projector, ...], tuple[projector, ...]]:
+    """
+    Split projectors for asymmetric bra/ket evaluation.
+
+    Projectors whose type is in commuting_types commute with the operator
+    being measured, so they can be absorbed from the bra side into the ket
+    side via P^2 = P.  Only valid for linear (unitary) projectors — do NOT
+    include k_projector (anti-linear).
+
+    Returns:
+        (bra_projectors, ket_projectors) where ket_projectors is the full
+        original tuple and bra_projectors has the commuting ones removed.
+    """
+    bra_projs = tuple(p for p in projectors if type(p) not in commuting_types)
+    return bra_projs, tuple(projectors)
+
+
 def _has_k_projector(projectors: tuple[projector, ...]) -> bool:
     return any(isinstance(p, k_projector) for p in projectors)
 
@@ -848,14 +867,61 @@ def _accumulate_weighted(kets, coeffs, property_fn, n_chunks=1):
     return (jnp.sum(nums, axis=0) / jnp.sum(denoms)).real
 
 
+def _accumulate_weighted_asymmetric(
+    bras, bra_coeffs, kets, ket_coeffs, property_fn, n_chunks=1
+):
+    """Accumulate a projected property with different bra and ket expansions.
+
+    Computes  sum_{i,j} c_i^* c_j <bra_i|O|ket_j> / sum_{i,j} c_i^* c_j <bra_i|ket_j>
+    where the bra and ket linear combinations may have different sizes.
+    """
+    N_bra = bras.shape[0]
+    N_ket = kets.shape[0]
+    bra_batch = (N_bra + n_chunks - 1) // n_chunks
+    ket_batch = (N_ket + n_chunks - 1) // n_chunks
+
+    def row_contribution(ket_j, c_j):
+        def col_fn(bra_i, c_i):
+            o = jnp.linalg.det(bra_i.T.conj() @ ket_j)
+            v = property_fn(bra_i, ket_j)
+            w = c_i.conj() * c_j * o
+            return w * v, w
+
+        def inner_f(x):
+            return col_fn(x[0], x[1])
+
+        w_vals, ws = lax.map(inner_f, (bras, bra_coeffs), batch_size=bra_batch)
+        return jnp.sum(w_vals, axis=0), jnp.sum(ws)
+
+    def outer_f(x):
+        return row_contribution(x[0], x[1])
+
+    nums, denoms = lax.map(outer_f, (kets, ket_coeffs), batch_size=ket_batch)
+    return (jnp.sum(nums, axis=0) / jnp.sum(denoms)).real
+
+
 def _evaluate_projected_property(
     psi: jnp.ndarray,
     projectors: tuple,
     property_fn: callable,
     n_chunks: int = 1,
+    commuting_types: set[type] | None = None,
 ) -> jnp.ndarray:
-    kets, coeffs = _apply_projector_sequence(psi, projectors)
-    return _accumulate_weighted(kets, coeffs, property_fn, n_chunks=n_chunks)
+    if commuting_types is None:
+        kets, coeffs = _apply_projector_sequence(psi, projectors)
+        return _accumulate_weighted(kets, coeffs, property_fn, n_chunks=n_chunks)
+
+    bra_projs, ket_projs = _split_projectors(projectors, commuting_types)
+    if len(bra_projs) == len(ket_projs):
+        # fall back to symmetric
+        kets, coeffs = _apply_projector_sequence(psi, projectors)
+        return _accumulate_weighted(kets, coeffs, property_fn, n_chunks=n_chunks)
+
+    bras, bra_coeffs = _apply_projector_sequence(psi, bra_projs)
+    kets, ket_coeffs = _apply_projector_sequence(psi, ket_projs)
+    return _accumulate_weighted_asymmetric(
+        bras, bra_coeffs, kets, ket_coeffs, property_fn, n_chunks=n_chunks
+    )
 
 
 def calculate_projected_1rdm(
@@ -864,21 +930,34 @@ def calculate_projected_1rdm(
     n_chunks: int = 1,
 ) -> np.ndarray:
     """
-    Calculate the projected one-body reduced density matrix (1RDM)
-    of a GHF determinant under optional symmetry projections.
+    Calculate the spin-conserving blocks of the projected 1-RDM.
+
+    Returns the up-up and down-down blocks as a (2, norb, norb) array.
+    The spin-flip blocks vanish by symmetry for Sz=0 projected states
+    and are not computed.  Since each a_{is}^dag a_{js} commutes with
+    P_Sz, that projector is absorbed from the bra side.
 
     Args:
-        psi: GHF determinant.
+        psi: GHF determinant, shape (2*norb, nocc).
         projectors: Sequence of projector objects applied to |psi>.
 
     Returns:
-        Projected 1RDM as a numpy ndarray.
+        Projected 1-RDM spin blocks as a (2, norb, norb) numpy ndarray.
     """
+    norb = psi.shape[0] // 2
+
+    def _spin_conserving_green(bra, ket):
+        G = _mixed_green(bra, ket)
+        return jnp.stack([G[:norb, :norb], G[norb:, norb:]])
 
     @jax.jit
     def rdm1_function(psi_var: jnp.ndarray) -> jnp.ndarray:
         return _evaluate_projected_property(
-            psi_var, projectors, _mixed_green, n_chunks=n_chunks
+            psi_var,
+            projectors,
+            _spin_conserving_green,
+            n_chunks=n_chunks,
+            commuting_types={sz_projector},
         )
 
     rdm1 = rdm1_function(psi)
@@ -915,7 +994,11 @@ def calculate_projected_density_correlations(
             return density_corr
 
         return _evaluate_projected_property(
-            psi_var, projectors, calc_density_corr, n_chunks=n_chunks
+            psi_var,
+            projectors,
+            calc_density_corr,
+            n_chunks=n_chunks,
+            commuting_types={sz_projector},
         )
 
     density_corr = density_corr_function(psi)
@@ -976,7 +1059,13 @@ def calculate_projected_sz_correlations(psi, projectors, n_chunks=1):
         def prop_fn(bra, ket):
             return _SzSz_from_G(_mixed_green(bra, ket))
 
-        return _evaluate_projected_property(psi, projectors, prop_fn, n_chunks=n_chunks)
+        return _evaluate_projected_property(
+            psi,
+            projectors,
+            prop_fn,
+            n_chunks=n_chunks,
+            commuting_types={sz_projector},
+        )
 
     corr = evaluate()
     return np.array(corr)
@@ -988,7 +1077,13 @@ def calculate_projected_s_correlations(psi, projectors, n_chunks=1):
         def prop_fn(bra, ket):
             return _SdotS_from_G(_mixed_green(bra, ket))
 
-        return _evaluate_projected_property(psi, projectors, prop_fn, n_chunks=n_chunks)
+        return _evaluate_projected_property(
+            psi,
+            projectors,
+            prop_fn,
+            n_chunks=n_chunks,
+            commuting_types={sz_projector, singlet_projector},
+        )
 
     corr = evaluate()
     return np.array(corr)
@@ -1001,7 +1096,13 @@ def calculate_projected_s2(psi, projectors, n_chunks=1):
             G = _mixed_green(bra, ket)
             return jnp.sum(_SdotS_from_G(G))
 
-        return _evaluate_projected_property(psi, projectors, prop_fn, n_chunks=n_chunks)
+        return _evaluate_projected_property(
+            psi,
+            projectors,
+            prop_fn,
+            n_chunks=n_chunks,
+            commuting_types={sz_projector, singlet_projector},
+        )
 
     s2 = evaluate()
     return float(s2)
