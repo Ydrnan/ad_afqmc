@@ -172,6 +172,18 @@ class OneDimensionalChain(Lattice):
                 h[nr, r] = 1
         return h
 
+    def build_pg_ops(self, parity=1.0):
+        """
+        Build symmetry operations for the 1D chain, identity and reflection.
+        """
+        n_sites = self.n_sites
+        E = np.eye(n_sites, dtype=float)
+        perm_c2 = np.arange(n_sites - 1, -1, -1)
+        U_c2 = E[:, perm_c2]
+        pg_ops = [E, U_c2]
+        pg_chars = [1.0, parity]
+        return pg_ops, pg_chars
+
     def __hash__(self):
         return hash((self.n_sites, self.shape, self.sites, self.bonds))
 
@@ -1157,18 +1169,20 @@ class TriangularGrid(Lattice):
         pg_chars = [1.0, parity]
         return pg_ops, pg_chars
 
-    def build_pg_ops_xc(self):
+    def build_pg_ops_xc(self, irrep="A1"):
         """
         Full space-group ops for triangular XC cylinder (PBC in x, OBC in y)
         with a 2-row unit cell along x.
 
+        Parameters
+        ----------
+        irrep : str
+            One of "A1", "A2", "B1", "B2" — the four abelian irreps of D_{nx}.
+
         Returns
         -------
         pg_ops  : list of (N, N) arrays
-            All symmetry operators: {E, C2, G, C2G} * {T2^n}, n = 0..nx/2-1.
-            Total number of ops = 2 * nx.
         pg_chars: list of ints
-            Characters for the totally symmetric irrep (all +1).
         """
         nx = self.l_x
         ny = self.l_y
@@ -1176,62 +1190,75 @@ class TriangularGrid(Lattice):
         if nx % 2 != 0:
             raise ValueError("nx must be even to have a 2-row unit cell along x.")
 
+        irrep = irrep.upper()
+        if irrep not in ("A1", "A2", "B1", "B2"):
+            raise ValueError(
+                f"Unknown abelian irrep '{irrep}'. Must be A1, A2, B1, or B2."
+            )
+
+        #                    E*T2^n  C2*T2^n  G*T2^n  C2G*T2^n
+        # base_op index:       0        1        2        3
+        char_table = {
+            "A1": [1, 1, 1, 1],
+            "A2": [1, -1, 1, -1],
+            "B1": [1, 1, -1, -1],
+            "B2": [1, -1, -1, 1],
+        }
+        base_chars = char_table[irrep]
+
         n_sites = nx * ny
-        E = np.eye(n_sites, dtype=float)
+        E_mat = np.eye(n_sites, dtype=float)
 
         def idx(x, y):
             return (x % nx) * ny + y
 
-        # --- C2: inversion ---
-        # (x, y) -> (nx-1-x, ny-1-y)  <=>  i -> N-1-i in row-major
+        # C2: (x, y) -> (nx-1-x, ny-1-y)
         perm_c2 = np.arange(n_sites - 1, -1, -1)
-        U_c2 = E[:, perm_c2]
+        U_c2 = E_mat[:, perm_c2]
 
-        # --- Glide G: (x, y) -> (x+1, ny-1-y) ---
+        # Glide G: (x, y) -> (x+1, ny-1-y)
         perm_g = np.empty(n_sites, dtype=int)
         for x in range(nx):
             for y in range(ny):
                 i = idx(x, y)
                 perm_g[i] = idx((x + 1) % nx, ny - 1 - y)
-        U_g = E[:, perm_g]
+        U_g = E_mat[:, perm_g]
 
-        # --- T2^n: translation by 2n rows: (x, y) -> (x+2n, y) ---
+        # T2^n: (x, y) -> (x+2n, y)
         def U_t2_power(n):
             perm = np.empty(n_sites, dtype=int)
             for x in range(nx):
                 for y in range(ny):
                     i = idx(x, y)
                     perm[i] = idx((x + 2 * n) % nx, y)
-            return E[:, perm]
+            return E_mat[:, perm]
 
-        # Base (point-group) ops without translations
-        base_ops = [E, U_c2, U_g, U_c2 @ U_g]
+        # Base ops: [E, C2, G, C2*G]
+        base_ops = [E_mat, U_c2, U_g, U_c2 @ U_g]
 
         pg_ops = []
         pg_chars = []
 
-        # n = 0: just the base ops
-        for U in base_ops:
-            if not any(np.array_equal(U, V) for V in pg_ops):
-                pg_ops.append(U)
-                pg_chars.append(1)
-
-        # n = 1 .. nx/2-1: T2^n and its products with base ops
         maxn = nx // 2
-        for n in range(1, maxn):
-            U_tn = U_t2_power(n)
-            for U0 in base_ops:
+        for n in range(maxn):
+            U_tn = U_t2_power(n) if n > 0 else E_mat
+            for j, U0 in enumerate(base_ops):
                 U = U0 @ U_tn
                 if not any(np.array_equal(U, V) for V in pg_ops):
                     pg_ops.append(U)
-                    pg_chars.append(1)
+                    pg_chars.append(base_chars[j])
 
         return pg_ops, pg_chars
 
-    def build_pg_ops_yc(self):
+    def build_pg_ops_yc(self, irrep="A1"):
         """
         Full space-group ops for triangular YC cylinder (PBC in x, OBC in y)
         with a 1-row unit cell along x.
+
+        Parameters
+        ----------
+        irrep : str
+            One of "A1", "A2", "B1", "B2" — the four abelian irreps of D_{2*nx}.
 
         Returns
         -------
@@ -1239,71 +1266,85 @@ class TriangularGrid(Lattice):
             All symmetry operators: {E, C2, G, C2G} * {T^n}, n = 0..nx-1.
             Total number of ops = 4 * nx.
         pg_chars: list of ints
-            Characters for the totally symmetric irrep (all +1).
         """
         nx = self.l_x
         ny = self.l_y
         n_sites = nx * ny
 
-        E = np.eye(n_sites, dtype=float)
+        irrep = irrep.upper()
+        if irrep not in ("A1", "A2", "B1", "B2"):
+            raise ValueError(
+                f"Unknown abelian irrep '{irrep}'. Must be A1, A2, B1, or B2."
+            )
+
+        # G^2 = T, so G has order 2*nx -> group is D_{2*nx}
+        # Base ops: [E, C2, G, C2*G]
+        # E*T^n  = G^{2n}     : rotation, even G-power
+        # C2*T^n = C2*G^{2n}  : reflection, even G-power
+        # G*T^n  = G^{2n+1}   : rotation, odd G-power
+        # C2G*T^n = C2*G^{2n+1}: reflection, odd G-power
+        #
+        #                  E*T^n  C2*T^n  G*T^n  C2G*T^n
+        char_table = {
+            "A1": [1, 1, 1, 1],
+            "A2": [1, -1, 1, -1],
+            "B1": [1, 1, -1, -1],
+            "B2": [1, -1, -1, 1],
+        }
+        base_chars = char_table[irrep]
+
+        E_mat = np.eye(n_sites, dtype=float)
 
         def idx(x, y):
             return (x % nx) * ny + y
 
-        # --- C2: inversion ---
+        # C2: (x, y) -> (nx-1-x, ny-1-y)
         perm_c2 = np.arange(n_sites - 1, -1, -1)
-        U_c2 = E[:, perm_c2]
+        U_c2 = E_mat[:, perm_c2]
 
-        # --- Glide G (YC) ---
+        # Glide G (YC): (x, y) -> (x + [1 if y even else 0], ny-1-y)
         perm_g = np.empty(n_sites, dtype=int)
         for x in range(nx):
             for y in range(ny):
                 i = idx(x, y)
-                if y % 2 == 0:  # even column
+                if y % 2 == 0:
                     xp = (x + 1) % nx
-                else:  # odd column
+                else:
                     xp = x
                 yp = ny - 1 - y
                 perm_g[i] = idx(xp, yp)
-        U_g = E[:, perm_g]
+        U_g = E_mat[:, perm_g]
 
-        # --- T^n: translation by n rows: (x, y) -> (x + n, y) ---
+        # T^n: (x, y) -> (x + n, y)
         def U_t_power(n):
             perm = np.empty(n_sites, dtype=int)
             for x in range(nx):
                 for y in range(ny):
                     i = idx(x, y)
                     perm[i] = idx(x + n, y)
-            return E[:, perm]
+            return E_mat[:, perm]
 
-        # Base (point-group) ops without translations
-        base_ops = [E, U_c2, U_g, U_c2 @ U_g]
+        # Base ops: [E, C2, G, C2*G]
+        base_ops = [E_mat, U_c2, U_g, U_c2 @ U_g]
 
         pg_ops = []
         pg_chars = []
 
-        # n = 0: just the base ops
-        for U in base_ops:
-            if not any(np.array_equal(U, V) for V in pg_ops):
-                pg_ops.append(U)
-                pg_chars.append(1)
-
-        # n = 1 .. nx-1: T^n and its products with base ops
-        for n in range(1, nx):
-            U_tn = U_t_power(n)
-            for U0 in base_ops:
+        for n in range(nx):
+            U_tn = U_t_power(n) if n > 0 else E_mat
+            for j, U0 in enumerate(base_ops):
                 U = U0 @ U_tn
                 if not any(np.array_equal(U, V) for V in pg_ops):
                     pg_ops.append(U)
-                    pg_chars.append(1)
+                    pg_chars.append(base_chars[j])
 
         return pg_ops, pg_chars
 
-    def build_pg_ops(self):
+    def build_pg_ops(self, irrep="A1"):
         if self.boundary in "xc":
-            return self.build_pg_ops_xc()
+            return self.build_pg_ops_xc(irrep=irrep)
         elif self.boundary == "yc":
-            return self.build_pg_ops_yc()
+            return self.build_pg_ops_yc(irrep=irrep)
         elif self.boundary == "oxc":
             return self.build_pg_ops_oxc(parity=1.0)
         else:

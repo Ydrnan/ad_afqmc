@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from jax import lax, tree_util
 
 from ..core.levels import LevelPack, LevelSpec
-from ..core.ops import MeasOps, k_energy, k_force_bias
+from ..core.ops import MeasOps, k_energy, k_force_bias, o_rdm1
 from ..core.system import System
 from ..ham.chol import HamChol, slice_ham_level
 from ..trial.cisd import CisdTrial
@@ -381,6 +381,58 @@ def energy_kernel_rw_rh(
     return (e1 + e2) / overlap + e0
 
 
+def rdm1_kernel_rw(
+    walker: jax.Array, ham_data: jax.Array, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
+) -> jax.Array:
+    """
+    Mixed estimator 1RDM for CISD trial with restricted walker.
+
+    gamma = G^0 - (ci1_green + ci2_green) / Omega
+
+    Returns (2, norb, norb): [alpha, beta] (identical for restricted).
+    """
+    ci1, ci2 = trial_data.ci1, trial_data.ci2
+    nocc = trial_data.nocc
+    norb = trial_data.norb
+
+    green = _greens_restricted(walker, nocc)  # (nocc, norb)
+    green_occ = green[:, nocc:]  # (nocc, nvir)
+    greenp = _greenp_from_green(green)  # (norb, nvir)
+
+    # HF Green's function: G^0[:, :nocc] = green.T, G^0[:, nocc:] = 0
+    g0 = jnp.zeros((norb, norb), dtype=green.dtype)
+    g0 = g0.at[:, :nocc].set(green.T)
+
+    # overlap components
+    ci1g = jnp.einsum("pt,pt->", ci1, green_occ, optimize="optimal")
+
+    # singles correction
+    ci1_green = (greenp @ ci1.T) @ green  # (norb, norb)
+
+    # doubles correction
+    ci2g_c = jnp.einsum(
+        "ptqu,pt->qu",
+        ci2.astype(meas_ctx.cfg.mixed_real_dtype),
+        green_occ.astype(meas_ctx.cfg.mixed_complex_dtype),
+        optimize="optimal",
+    )
+    ci2g_e = jnp.einsum(
+        "ptqu,pu->qt",
+        ci2.astype(meas_ctx.cfg.mixed_real_dtype),
+        green_occ.astype(meas_ctx.cfg.mixed_complex_dtype),
+        optimize="optimal",
+    )
+    ci2_green = 2.0 * (greenp @ ci2g_c.T) @ green - (greenp @ ci2g_e.T) @ green
+
+    ci2g = 2.0 * ci2g_c - ci2g_e
+    gci2g = jnp.einsum("qu,qu->", ci2g, green_occ, optimize="optimal")
+
+    overlap = 1.0 + 2.0 * ci1g + gci2g
+    gamma = g0 - (ci1_green + ci2_green) / overlap
+
+    return jnp.stack([gamma, gamma], axis=0)
+
+
 def make_cisd_meas_ops(
     sys: System,
     memory_mode: str = "high",
@@ -406,4 +458,5 @@ def make_cisd_meas_ops(
             ham_data, trial_data, cfg
         ),
         kernels={k_force_bias: force_bias_kernel_rw_rh, k_energy: energy_kernel_rw_rh},
+        observables={o_rdm1: rdm1_kernel_rw},
     )
