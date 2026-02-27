@@ -33,16 +33,11 @@ def force_bias_kernel_rw_rh(
     meas_ctx: UhfMeasCtx,
     trial_data: UhfTrial,
 ) -> jax.Array:
-    assert trial_data.nocc[0] == trial_data.nocc[1]
-    w = walker
-    mu = trial_data.mo_coeff_a.conj().T @ w
-    md = trial_data.mo_coeff_b.conj().T @ w
-    gu = _half_green_from_overlap_matrix(w, mu)  # (nocc[0], norb)
-    gd = _half_green_from_overlap_matrix(w, md)  # (nocc[1], norb)
-
-    fb_u = jnp.einsum("gij,ij->g", meas_ctx.rot_chol_a, gu, optimize="optimal")
-    fb_d = jnp.einsum("gij,ij->g", meas_ctx.rot_chol_b, gd, optimize="optimal")
-    return fb_u + fb_d
+    n_elec_0 = trial_data.nocc[0]
+    n_elec_1 = trial_data.nocc[1]
+    return force_bias_kernel_uw_rh(
+        (walker[:, :n_elec_0], walker[:, :n_elec_1]), ham_data, meas_ctx, trial_data
+    )
 
 
 def force_bias_kernel_uw_rh(
@@ -92,14 +87,11 @@ def rdm1_kernel_rw(
     meas_ctx: UhfMeasCtx,
     trial_data: UhfTrial,
 ) -> jax.Array:
-    assert trial_data.nocc[0] == trial_data.nocc[1]
-    mu = trial_data.mo_coeff_a.conj().T @ walker
-    md = trial_data.mo_coeff_b.conj().T @ walker
-    gu = _half_green_from_overlap_matrix(walker, mu)
-    gd = _half_green_from_overlap_matrix(walker, md)
-    dm_a = gu.T @ trial_data.mo_coeff_a.conj().T
-    dm_b = gd.T @ trial_data.mo_coeff_b.conj().T
-    return jnp.stack([dm_a, dm_b], axis=0)
+    n_elec_0 = trial_data.nocc[0]
+    n_elec_1 = trial_data.nocc[1]
+    return rdm1_kernel_uw(
+        (walker[:, :n_elec_0], walker[:, :n_elec_1]), ham_data, meas_ctx, trial_data
+    )
 
 
 def rdm1_kernel_uw(
@@ -174,8 +166,11 @@ def density_corr_kernel_rw(
     meas_ctx: UhfMeasCtx,
     trial_data: UhfTrial,
 ) -> jax.Array:
-    assert trial_data.nocc[0] == trial_data.nocc[1]
-    return density_corr_kernel_uw((walker, walker), ham_data, meas_ctx, trial_data)
+    n_elec_0 = trial_data.nocc[0]
+    n_elec_1 = trial_data.nocc[1]
+    return density_corr_kernel_uw(
+        (walker[:, :n_elec_0], walker[:, :n_elec_1]), ham_data, meas_ctx, trial_data
+    )
 
 
 def density_corr_kernel_gw(
@@ -200,28 +195,11 @@ def energy_kernel_rw_rh(
     meas_ctx: UhfMeasCtx,
     trial_data: UhfTrial,
 ) -> jax.Array:
-    assert trial_data.nocc[0] == trial_data.nocc[1]
-    w = walker
-    mu = trial_data.mo_coeff_a.conj().T @ w
-    md = trial_data.mo_coeff_b.conj().T @ w
-    gu = _half_green_from_overlap_matrix(w, mu)
-    gd = _half_green_from_overlap_matrix(w, md)
-
-    e0 = ham_data.h0
-    e1 = jnp.sum(gu * meas_ctx.rot_h1_a) + jnp.sum(gd * meas_ctx.rot_h1_b)
-
-    f_up = jnp.einsum("gij,jk->gik", meas_ctx.rot_chol_a, gu.T, optimize="optimal")
-    f_dn = jnp.einsum("gij,jk->gik", meas_ctx.rot_chol_b, gd.T, optimize="optimal")
-    c_up = jax.vmap(jnp.trace)(f_up)
-    c_dn = jax.vmap(jnp.trace)(f_dn)
-    exc_up = jnp.sum(jax.vmap(lambda x: x * x.T)(f_up))
-    exc_dn = jnp.sum(jax.vmap(lambda x: x * x.T)(f_dn))
-
-    e2 = (
-        jnp.sum(c_up * c_up) + jnp.sum(c_dn * c_dn) + 2.0 * jnp.sum(c_up * c_dn) - exc_up - exc_dn
-    ) / 2.0
-
-    return e0 + e1 + e2
+    n_elec_0 = trial_data.nocc[0]
+    n_elec_1 = trial_data.nocc[1]
+    return energy_kernel_uw_rh(
+        (walker[:, :n_elec_0], walker[:, :n_elec_1]), ham_data, meas_ctx, trial_data
+    )
 
 
 def energy_kernel_uw_rh(
