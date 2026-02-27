@@ -20,7 +20,7 @@ class Rhf_fp:
         mol = mf.mol
 
         mf_or_cc = StagedMfOrCc(mf, norb_frozen=0)
-        ham_input = _stage_ham_input(mf_or_cc, chol_cut=1e-5, verbose=True)
+        ham_input = _stage_ham_input(mf_or_cc, chol_cut=1e-6, verbose=True)
         h0 = ham_input.h0
         h1 = ham_input.h1
         chol = ham_input.chol
@@ -31,7 +31,7 @@ class Rhf_fp:
         self.meas_ops = make_rhf_meas_ops(sys=sys)
         self.prop_ops = make_prop_ops_fp(ham_data.basis, sys.walker_kind, sys=sys)
         self.params = QmcParams(
-                n_eql_blocks=0, n_ene_blocks=100,n_blocks=51, n_prop_steps=40,dt=0.005, ene0 = mf.e_tot,n_walkers=200, seed=10)#np.random.randint(0, int(1e6))
+                n_eql_blocks=0, n_ene_blocks=3,n_blocks=10, n_prop_steps=50,dt=0.005, ene0 = mf.e_tot,n_walkers=200, seed=42)#np.random.randint(0, int(1e6))
         #)
         self.block_fn = block_fp
         self.sys = sys

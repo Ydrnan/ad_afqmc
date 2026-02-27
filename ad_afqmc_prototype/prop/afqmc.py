@@ -35,7 +35,6 @@ def init_prop_state(
     n_walkers = params.n_walkers
     seed = params.seed
     key = jax.random.PRNGKey(int(seed))
-    # jax.debug.print("key {a}", a=key)
     weights = jnp.ones((n_walkers,))
 
     if initial_walkers is None:
@@ -46,7 +45,6 @@ def init_prop_state(
     overlaps = wk.vmap_chunked(
         meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
     )(initial_walkers, trial_data)
-#    jax.debug.print("Initial overlaps {a}", a=overlaps)
 
     e_est = None
     if initial_e_estimate is not None:
@@ -60,10 +58,7 @@ def init_prop_state(
                 walker_0, ham_data, meas_ctx, trial_data
             )
         )
-#        jax.debug.print("Initial energy estimate from walkers: {a}", a=e_samples)
         e_est = jnp.mean(e_samples)
-#        jax.debug.print("Initial energy estimate: {a}", a=e_est)
-        #jax.debug.print("Initial energy estimate from params: {}", ham_data.chol)
 
     pop_shift = e_est
 
@@ -100,7 +95,6 @@ def fp_init_prop_state(
     n_walkers = params.n_walkers
     seed = params.seed
     key = seed
-    # jax.debug.print("key in fp {a}", a=key)
     weights = jnp.ones((n_walkers,))
 
     if initial_walkers is None:
@@ -111,7 +105,6 @@ def fp_init_prop_state(
     overlaps = wk.vmap_chunked(
         meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
     )(initial_walkers, trial_data)
-#    jax.debug.print("Initial overlaps {a}", a=overlaps)
 
     e_est = None
     if initial_e_estimate is not None:
@@ -125,10 +118,7 @@ def fp_init_prop_state(
                 walker_0, ham_data, meas_ctx, trial_data
             )
         )
-#        jax.debug.print("Initial energy estimate from walkers: {a}", a=e_samples)
         e_est = jnp.mean(e_samples)
-#        jax.debug.print("Initial energy estimate: {a}", a=e_est)
-        #jax.debug.print("Initial energy estimate from params: {}", ham_data.chol)
 
     pop_shift = e_est
 
@@ -170,11 +160,9 @@ def afqmc_step(
 
     shift_term = jnp.sum(shifted_fields * prop_ctx.mf_shifts, axis=1)
     fb_term = jnp.sum(fields * field_shifts - 0.5 * field_shifts * field_shifts, axis=1)
-
     walkers_new = wk.vmap_chunked(
         trotter_ops.apply_trotter, n_chunks=params.n_chunks, in_axes=(0, 0, None, None)
     )(state.walkers, shifted_fields, prop_ctx, params.n_exp_terms)
-
     overlaps_new = wk.vmap_chunked(
         meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
     )(walkers_new, trial_data)

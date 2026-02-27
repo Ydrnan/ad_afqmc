@@ -297,7 +297,7 @@ def run_qmc_energy_fp(
     meas_ctx: Any | None = None,
     target_error: float | None = None,
     mesh: Mesh | None = None,
-) -> tuple[jax.Array, jax.Array]:
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     """
 
     Returns:
@@ -358,7 +358,7 @@ def run_qmc_energy_fp(
     for i in range(params.n_ene_blocks):
         block_e_s = []
         block_w_s = []
-        print("Trajectory count", i)
+        print("Trajectory count", i+1)
         if i > 0 :
             params = replace( params, seed = params.seed + i)
             state = prop_ops.init_prop_state(
@@ -398,7 +398,7 @@ def run_qmc_energy_fp(
             print(
             f"{(timer[j]):14.4f} "
             f"{(mean_energies[j*chunk].real):14.10f}  "
-            f"{(error[j*chunk].real):10.3e}  "
+            f"{(error[j*chunk].real):10.7e}  "
             f"{(mean_sign[j*chunk].real):10.2f}"
         )
             elapsed = time.perf_counter() - t0
@@ -407,4 +407,4 @@ def run_qmc_energy_fp(
         
         
 
-    return  block_e_all, block_w_all 
+    return  mean_energies, error, block_e_all, block_w_all 

@@ -221,8 +221,8 @@ def _apply_trotter_u(
 ) -> Tuple[jax.Array, jax.Array]:
     w1 = _apply_one_body_half_unrestricted(w_ud, prop_ctx)
     w2 = _apply_two_body_unrestricted(w1, field, prop_ctx, n_terms, make_vhs=make_vhs)
-    return _apply_one_body_half_unrestricted(w2, prop_ctx)
-
+    a =_apply_one_body_half_unrestricted(w2, prop_ctx)
+    return a
 
 def _apply_trotter_g_from_restricted(
     w: jax.Array,
@@ -265,7 +265,7 @@ def make_trotter_ops(
 
     if ham_basis not in ("restricted", "generalized"):
         raise ValueError(f"unknown ham_basis: {ham_basis}")
-
+    
     match ham_basis, walker_kind:
         case "restricted", "restricted":
             apply_trotter = lambda w, f, ctx, n_terms, mv=make_vhs: _apply_trotter_r(

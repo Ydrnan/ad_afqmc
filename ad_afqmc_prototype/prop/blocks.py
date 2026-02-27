@@ -140,21 +140,15 @@ def block_fp(
         prop_ctx=prop_ctx,
         meas_ctx=meas_ctx,
     )
-
-    #print(type(prop_ctx))
-    #print(sys.nelec[0])
     def _scan_step(carry: PropState, _x: Any):
         carry = step_fp(carry)
         return carry, None
 
     state, _ = lax.scan(_scan_step, state, xs=None, length=params.n_prop_steps)
-#    jax.debug.print("Walkers after step one before orthonormalize: {a}", a=state.weights)
-    # walkers_new = wk.orthonormalize(state.walkers, sys.walker_kind)
     overlaps_new = wk.vmap_chunked(
          meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
     )(state.walkers, trial_data)
     state = state._replace(overlaps=overlaps_new)
-#    jax.debug.print("Walkers after orthonormalize: {a}", a=state.weights)
     e_kernel = meas_ops.require_kernel(k_energy)
     e_samples = wk.vmap_chunked(
         e_kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None)
@@ -167,28 +161,9 @@ def block_fp(
     weights = state.weights
     overlaps = state.overlaps
     w_sum = jnp.sum(weights * overlaps)
-#    w_sum_safe = jnp.where(w_sum == 0, 1.0, w_sum)
-    e_block = jnp.sum(weights * overlaps * e_samples) / w_sum
-    
+    e_block = jnp.sum(weights * overlaps * e_samples) / w_sum  
     ov = jnp.sum(overlaps)
-#    jax.debug.print("overlap IN block {a}", a=ov)
     abs_ov = jnp.sum(jnp.abs(overlaps))
-
-    # key, subkey = jax.random.split(state.rng_key)
-    # zeta = jax.random.uniform(subkey)
-    # w_sr, weights_sr = sr_fn(state.walkers, state.weights, zeta, sys.walker_kind)
-    # overlaps_sr = wk.vmap_chunked(
-    #     meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
-    # )(w_sr, trial_data)
-    # ov = jnp.sum(overlaps_sr)
-    # abs_ov = jnp.sum(jnp.abs(overlaps_sr))
-    # jax.debug.print("Walkers after SR: {a}", a=weights_sr)
-    # state = state._replace(
-    #     walkers=w_sr,
-    #     weights=weights_sr,
-    #     overlaps=overlaps_sr,
-    #     rng_key=key,
-    # )
 
     obs = BlockObs(scalars={"energy": e_block, "weight": w_sum, "overlap": ov, "abs_overlap": abs_ov})
     return state, obs
