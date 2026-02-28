@@ -38,7 +38,7 @@ class BlockObs(NamedTuple):
     observables: dict[str, jax.Array]
 
 
-def proc_e(samples: Array, state: PropState, params: QmcParams) -> BlockObs:
+def proc_e(samples: jax.Array, state: PropState, params: QmcParams) -> BlockObs:
     (e_samples,) = samples
     e_samples = jnp.real(e_samples)
 
@@ -52,7 +52,7 @@ def proc_e(samples: Array, state: PropState, params: QmcParams) -> BlockObs:
     e_block = jnp.sum(weights * e_samples) / w_sum_safe
     e_block = jnp.where(w_sum == 0, e_ref, e_block)
 
-    obs = BlockObs(scalars={"energy": e_block, "weight": w_sum}, observables={})
+    obs = BlockObs(scalars={"energy": e_block, "weight": w_sum, "weight_safe": w_sum_safe}, observables={})
     return obs
 
 
@@ -114,6 +114,9 @@ def block(
     alpha = jnp.asarray(params.shift_ema, dtype=jnp.result_type(e_block))
     state = state._replace(e_estimate=(1.0 - alpha) * state.e_estimate + alpha * e_block)
 
+    weights = state.weights
+    w_sum = obs.scalars["weight"]
+    w_sum_safe = obs.scalars["weight_safe"]
     obs_samples: dict[str, jax.Array] = {}
     for name in observable_names:
         kernel = meas_ops.require_observable(name)

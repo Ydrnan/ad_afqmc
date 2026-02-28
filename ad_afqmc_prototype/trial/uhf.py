@@ -99,7 +99,7 @@ def make_uhf_trial_data(data: dict, sys: System) -> UhfTrial:
         mo_a = jnp.asarray(data["mo"])
         mo_b = jnp.asarray(data["mo"])
     else:
-        raise KeyError(f"Failed to find the trial coeff.")
+        raise KeyError("Failed to find the trial coeff.")
 
     mo_a = mo_a[:, : sys.nup]
     mo_b = mo_b[:, : sys.ndn]

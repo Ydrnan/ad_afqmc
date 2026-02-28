@@ -90,7 +90,7 @@ def _make_trial_bundle(
 
     if kind == "rhf":
         from .meas.rhf import make_rhf_meas_ops
-        from .trial.rhf import RhfTrial, make_rhf_trial_ops, make_rhf_trial_data
+        from .trial.rhf import make_rhf_trial_ops, make_rhf_trial_data
 
         trial_data = make_rhf_trial_data(data, sys)
         trial_ops = make_rhf_trial_ops(sys=sys)
@@ -99,7 +99,7 @@ def _make_trial_bundle(
 
     if kind == "uhf":
         from .meas.uhf import make_uhf_meas_ops
-        from .trial.uhf import UhfTrial, make_uhf_trial_ops, make_uhf_trial_data
+        from .trial.uhf import make_uhf_trial_ops, make_uhf_trial_data
 
         trial_data = make_uhf_trial_data(data, sys)
         trial_ops = make_uhf_trial_ops(sys=sys)
@@ -108,7 +108,7 @@ def _make_trial_bundle(
 
     if kind == "ghf":
         from .meas.ghf import make_ghf_meas_ops_chol
-        from .trial.ghf import GhfTrial, make_ghf_trial_ops, make_ghf_trial_data
+        from .trial.ghf import make_ghf_trial_ops, make_ghf_trial_data
 
         trial_data = make_ghf_trial_data(data, sys=sys)
         trial_ops = make_ghf_trial_ops(sys=sys)
@@ -117,7 +117,7 @@ def _make_trial_bundle(
 
     if kind == "cisd":
         from .meas.cisd import make_cisd_meas_ops
-        from .trial.cisd import CisdTrial, make_cisd_trial_ops, make_cisd_trial_data
+        from .trial.cisd import make_cisd_trial_ops, make_cisd_trial_data
 
         trial_data = make_cisd_trial_data(data, sys)
         trial_ops = make_cisd_trial_ops(sys=sys)
@@ -126,7 +126,7 @@ def _make_trial_bundle(
 
     if kind == "ucisd":
         from .meas.ucisd import make_ucisd_meas_ops
-        from .trial.ucisd import UcisdTrial, make_ucisd_trial_ops, make_ucisd_trial_data
+        from .trial.ucisd import make_ucisd_trial_ops, make_ucisd_trial_data
 
         trial_data = make_ucisd_trial_data(data, sys)
         trial_ops = make_ucisd_trial_ops(sys=sys)
@@ -135,7 +135,7 @@ def _make_trial_bundle(
 
     if kind == "gcisd":
         from .meas.gcisd import make_gcisd_meas_ops
-        from .trial.gcisd import GcisdTrial, make_gcisd_trial_ops, make_gcisd_trial_data
+        from .trial.gcisd import make_gcisd_trial_ops, make_gcisd_trial_data
 
         trial_data = make_gcisd_trial_data(data, sys)
         trial_ops = make_gcisd_trial_ops(sys=sys)

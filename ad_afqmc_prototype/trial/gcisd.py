@@ -101,4 +101,8 @@ def make_gcisd_trial_data(data: dict, sys: System) -> GcisdTrial:
     ci1 = jnp.asarray(data["ci1"])
     ci2 = jnp.asarray(data["ci2"])
     mo = jnp.asarray(data["mo_coeff"])
-    return GcisdTrial(data["mo_coeff"], ci1, ci2)
+    return GcisdTrial(
+        mo_coeff=mo,
+        c1=ci1,
+        c2=ci2,
+    )
