@@ -1,9 +1,18 @@
-from typing import Any, Dict, Iterable, Tuple
+from typing import Any, Dict, Iterable, cast
 
 import numpy as np
 
 
-def _pick_plateau(Bs, SEs, Gs, *, min_blocks=20, min_rise=0.20, flat_tol=0.03, k=3):
+def _pick_plateau(
+    Bs: np.ndarray,
+    SEs: np.ndarray,
+    Gs: np.ndarray,
+    *,
+    min_blocks: int = 20,
+    min_rise: float = 0.20,
+    flat_tol: float = 0.03,
+    k: int = 3,
+) -> tuple[int, float, int]:
     assert Bs.size > 0
     Bs, SEs, Gs = map(np.asarray, (Bs, SEs, Gs))
     ok = Gs >= min_blocks
@@ -24,8 +33,8 @@ def _pick_plateau(Bs, SEs, Gs, *, min_blocks=20, min_rise=0.20, flat_tol=0.03, k
 
 
 def blocking_analysis_ratio(
-    ene,
-    wt,
+    ene: np.ndarray,
+    wt: np.ndarray,
     block_grid: Iterable[int] | None = None,
     *,
     min_blocks: int = 20,
@@ -33,7 +42,7 @@ def blocking_analysis_ratio(
     flat_tol: float = 0.03,
     k: int = 3,
     bins: int | str = "fd",
-    figsize: Tuple[float, float] = (12, 4.2),
+    figsize: tuple[float, float] = (12, 4.2),
     title: str | None = None,
     print_q: bool = True,
     plot_q: bool = False,
@@ -51,14 +60,15 @@ def blocking_analysis_ratio(
     mu_full = S_tot / N_tot
 
     if block_grid is None:
-        raw = np.unique(
-            np.rint(np.geomspace(1, max(2, n // min_blocks), 18)).astype(int)
-        )
+        raw = np.unique(np.rint(np.geomspace(1, max(2, n // min_blocks), 18)).astype(int))
         block_grid = [int(b) for b in raw if b >= 1 and (n // b) >= min_blocks]
         if (n // raw[-1]) >= 5 and raw[-1] not in block_grid:
             block_grid.append(int(raw[-1]))
 
-    Bs, SEs, Gs, LOO_cache = [], [], [], {}
+    Bs_list: list[int] = []
+    SEs_list: list[float] = []
+    Gs_list: list[int] = []
+    LOO_cache: dict[int, tuple[np.ndarray, float, int]] = {}
     for B in block_grid:
         G = n // B
         if G < 5:
@@ -76,19 +86,28 @@ def blocking_analysis_ratio(
         var = (G - 1) / G * np.sum((mu_loo - mu_bar) ** 2)
         se = float(np.sqrt(max(var, 0.0)))
 
-        Bs.append(B)
-        SEs.append(se)
-        Gs.append(G)
+        Bs_list.append(B)
+        SEs_list.append(se)
+        Gs_list.append(G)
         LOO_cache[B] = (mu_loo, mu_bar, G)
 
-    Bs = np.array(Bs, int)
-    SEs = np.array(SEs, float)
-    Gs = np.array(Gs, int)
+    Bs = np.array(Bs_list, int)
+    SEs = np.array(SEs_list, float)
+    Gs = np.array(Gs_list, int)
+    ci95: tuple[float, float] | None = None
     if Bs.size == 0:
-        B_star, se_star, G_star = None, None, None
+        B_star: int | None = None
+        se_star: float | None = None
+        G_star: int | None = None
     else:
         B_star, se_star, G_star = _pick_plateau(
-            Bs, SEs, Gs, min_blocks=min_blocks, min_rise=min_rise, flat_tol=flat_tol, k=k
+            Bs,
+            SEs,
+            Gs,
+            min_blocks=min_blocks,
+            min_rise=min_rise,
+            flat_tol=flat_tol,
+            k=k,
         )
         ci95 = (mu_full - 1.96 * se_star, mu_full + 1.96 * se_star)
 
@@ -108,6 +127,8 @@ def blocking_analysis_ratio(
         }
         return out
 
+    se_star = cast(float, se_star)
+    ci95 = cast(tuple[float, float], ci95)
     mu_loo, mu_bar, G = LOO_cache[B_star]
     est_samples = mu_full + (G - 1) / np.sqrt(G) * (mu_loo - mu_bar)
 
@@ -130,9 +151,7 @@ def blocking_analysis_ratio(
     }
 
     if print_q:
-        print(
-            f"mu: {out['mu']:.16g}  SE*: {out['se_star']:.16g}  95% CI: {out['ci95_star']}"
-        )
+        print(f"mu: {out['mu']:.16g}  SE*: {out['se_star']:.16g}  95% CI: {out['ci95_star']}")
         if out["z_score"] is not None:
             print(f"bias: {out['bias']:.16g}  z: {out['z_score']:.6g}")
 
@@ -153,9 +172,7 @@ def blocking_analysis_ratio(
 
         # SE curve
         ax1.plot(Bs, SEs, marker="o", lw=1.6)
-        ax1.axvline(
-            B_star, ls="--", color="k", alpha=0.85, label=f"chosen B = {B_star}"
-        )
+        ax1.axvline(B_star, ls="--", color="k", alpha=0.85, label=f"chosen B = {B_star}")
         if exact is not None:
             ax1.set_title(
                 (title or "Blocking SE for ratio estimator")
@@ -190,7 +207,12 @@ def blocking_analysis_ratio(
     return out
 
 
-def reject_outliers(data, obs, m=10.0, min_threshold=1e-5):
+def reject_outliers(
+    data: np.ndarray,
+    obs: int,
+    m: float = 10.0,
+    min_threshold: float = 1e-5,
+) -> tuple[np.ndarray, np.ndarray]:
     target = data[:, obs]
     median_val = np.median(target)
     d = np.abs(target - median_val)
@@ -204,7 +226,7 @@ def reject_outliers(data, obs, m=10.0, min_threshold=1e-5):
     return data[mask], mask
 
 
-def jackknife_ratios(num: np.ndarray, denom: np.ndarray):
+def jackknife_ratios(num: np.ndarray, denom: np.ndarray) -> tuple[float, float]:
     r"""Jackknife estimation of standard deviation of the ratio of means.
 
     Parameters
@@ -230,4 +252,4 @@ def jackknife_ratios(num: np.ndarray, denom: np.ndarray):
     jackknife_estimates = (mean_num_all / mean_denom_all).real
     mean = np.mean(jackknife_estimates)
     sigma = np.sqrt((n_samples - 1) * np.var(jackknife_estimates))
-    return mean, sigma
+    return float(mean), float(sigma)

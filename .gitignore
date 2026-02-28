@@ -5,10 +5,6 @@ __pycache__/
 *.egg
 *.patch
 
-# IDE
-.vscode/
-.idea/
-
 # Output files
 runs/
 

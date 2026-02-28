@@ -64,9 +64,9 @@ def init_prop_state(
         meas_ctx = meas_ops.build_meas_ctx(ham_data, trial_data)
         e_kernel = meas_ops.require_kernel(k_energy)
         e_samples = jnp.real(
-            wk.vmap_chunked(
-                e_kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None)
-            )(initial_walkers, ham_data, meas_ctx, trial_data)
+            wk.vmap_chunked(e_kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None))(
+                initial_walkers, ham_data, meas_ctx, trial_data
+            )
         )
         e_est = jnp.mean(e_samples)
     pop_shift = e_est
@@ -121,13 +121,13 @@ def cpmc_step(
     node_step = jnp.asarray(0)
 
     # one body half step
-    walkers = wk.vmap_chunked(
-        cpmc_ops.apply_one_body_half, params.n_chunks, in_axes=(0, None)
-    )(walkers, prop_ctx)
+    walkers = wk.vmap_chunked(cpmc_ops.apply_one_body_half, params.n_chunks, in_axes=(0, None))(
+        walkers, prop_ctx
+    )
 
-    overlaps_1 = wk.vmap_chunked(
-        meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
-    )(walkers, trial_data)
+    overlaps_1 = wk.vmap_chunked(meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None))(
+        walkers, trial_data
+    )
     overlaps_1 = jnp.real(overlaps_1)
 
     # constraint
@@ -139,9 +139,9 @@ def cpmc_step(
     weights = jnp.where(weights > w_cap, 0.0, weights)
 
     # compute greens
-    greens = wk.vmap_chunked(
-        green_ops.calc_green, n_chunks=params.n_chunks, in_axes=(0, None)
-    )(walkers, trial_data)
+    greens = wk.vmap_chunked(green_ops.calc_green, n_chunks=params.n_chunks, in_axes=(0, None))(
+        walkers, trial_data
+    )
 
     overlaps = overlaps_1
 
@@ -219,9 +219,9 @@ def cpmc_step(
     )
 
     # one body half step (2)
-    walkers = wk.vmap_chunked(
-        cpmc_ops.apply_one_body_half, params.n_chunks, in_axes=(0, None)
-    )(walkers, prop_ctx)
+    walkers = wk.vmap_chunked(cpmc_ops.apply_one_body_half, params.n_chunks, in_axes=(0, None))(
+        walkers, prop_ctx
+    )
 
     overlaps_2 = wk.vmap_chunked(meas_ops.overlap, params.n_chunks, in_axes=(0, None))(
         walkers, trial_data

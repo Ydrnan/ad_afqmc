@@ -22,27 +22,20 @@ class UhfTrial:
 
     @property
     def nocc(self) -> tuple[int, int]:
-        return (
-            int(self.mo_coeff_a.shape[1]),
-            int(self.mo_coeff_b.shape[1])
-        )
+        return (int(self.mo_coeff_a.shape[1]), int(self.mo_coeff_b.shape[1]))
 
     def tree_flatten(self):
-        return (
-            self.mo_coeff_a,
-            self.mo_coeff_b
-        ), None
+        return (self.mo_coeff_a, self.mo_coeff_b), None
 
     @classmethod
     def tree_unflatten(cls, aux, children):
-        (mo_coeff_a, mo_coeff_b) = children
-        return cls(
-            mo_coeff_a=mo_coeff_a,
-            mo_coeff_b=mo_coeff_b
-        )
+        mo_coeff_a, mo_coeff_b = children
+        return cls(mo_coeff_a=mo_coeff_a, mo_coeff_b=mo_coeff_b)
+
 
 def _det(m: jax.Array) -> jax.Array:
     return jnp.linalg.det(m)
+
 
 def get_rdm1(trial_data: UhfTrial) -> jax.Array:
     c_a = trial_data.mo_coeff_a
@@ -58,6 +51,7 @@ def overlap_r(walker: jax.Array, trial_data: UhfTrial) -> jax.Array:
     cu = trial_data.mo_coeff_a.conj().T @ w  # (nocc[0], nocc[0])
     cd = trial_data.mo_coeff_b.conj().T @ w  # (nocc[1], nocc[1])
     return _det(cu) * _det(cd)
+
 
 def overlap_u(walker: tuple[jax.Array, jax.Array], trial_data: UhfTrial) -> jax.Array:
     wu, wd = walker

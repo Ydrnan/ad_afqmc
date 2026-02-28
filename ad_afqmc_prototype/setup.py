@@ -77,7 +77,9 @@ def _make_prop(
     )
 
 
-def _make_trial_bundle(sys: System, staged: StagedInputs, mixed_precision: bool) -> tuple[Any, Any, Any]:
+def _make_trial_bundle(
+    sys: System, staged: StagedInputs, mixed_precision: bool
+) -> tuple[Any, Any, Any]:
     """
     Return (trial_data, trial_ops, meas_ops)
     """
@@ -137,7 +139,7 @@ def _make_trial_bundle(sys: System, staged: StagedInputs, mixed_precision: bool)
 
         trial_data = make_gcisd_trial_data(data, sys)
         trial_ops = make_gcisd_trial_ops(sys=sys)
-        meas_ops = make_gcisd_meas_ops(sys=sys, mixed_precision=mixed_precision)
+        meas_ops = make_gcisd_meas_ops(sys=sys)
         return trial_data, trial_ops, meas_ops
 
     raise ValueError(f"Unsupported TrialInput.kind: {tr.kind!r}")
@@ -230,7 +232,7 @@ def setup(
         else:
             staged = stage(
                 obj_or_staged,
-                norb_frozen=norb_frozen,
+                norb_frozen=norb_frozen if norb_frozen is not None else 0,
                 chol_cut=chol_cut,
                 cache=cache,
                 overwrite=overwrite,
@@ -250,10 +252,7 @@ def setup(
     sys = System(norb=int(ham.norb), nelec=ham.nelec, walker_kind=walker_kind)
 
     ham_data = HamChol(
-        jnp.asarray(ham.h0),
-        jnp.asarray(ham.h1),
-        jnp.asarray(ham.chol),
-        basis=ham.basis
+        jnp.asarray(ham.h0), jnp.asarray(ham.h1), jnp.asarray(ham.chol), basis=ham.basis
     )
 
     if params_kwargs is None:

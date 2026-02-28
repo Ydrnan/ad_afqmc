@@ -7,7 +7,7 @@ import jax
 import jax.numpy as jnp
 from jax import tree_util
 
-from ..core.ops import MeasOps, k_energy, k_force_bias
+from ..core.ops import MeasOps, k_energy, k_force_bias, o_density_corr, o_rdm1
 from ..core.system import System
 from ..ham.chol import HamChol
 from ..ham.hubbard import HamHubbard
@@ -19,6 +19,89 @@ from ..trial.ghf import (
     overlap_r,
     overlap_u,
 )
+
+
+def _rdm1_from_green(g: jax.Array, norb: int) -> jax.Array:
+    return jnp.stack([g[:norb, :norb], g[norb:, norb:]], axis=0)
+
+
+def _density_corr_from_green(g: jax.Array, norb: int) -> jax.Array:
+    """Density correlation from a full (2norb, 2norb) Green's function.
+    Returns (3, norb, norb): uu, ud, dd."""
+    guu = g[:norb, :norb]
+    gdd = g[norb:, norb:]
+    gud = g[:norb, norb:]
+    gdu = g[norb:, :norb]
+
+    nu = jnp.diagonal(guu)
+    nd = jnp.diagonal(gdd)
+
+    uu = nu[:, None] * nu[None, :] - guu * guu.T + jnp.diag(nu)
+    dd = nd[:, None] * nd[None, :] - gdd * gdd.T + jnp.diag(nd)
+    ud = nu[:, None] * nd[None, :] - gud * gdu.T
+
+    return jnp.stack([uu, ud, dd], axis=0)
+
+
+def rdm1_kernel_rw(
+    walker: jax.Array,
+    ham_data: Any,
+    meas_ctx: Any,
+    trial_data: GhfTrial,
+) -> jax.Array:
+    g = calc_green_u((walker, walker), trial_data)
+    return _rdm1_from_green(g, trial_data.norb)
+
+
+def rdm1_kernel_uw(
+    walker: tuple[jax.Array, jax.Array],
+    ham_data: Any,
+    meas_ctx: Any,
+    trial_data: GhfTrial,
+) -> jax.Array:
+    g = calc_green_u(walker, trial_data)
+    return _rdm1_from_green(g, trial_data.norb)
+
+
+def rdm1_kernel_gw(
+    walker: jax.Array,
+    ham_data: Any,
+    meas_ctx: Any,
+    trial_data: GhfTrial,
+) -> jax.Array:
+    g = calc_green_g(walker, trial_data)
+    return _rdm1_from_green(g, trial_data.norb)
+
+
+def density_corr_kernel_rw(
+    walker: jax.Array,
+    ham_data: Any,
+    meas_ctx: Any,
+    trial_data: GhfTrial,
+) -> jax.Array:
+    g = calc_green_u((walker, walker), trial_data)
+    return _density_corr_from_green(g, trial_data.norb)
+
+
+def density_corr_kernel_uw(
+    walker: tuple[jax.Array, jax.Array],
+    ham_data: Any,
+    meas_ctx: Any,
+    trial_data: GhfTrial,
+) -> jax.Array:
+    g = calc_green_u(walker, trial_data)
+    return _density_corr_from_green(g, trial_data.norb)
+
+
+def density_corr_kernel_gw(
+    walker: jax.Array,
+    ham_data: Any,
+    meas_ctx: Any,
+    trial_data: GhfTrial,
+) -> jax.Array:
+    g = calc_green_g(walker, trial_data)
+    return _density_corr_from_green(g, trial_data.norb)
+
 
 # ---------------------
 # chol
@@ -120,9 +203,7 @@ def build_meas_ctx_chol(ham_data: HamChol, trial_data: GhfTrial) -> GhfCholMeasC
     return GhfCholMeasCtx(rot_h1=rot_h1, rot_chol=rot_chol, rot_chol_flat=rot_chol_flat)
 
 
-def force_bias_kernel_from_green(
-    g_half: jax.Array, meas_ctx: GhfCholMeasCtx
-) -> jax.Array:
+def force_bias_kernel_from_green(g_half: jax.Array, meas_ctx: GhfCholMeasCtx) -> jax.Array:
     return jnp.einsum("gij,ij->g", meas_ctx.rot_chol, g_half, optimize="optimal")
 
 
@@ -131,9 +212,7 @@ def energy_kernel_from_green(
 ) -> jax.Array:
     ene0 = ham_data.h0
     ene1 = jnp.sum(g_half * meas_ctx.rot_h1)
-    f = jnp.einsum(
-        "gij,jk->gik", meas_ctx.rot_chol, g_half.T, optimize="optimal"
-    )  # (nchol,ne,ne)
+    f = jnp.einsum("gij,jk->gik", meas_ctx.rot_chol, g_half.T, optimize="optimal")  # (nchol,ne,ne)
     coul = jnp.trace(f, axis1=1, axis2=2)  # (nchol,)
     exc = jnp.sum(f * jnp.swapaxes(f, 1, 2))
     ene2 = 0.5 * (jnp.sum(coul * coul) - exc)
@@ -147,7 +226,9 @@ def force_bias_kernel_rw_rh(
     g = _green_half_r(walker, trial_data)
     return force_bias_kernel_from_green(g, meas_ctx)
 
+
 force_bias_kernel_rw_gh = force_bias_kernel_rw_rh
+
 
 def force_bias_kernel_uw_rh(
     walker: tuple[jax.Array, jax.Array],
@@ -159,7 +240,9 @@ def force_bias_kernel_uw_rh(
     g = _green_half_u(wu, wd, trial_data)
     return force_bias_kernel_from_green(g, meas_ctx)
 
+
 force_bias_kernel_uw_gh = force_bias_kernel_uw_rh
+
 
 def force_bias_kernel_gw_rh(
     walker: jax.Array, ham_data: Any, meas_ctx: GhfCholMeasCtx, trial_data: GhfTrial
@@ -167,7 +250,9 @@ def force_bias_kernel_gw_rh(
     g = _green_half_g(walker, trial_data)
     return force_bias_kernel_from_green(g, meas_ctx)
 
+
 force_bias_kernel_gw_gh = force_bias_kernel_gw_rh
+
 
 def energy_kernel_rw_rh(
     walker: jax.Array,
@@ -178,7 +263,9 @@ def energy_kernel_rw_rh(
     g = _green_half_r(walker, trial_data)
     return energy_kernel_from_green(g, ham_data, meas_ctx)
 
+
 energy_kernel_rw_gh = energy_kernel_rw_rh
+
 
 def energy_kernel_uw_rh(
     walker: tuple[jax.Array, jax.Array],
@@ -190,7 +277,9 @@ def energy_kernel_uw_rh(
     g = _green_half_u(wu, wd, trial_data)
     return energy_kernel_from_green(g, ham_data, meas_ctx)
 
+
 energy_kernel_uw_gh = energy_kernel_uw_rh
+
 
 def energy_kernel_gw_rh(
     walker: jax.Array,
@@ -201,7 +290,9 @@ def energy_kernel_gw_rh(
     g = _green_half_g(walker, trial_data)
     return energy_kernel_from_green(g, ham_data, meas_ctx)
 
+
 energy_kernel_gw_gh = energy_kernel_gw_rh
+
 
 def make_ghf_meas_ops_chol(sys: System) -> MeasOps:
     """
@@ -216,12 +307,20 @@ def make_ghf_meas_ops_chol(sys: System) -> MeasOps:
             k_force_bias: force_bias_kernel_rw_rh,
             k_energy: energy_kernel_rw_rh,
         }
+        observables = {
+            o_rdm1: rdm1_kernel_rw,
+            o_density_corr: density_corr_kernel_rw,
+        }
     elif wk == "unrestricted":
         overlap_fn = overlap_u
         build_meas_ctx_fn = build_meas_ctx_chol
         kernels = {
             k_force_bias: force_bias_kernel_uw_rh,
             k_energy: energy_kernel_uw_rh,
+        }
+        observables = {
+            o_rdm1: rdm1_kernel_uw,
+            o_density_corr: density_corr_kernel_uw,
         }
     elif wk == "generalized":
         overlap_fn = overlap_g
@@ -230,6 +329,10 @@ def make_ghf_meas_ops_chol(sys: System) -> MeasOps:
             k_force_bias: force_bias_kernel_gw_rh,
             k_energy: energy_kernel_gw_rh,
         }
+        observables = {
+            o_rdm1: rdm1_kernel_gw,
+            o_density_corr: density_corr_kernel_gw,
+        }
     else:
         raise ValueError(f"unknown walker_kind: {sys.walker_kind}")
 
@@ -237,6 +340,7 @@ def make_ghf_meas_ops_chol(sys: System) -> MeasOps:
         overlap=overlap_fn,
         build_meas_ctx=build_meas_ctx_fn,
         kernels=kernels,
+        observables=observables,
     )
 
 # ---------------------
@@ -292,10 +396,18 @@ def make_ghf_meas_ops_hubbard(sys: System) -> MeasOps:
         kernels = {
             k_energy: energy_kernel_hubbard_u,
         }
+        observables={
+            o_rdm1: rdm1_kernel_uw,
+            o_density_corr: density_corr_kernel_uw,
+        }
     elif wk == "generalized":
         overlap_fn = overlap_g
         kernels = {
             k_energy: energy_kernel_hubbard_g,
+        }
+        observables={
+            o_rdm1: rdm1_kernel_gw,
+            o_density_corr: density_corr_kernel_gw,
         }
     else:
         raise ValueError(
@@ -304,4 +416,5 @@ def make_ghf_meas_ops_hubbard(sys: System) -> MeasOps:
     return MeasOps(
         overlap=overlap_fn,
         kernels=kernels,
+        observables=observables,
     )
