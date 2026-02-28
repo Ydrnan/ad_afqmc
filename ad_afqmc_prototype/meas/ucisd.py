@@ -134,8 +134,11 @@ def force_bias_kernel_rw_rh(
     trial_data: UcisdTrial,
 ) -> jax.Array:
     """Calculates force bias < psi_T | chol_gamma | walker > / < psi_T | walker >"""
-    assert trial_data.nocc[0] == trial_data.nocc[1]
-    return force_bias_kernel_uw_rh((walker, walker), ham_data, meas_ctx, trial_data)
+    n_elec_0 = trial_data.nocc[0]
+    n_elec_1 = trial_data.nocc[1]
+    return force_bias_kernel_uw_rh(
+        (walker[:, :n_elec_0], walker[:, :n_elec_1]), ham_data, meas_ctx, trial_data
+    )
 
 
 def force_bias_kernel_uw_rh(
@@ -457,8 +460,11 @@ def energy_kernel_rw_rh(
     meas_ctx: UcisdMeasCtx,
     trial_data: UcisdTrial,
 ) -> jax.Array:
-    assert trial_data.nocc[0] == trial_data.nocc[1]
-    return energy_kernel_uw_rh((walker, walker), ham_data, meas_ctx, trial_data)
+    n_elec_0 = trial_data.nocc[0]
+    n_elec_1 = trial_data.nocc[1]
+    return energy_kernel_uw_rh(
+        (walker[:, :n_elec_0], walker[:, :n_elec_1]), ham_data, meas_ctx, trial_data
+    )
 
 
 def energy_kernel_uw_rh(
