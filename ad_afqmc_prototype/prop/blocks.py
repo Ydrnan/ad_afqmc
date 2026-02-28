@@ -52,7 +52,9 @@ def proc_e(samples: jax.Array, state: PropState, params: QmcParams) -> BlockObs:
     e_block = jnp.sum(weights * e_samples) / w_sum_safe
     e_block = jnp.where(w_sum == 0, e_ref, e_block)
 
-    obs = BlockObs(scalars={"energy": e_block, "weight": w_sum, "weight_safe": w_sum_safe}, observables={})
+    obs = BlockObs(
+        scalars={"energy": e_block, "weight": w_sum, "weight_safe": w_sum_safe}, observables={}
+    )
     return obs
 
 
