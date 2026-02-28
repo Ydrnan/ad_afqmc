@@ -1330,8 +1330,6 @@ def make_ucisd_meas_ops(
 
     return MeasOps(
         overlap=overlap_fn,
-        build_meas_ctx=lambda ham_data, trial_data: build_meas_ctx(
-            ham_data, trial_data, cfg
-        ),
+        build_meas_ctx=lambda ham_data, trial_data: build_meas_ctx(ham_data, trial_data, cfg),
         kernels=kernels,
     )

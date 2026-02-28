@@ -343,6 +343,7 @@ def make_ghf_meas_ops_chol(sys: System) -> MeasOps:
         observables=observables,
     )
 
+
 # ---------------------
 # hubbard
 # ---------------------
@@ -396,7 +397,7 @@ def make_ghf_meas_ops_hubbard(sys: System) -> MeasOps:
         kernels = {
             k_energy: energy_kernel_hubbard_u,
         }
-        observables={
+        observables = {
             o_rdm1: rdm1_kernel_uw,
             o_density_corr: density_corr_kernel_uw,
         }
@@ -405,7 +406,7 @@ def make_ghf_meas_ops_hubbard(sys: System) -> MeasOps:
         kernels = {
             k_energy: energy_kernel_hubbard_g,
         }
-        observables={
+        observables = {
             o_rdm1: rdm1_kernel_gw,
             o_density_corr: density_corr_kernel_gw,
         }

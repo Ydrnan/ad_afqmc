@@ -90,6 +90,7 @@ def make_uhf_trial_ops(sys: System) -> TrialOps:
         get_rdm1=get_rdm1_fn,
     )
 
+
 def make_uhf_trial_data(data: dict, sys: System) -> UhfTrial:
     if "mo_a" in data and "mo_b" in data:
         mo_a = jnp.asarray(data["mo_a"])

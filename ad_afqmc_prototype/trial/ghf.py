@@ -247,7 +247,8 @@ def make_ghf_trial_ops(sys: System) -> TrialOps:
         calc_overlap_ratio=calc_overlap_ratio_fn,
     )
 
+
 def make_ghf_trial_data(data: dict, sys: System) -> GhfTrial:
     mo = jnp.asarray(data["mo"])
-    mo_occ = mo[:, :sys.ne]
+    mo_occ = mo[:, : sys.ne]
     return GhfTrial(mo_occ)

@@ -101,7 +101,7 @@ def block(
 
     kernels = tuple(meas_ops.require_kernel(k) for k in k_names)
 
-    # Sequential eval of each kernel    
+    # Sequential eval of each kernel
     eval_kernel = lambda kernel: wk.vmap_chunked(
         kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None)
     )(state.walkers, ham_data, meas_ctx, trial_data)

@@ -363,10 +363,7 @@ def make_uhf_meas_ops(sys: System) -> MeasOps:
     elif wk == "generalized":
         overlap_fn = overlap_g
         build_meas_ctx_fn = build_meas_ctx
-        kernels = {
-            k_force_bias: force_bias_kernel_gw_rh,
-            k_energy: energy_kernel_gw_rh
-        }
+        kernels = {k_force_bias: force_bias_kernel_gw_rh, k_energy: energy_kernel_gw_rh}
         observables = {
             o_rdm1: rdm1_kernel_gw,
             o_density_corr: density_corr_kernel_gw,

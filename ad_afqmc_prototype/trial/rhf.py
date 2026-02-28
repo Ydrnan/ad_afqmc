@@ -86,6 +86,7 @@ def make_rhf_trial_ops(sys: System) -> TrialOps:
         get_rdm1=get_rdm1_fn,
     )
 
+
 def make_rhf_trial_data(data: dict, sys: System) -> RhfTrial:
     mo = jnp.asarray(data["mo"])
     mo_occ = mo[:, : sys.nup]

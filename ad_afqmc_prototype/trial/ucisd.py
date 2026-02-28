@@ -205,12 +205,12 @@ def make_ucisd_trial_ops(sys: System) -> TrialOps:
         overlap_fn = overlap_g
         get_rdm1_fn = get_rdm1
     else:
-        raise ValueError(f"unknown walker_kind: {sys.walker_kind}")\
-
+        raise ValueError(f"unknown walker_kind: {sys.walker_kind}")
     return TrialOps(
         overlap=overlap_fn,
         get_rdm1=get_rdm1_fn,
     )
+
 
 def make_ucisd_trial_data(data: dict, sys: System) -> UcisdTrial:
     return UcisdTrial(

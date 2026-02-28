@@ -85,6 +85,7 @@ def make_cisd_trial_ops(sys: System) -> TrialOps:
         )
     return TrialOps(overlap=overlap_r, get_rdm1=get_rdm1)
 
+
 def make_cisd_trial_data(data: dict, sys: System) -> CisdTrial:
     ci1 = jnp.asarray(data["ci1"])
     ci2 = jnp.asarray(data["ci2"])

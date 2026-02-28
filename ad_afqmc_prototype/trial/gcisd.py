@@ -96,6 +96,7 @@ def make_gcisd_trial_ops(sys: System) -> TrialOps:
         get_rdm1=get_rdm1_fn,
     )
 
+
 def make_gcisd_trial_data(data: dict, sys: System) -> GcisdTrial:
     ci1 = jnp.asarray(data["ci1"])
     ci2 = jnp.asarray(data["ci2"])
