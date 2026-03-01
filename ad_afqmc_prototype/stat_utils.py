@@ -1,6 +1,11 @@
-from typing import Any, Dict, Iterable, cast
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Dict, Iterable, cast
 
 import numpy as np
+
+if TYPE_CHECKING:
+    import jax
 
 
 def _pick_plateau(
@@ -33,8 +38,8 @@ def _pick_plateau(
 
 
 def blocking_analysis_ratio(
-    ene: np.ndarray,
-    wt: np.ndarray,
+    ene: np.ndarray | jax.Array,
+    wt: np.ndarray | jax.Array,
     block_grid: Iterable[int] | None = None,
     *,
     min_blocks: int = 20,
@@ -208,11 +213,11 @@ def blocking_analysis_ratio(
 
 
 def reject_outliers(
-    data: np.ndarray,
+    data: np.ndarray | jax.Array,
     obs: int,
     m: float = 10.0,
     min_threshold: float = 1e-5,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[Any, Any]:
     target = data[:, obs]
     median_val = np.median(target)
     d = np.abs(target - median_val)
