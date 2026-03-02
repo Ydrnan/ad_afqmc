@@ -38,26 +38,6 @@ class BlockObs(NamedTuple):
     observables: dict[str, jax.Array]
 
 
-def proc_e(samples: jax.Array, state: PropState, params: QmcParams) -> BlockObs:
-    (e_samples,) = samples
-    e_samples = jnp.real(e_samples)
-
-    thresh = jnp.sqrt(2.0 / jnp.asarray(params.dt))
-    e_ref = state.e_estimate
-    e_samples = jnp.where(jnp.abs(e_samples - e_ref) > thresh, e_ref, e_samples)
-
-    weights = state.weights
-    w_sum = jnp.sum(weights)
-    w_sum_safe = jnp.where(w_sum == 0, 1.0, w_sum)
-    e_block = jnp.sum(weights * e_samples) / w_sum_safe
-    e_block = jnp.where(w_sum == 0, e_ref, e_block)
-
-    obs = BlockObs(
-        scalars={"energy": e_block, "weight": w_sum, "weight_safe": w_sum_safe}, observables={}
-    )
-    return obs
-
-
 def block(
     state: PropState,
     *,
@@ -71,8 +51,6 @@ def block(
     prop_ops: PropOps,
     prop_ctx: Any,
     sr_fn: Callable = wk.stochastic_reconfiguration,
-    k_names: [str] = [k_energy],
-    proc_fn: Callable = proc_e,
     observable_names: tuple[str, ...] = (),
 ) -> tuple[PropState, BlockObs]:
     """
@@ -101,24 +79,25 @@ def block(
     )
     state = state._replace(walkers=walkers_new, overlaps=overlaps_new)
 
-    kernels = tuple(meas_ops.require_kernel(k) for k in k_names)
+    e_kernel = meas_ops.require_kernel(k_energy)
+    e_samples = wk.vmap_chunked(e_kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None))(
+        state.walkers, ham_data, meas_ctx, trial_data
+    )
+    e_samples = jnp.real(e_samples)
 
-    # Sequential eval of each kernel
-    eval_kernel = lambda kernel: wk.vmap_chunked(
-        kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None)
-    )(state.walkers, ham_data, meas_ctx, trial_data)
-    samples = tuple(map(eval_kernel, kernels))
+    thresh = jnp.sqrt(2.0 / jnp.asarray(params.dt))
+    e_ref = state.e_estimate
+    e_samples = jnp.where(jnp.abs(e_samples - e_ref) > thresh, e_ref, e_samples)
 
-    obs = proc_fn(samples, state, params)
-
-    e_block = obs.scalars["energy"]
+    weights = state.weights
+    w_sum = jnp.sum(weights)
+    w_sum_safe = jnp.where(w_sum == 0, 1.0, w_sum)
+    e_block = jnp.sum(weights * e_samples) / w_sum_safe
+    e_block = jnp.where(w_sum == 0, e_ref, e_block)
 
     alpha = jnp.asarray(params.shift_ema, dtype=jnp.result_type(e_block))
     state = state._replace(e_estimate=(1.0 - alpha) * state.e_estimate + alpha * e_block)
 
-    weights = state.weights
-    w_sum = obs.scalars["weight"]
-    w_sum_safe = obs.scalars["weight_safe"]
     obs_samples: dict[str, jax.Array] = {}
     for name in observable_names:
         kernel = meas_ops.require_observable(name)
@@ -129,8 +108,6 @@ def block(
         num = jnp.sum(weights.reshape(w_shape) * samples, axis=0)
         zero = jnp.zeros_like(num)
         obs_samples[name] = jnp.where(w_sum == 0, zero, num / w_sum_safe)
-
-    obs = obs._replace(observables=obs_samples)
 
     key, subkey = jax.random.split(state.rng_key)
     zeta = jax.random.uniform(subkey)
@@ -145,6 +122,10 @@ def block(
         rng_key=key,
     )
 
+    obs = BlockObs(
+        scalars={"energy": e_block, "weight": w_sum},
+        observables=obs_samples,
+    )
     return state, obs
 
 
