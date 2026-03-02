@@ -196,12 +196,29 @@ def make_ucisd_trial_ops(sys: System) -> TrialOps:
     wk = sys.walker_kind.lower()
 
     if wk == "restricted":
-        return TrialOps(overlap=overlap_r, get_rdm1=get_rdm1)
+        overlap_fn = overlap_r
+        get_rdm1_fn = get_rdm1
+    elif wk == "unrestricted":
+        overlap_fn = overlap_u
+        get_rdm1_fn = get_rdm1
+    elif wk == "generalized":
+        overlap_fn = overlap_g
+        get_rdm1_fn = get_rdm1
+    else:
+        raise ValueError(f"unknown walker_kind: {sys.walker_kind}")
+    return TrialOps(
+        overlap=overlap_fn,
+        get_rdm1=get_rdm1_fn,
+    )
 
-    if wk == "unrestricted":
-        return TrialOps(overlap=overlap_u, get_rdm1=get_rdm1)
 
-    if wk == "generalized":
-        return TrialOps(overlap=overlap_g, get_rdm1=get_rdm1)
-
-    raise ValueError(f"unknown walker_kind: {sys.walker_kind}")
+def make_ucisd_trial_data(data: dict, sys: System) -> UcisdTrial:
+    return UcisdTrial(
+        mo_coeff_a=jnp.asarray(data["mo_coeff_a"]),
+        mo_coeff_b=jnp.asarray(data["mo_coeff_b"]),
+        c1a=jnp.asarray(data["ci1a"]),
+        c1b=jnp.asarray(data["ci1b"]),
+        c2aa=jnp.asarray(data["ci2aa"]),
+        c2ab=jnp.asarray(data["ci2ab"]),
+        c2bb=jnp.asarray(data["ci2bb"]),
+    )

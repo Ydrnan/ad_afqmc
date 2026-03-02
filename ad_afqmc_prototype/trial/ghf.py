@@ -219,24 +219,36 @@ def make_ghf_trial_ops(sys: System) -> TrialOps:
     if wk == "restricted":
         if sys.nup != sys.ndn:
             raise ValueError("restricted walkers require nup == ndn.")
-        return TrialOps(overlap=overlap_r, get_rdm1=get_rdm1_block_diag)
+        overlap_fn = overlap_r
+        get_rdm1_fn = get_rdm1_block_diag
+        calc_green_fn = None
+        update_green_fn = None
+        calc_overlap_ratio_fn = None
+    elif wk == "unrestricted":
+        overlap_fn = overlap_u
+        get_rdm1_fn = get_rdm1_block_diag
+        calc_green_fn = calc_green_u
+        update_green_fn = update_green
+        calc_overlap_ratio_fn = calc_overlap_ratio
+    elif wk == "generalized":
+        overlap_fn = overlap_g
+        get_rdm1_fn = get_rdm1_generalized
+        calc_green_fn = calc_green_g
+        update_green_fn = update_green
+        calc_overlap_ratio_fn = calc_overlap_ratio
+    else:
+        raise ValueError(f"unknown walker_kind: {sys.walker_kind}")
 
-    if wk == "unrestricted":
-        return TrialOps(
-            overlap=overlap_u,
-            get_rdm1=get_rdm1_block_diag,
-            calc_green=calc_green_u,
-            update_green=update_green,
-            calc_overlap_ratio=calc_overlap_ratio,
-        )
+    return TrialOps(
+        overlap=overlap_fn,
+        get_rdm1=get_rdm1_fn,
+        calc_green=calc_green_fn,
+        update_green=update_green_fn,
+        calc_overlap_ratio=calc_overlap_ratio_fn,
+    )
 
-    if wk == "generalized":
-        return TrialOps(
-            overlap=overlap_g,
-            get_rdm1=get_rdm1_generalized,
-            calc_green=calc_green_g,
-            update_green=update_green,
-            calc_overlap_ratio=calc_overlap_ratio,
-        )
 
-    raise ValueError(f"unknown walker_kind: {sys.walker_kind}")
+def make_ghf_trial_data(data: dict, sys: System) -> GhfTrial:
+    mo = jnp.asarray(data["mo"])
+    mo_occ = mo[:, : sys.ne]
+    return GhfTrial(mo_occ)

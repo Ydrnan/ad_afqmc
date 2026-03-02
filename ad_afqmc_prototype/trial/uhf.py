@@ -74,12 +74,34 @@ def make_uhf_trial_ops(sys: System) -> TrialOps:
     wk = sys.walker_kind.lower()
 
     if wk == "restricted":
-        return TrialOps(overlap=overlap_r, get_rdm1=get_rdm1)
+        overlap_fn = overlap_r
+        get_rdm1_fn = get_rdm1
+    elif wk == "unrestricted":
+        overlap_fn = overlap_u
+        get_rdm1_fn = get_rdm1
+    elif wk == "generalized":
+        overlap_fn = overlap_g
+        get_rdm1_fn = get_rdm1
+    else:
+        raise ValueError(f"unknown walker_kind: {sys.walker_kind}")
 
-    if wk == "unrestricted":
-        return TrialOps(overlap=overlap_u, get_rdm1=get_rdm1)
+    return TrialOps(
+        overlap=overlap_fn,
+        get_rdm1=get_rdm1_fn,
+    )
 
-    if wk == "generalized":
-        return TrialOps(overlap=overlap_g, get_rdm1=get_rdm1)
 
-    raise ValueError(f"unknown walker_kind: {sys.walker_kind}")
+def make_uhf_trial_data(data: dict, sys: System) -> UhfTrial:
+    if "mo_a" in data and "mo_b" in data:
+        mo_a = jnp.asarray(data["mo_a"])
+        mo_b = jnp.asarray(data["mo_b"])
+    elif "mo" in data:
+        mo_a = jnp.asarray(data["mo"])
+        mo_b = jnp.asarray(data["mo"])
+    else:
+        raise KeyError("Failed to find the trial coeff.")
+
+    mo_a = mo_a[:, : sys.nup]
+    mo_b = mo_b[:, : sys.ndn]
+
+    return UhfTrial(mo_a, mo_b)

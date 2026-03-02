@@ -86,6 +86,12 @@ def make_cisd_trial_ops(sys: System) -> TrialOps:
     return TrialOps(overlap=overlap_r, get_rdm1=get_rdm1)
 
 
+def make_cisd_trial_data(data: dict, sys: System) -> CisdTrial:
+    ci1 = jnp.asarray(data["ci1"])
+    ci2 = jnp.asarray(data["ci2"])
+    return CisdTrial(ci1, ci2)
+
+
 def slice_trial_level(trial: CisdTrial, nvir_keep: int | None) -> CisdTrial:
     """
     Return a trial object whose ci1/ci2 are sliced to keep only the first nvir_keep virtuals.

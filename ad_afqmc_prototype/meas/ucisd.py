@@ -1308,33 +1308,28 @@ def make_ucisd_meas_ops(
     )
 
     if wk == "restricted":
-        return MeasOps(
-            overlap=overlap_r,
-            build_meas_ctx=lambda ham_data, trial_data: build_meas_ctx(ham_data, trial_data, cfg),
-            kernels={
-                k_force_bias: force_bias_kernel_rw_rh,
-                k_energy: energy_kernel_rw_rh,
-            },
-        )
+        overlap_fn = overlap_r
+        kernels = {
+            k_force_bias: force_bias_kernel_rw_rh,
+            k_energy: energy_kernel_rw_rh,
+        }
+    elif wk == "unrestricted":
+        overlap_fn = overlap_u
+        kernels = {
+            k_force_bias: force_bias_kernel_uw_rh,
+            k_energy: energy_kernel_uw_rh,
+        }
+    elif "generalized":
+        overlap_fn = overlap_g
+        kernels = {
+            k_force_bias: force_bias_kernel_gw_rh,
+            k_energy: energy_kernel_gw_rh,
+        }
+    else:
+        raise ValueError(f"unknown walker_kind: {sys.walker_kind}")
 
-    if wk == "unrestricted":
-        return MeasOps(
-            overlap=overlap_u,
-            build_meas_ctx=lambda ham_data, trial_data: build_meas_ctx(ham_data, trial_data, cfg),
-            kernels={
-                k_force_bias: force_bias_kernel_uw_rh,
-                k_energy: energy_kernel_uw_rh,
-            },
-        )
-
-    if wk == "generalized":
-        return MeasOps(
-            overlap=overlap_g,
-            build_meas_ctx=lambda ham_data, trial_data: build_meas_ctx(ham_data, trial_data, cfg),
-            kernels={
-                k_force_bias: force_bias_kernel_gw_rh,
-                k_energy: energy_kernel_gw_rh,
-            },
-        )
-
-    raise ValueError(f"unknown walker_kind: {sys.walker_kind}")
+    return MeasOps(
+        overlap=overlap_fn,
+        build_meas_ctx=lambda ham_data, trial_data: build_meas_ctx(ham_data, trial_data, cfg),
+        kernels=kernels,
+    )

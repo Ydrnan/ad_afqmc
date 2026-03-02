@@ -318,22 +318,24 @@ def build_meas_ctx(ham_data: HamChol, trial_data: GcisdTrial) -> GcisdMeasCtx:
     )
 
 
-def make_gcisd_meas_ops(sys: System) -> MeasOps:
+def make_gcisd_meas_ops(sys: System, mixed_precision: bool = False) -> MeasOps:
     wk = sys.walker_kind.lower()
-    if wk == "restricted":
-        raise NotImplementedError
 
-    if wk == "unrestricted":
-        raise NotImplementedError
+    # Note: mixed_precision is not used for now
 
-    if wk == "generalized":
-        return MeasOps(
-            overlap=overlap_g,
-            build_meas_ctx=build_meas_ctx,
-            kernels={
-                k_force_bias: force_bias_kernel_gw_gh,
-                k_energy: energy_kernel_gw_gh,
-            },
-        )
+    if wk == "restricted" or wk == "unrestricted":
+        raise NotImplementedError("GCISD MeasOps only implemented for generalized walkers.")
+    elif wk == "generalized":
+        overlap_fn = overlap_g
+        kernels = {
+            k_force_bias: force_bias_kernel_gw_gh,
+            k_energy: energy_kernel_gw_gh,
+        }
+    else:
+        raise ValueError(f"unknown walker_kind: {sys.walker_kind}")
 
-    raise ValueError(f"unknown walker_kind: {sys.walker_kind}")
+    return MeasOps(
+        overlap=overlap_fn,
+        build_meas_ctx=build_meas_ctx,
+        kernels=kernels,
+    )

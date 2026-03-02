@@ -339,45 +339,41 @@ def build_meas_ctx(ham_data: HamChol, trial_data: UhfTrial) -> UhfMeasCtx:
 def make_uhf_meas_ops(sys: System) -> MeasOps:
     wk = sys.walker_kind.lower()
     if wk == "restricted":
-        return MeasOps(
-            overlap=overlap_r,
-            build_meas_ctx=build_meas_ctx,
-            kernels={
-                k_force_bias: force_bias_kernel_rw_rh,
-                k_energy: energy_kernel_rw_rh,
-            },
-            observables={
-                o_rdm1: rdm1_kernel_rw,
-                o_density_corr: density_corr_kernel_rw,
-            },
-        )
+        overlap_fn = overlap_r
+        build_meas_ctx_fn = build_meas_ctx
+        kernels = {
+            k_force_bias: force_bias_kernel_rw_rh,
+            k_energy: energy_kernel_rw_rh,
+        }
+        observables = {
+            o_rdm1: rdm1_kernel_rw,
+            o_density_corr: density_corr_kernel_rw,
+        }
+    elif wk == "unrestricted":
+        overlap_fn = overlap_u
+        build_meas_ctx_fn = build_meas_ctx
+        kernels = {
+            k_force_bias: force_bias_kernel_uw_rh,
+            k_energy: energy_kernel_uw_rh,
+        }
+        observables = {
+            o_rdm1: rdm1_kernel_uw,
+            o_density_corr: density_corr_kernel_uw,
+        }
+    elif wk == "generalized":
+        overlap_fn = overlap_g
+        build_meas_ctx_fn = build_meas_ctx
+        kernels = {k_force_bias: force_bias_kernel_gw_rh, k_energy: energy_kernel_gw_rh}
+        observables = {
+            o_rdm1: rdm1_kernel_gw,
+            o_density_corr: density_corr_kernel_gw,
+        }
+    else:
+        raise ValueError(f"unknown walker_kind: {sys.walker_kind}")
 
-    if wk == "unrestricted":
-        return MeasOps(
-            overlap=overlap_u,
-            build_meas_ctx=build_meas_ctx,
-            kernels={
-                k_force_bias: force_bias_kernel_uw_rh,
-                k_energy: energy_kernel_uw_rh,
-            },
-            observables={
-                o_rdm1: rdm1_kernel_uw,
-                o_density_corr: density_corr_kernel_uw,
-            },
-        )
-
-    if wk == "generalized":
-        return MeasOps(
-            overlap=overlap_g,
-            build_meas_ctx=build_meas_ctx,
-            kernels={
-                k_force_bias: force_bias_kernel_gw_rh,
-                k_energy: energy_kernel_gw_rh,
-            },
-            observables={
-                o_rdm1: rdm1_kernel_gw,
-                o_density_corr: density_corr_kernel_gw,
-            },
-        )
-
-    raise ValueError(f"unknown walker_kind: {sys.walker_kind}")
+    return MeasOps(
+        overlap=overlap_fn,
+        build_meas_ctx=build_meas_ctx_fn,
+        kernels=kernels,
+        observables=observables,
+    )
