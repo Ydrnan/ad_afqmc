@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, NamedTuple, Tuple
+from typing import Any, Callable, NamedTuple, Tuple, Optional
 
 import jax
 import jax.numpy as jnp
@@ -9,6 +9,8 @@ from jax import lax, tree_util
 
 from ..ham.chol import HamChol
 from .utils import taylor_expm_action
+
+from ..core.system import System
 
 # contains low level details of AFQMC chol propagation
 
@@ -38,6 +40,7 @@ class CholAfqmcCtx:
     def tree_unflatten(cls, aux, children):
         dt, sqrt_dt, exp_h1_half, mf_shifts, h0_prop, chol_flat = children
         (norb,) = aux
+        
         return cls(
             dt=dt,
             sqrt_dt=sqrt_dt,
@@ -109,6 +112,7 @@ def _build_prop_ctx(
     sqrt_dt = jnp.sqrt(dt_a)
 
     mf = _mf_shifts(ham_data, rdm1)
+    print("cholesky flat precision",chol_flat_precision)
     h0_prop = -ham_data.h0 - 0.5 * jnp.sum(mf**2)
     h1_eff = _get_h1_eff(ham_data, mf, h0_prop, rdm1)
 
@@ -124,7 +128,6 @@ def _build_prop_ctx(
         chol_flat=chol_flat,
         norb=norb,
     )
-
 
 def _apply_one_body_half_array(w: jax.Array, prop_ctx: CholAfqmcCtx) -> jax.Array:
     return prop_ctx.exp_h1_half @ w
@@ -217,8 +220,8 @@ def _apply_trotter_u(
 ) -> Tuple[jax.Array, jax.Array]:
     w1 = _apply_one_body_half_unrestricted(w_ud, prop_ctx)
     w2 = _apply_two_body_unrestricted(w1, field, prop_ctx, n_terms, make_vhs=make_vhs)
-    return _apply_one_body_half_unrestricted(w2, prop_ctx)
-
+    a =_apply_one_body_half_unrestricted(w2, prop_ctx)
+    return a
 
 def _apply_trotter_g_from_restricted(
     w: jax.Array,
@@ -259,7 +262,7 @@ def make_trotter_ops(ham_basis: str, walker_kind: str, mixed_precision: bool = F
 
     if ham_basis not in ("restricted", "generalized"):
         raise ValueError(f"unknown ham_basis: {ham_basis}")
-
+    
     match ham_basis, walker_kind:
         case "restricted", "restricted":
             apply_trotter = lambda w, f, ctx, n_terms, mv=make_vhs: _apply_trotter_r(

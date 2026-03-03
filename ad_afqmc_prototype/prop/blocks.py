@@ -11,7 +11,7 @@ from ..core.levels import LevelPack
 from ..core.ops import MeasOps, TrialOps, k_energy
 from ..core.system import System
 from ..walkers import SrFn
-from .types import PropOps, PropState, QmcParams
+from .types import PropOps, PropState, QmcParams, PropOpsFp
 
 
 class BlockFn(Protocol):
@@ -26,7 +26,7 @@ class BlockFn(Protocol):
         trial_ops: TrialOps,
         meas_ops: MeasOps,
         meas_ctx: Any,
-        prop_ops: PropOps,
+        prop_ops: Any,
         prop_ctx: Any,
         sr_fn: SrFn = wk.stochastic_reconfiguration,
         observable_names: tuple[str, ...] = (),
@@ -128,6 +128,64 @@ def block(
     )
     return state, obs
 
+def block_fp(
+    state: PropState,
+    *,
+    sys: System,
+    params: QmcParams,
+    ham_data: Any,
+    trial_data: Any,
+    trial_ops: TrialOps,
+    meas_ops: MeasOps,
+    meas_ctx: Any,
+    prop_ops: PropOpsFp,
+    prop_ctx: Any,
+    sr_fn: Callable = wk.stochastic_reconfiguration,
+    observable_names: tuple[str, ...] = (),
+) -> tuple[PropState, BlockObs]:
+    """
+    propagation + measurement
+    """
+    step_fp = lambda st: prop_ops.step(
+        st,
+        params=params,
+        ham_data=ham_data,
+        trial_data=trial_data,
+        trial_ops=trial_ops,
+        meas_ops=meas_ops,
+        prop_ctx=prop_ctx,
+        meas_ctx=meas_ctx,
+    )
+    def _scan_step(carry: PropState, _x: Any):
+        carry = step_fp(carry)
+        return carry, None
+
+    state, _ = lax.scan(_scan_step, state, xs=None, length=params.n_prop_steps)
+    overlaps_new = wk.vmap_chunked(
+         meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
+    )(state.walkers, trial_data)
+    state = state._replace(overlaps=overlaps_new)
+    e_kernel = meas_ops.require_kernel(k_energy)
+    e_samples = wk.vmap_chunked(
+        e_kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None)
+    )(state.walkers, ham_data, meas_ctx, trial_data)
+
+    thresh = jnp.sqrt(2.0 / jnp.asarray(params.dt))
+
+    e_samples = jnp.where(jnp.abs(e_samples - params.ene0) > thresh, params.ene0, e_samples)
+
+    weights = state.weights
+    overlaps = state.overlaps
+    w_sum = jnp.sum(weights * overlaps)
+    e_block = jnp.sum(weights * overlaps * e_samples) / w_sum  
+    ov = jnp.sum(overlaps)
+    abs_ov = jnp.sum(jnp.abs(overlaps))
+
+    obs = BlockObs(
+        scalars={"energy": e_block, "weight": w_sum},
+        observables={"overlap": ov, "abs_overlap": abs_ov},
+    )
+    return state, obs
 
 @tree_util.register_pytree_node_class
 class MlmcMeasCtx(NamedTuple):

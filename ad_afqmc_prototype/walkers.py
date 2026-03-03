@@ -109,7 +109,6 @@ def vmap_chunked(
 
         if n_chunks == 1:
             return jax.vmap(g, in_axes=in_axes)(*args)
-
         if not isinstance(in_axes, tuple):
             in_axes_ = (in_axes,) * len(args)
         else:
@@ -194,7 +193,6 @@ def multiply_constants(w: walkers, constants: Any) -> walkers:
             )
         c = jnp.asarray(constants).reshape(-1, 1, 1)
         return (wu * c, wd * c)
-
     c = jnp.asarray(constants).reshape(-1, 1, 1)
     return w * c
 
