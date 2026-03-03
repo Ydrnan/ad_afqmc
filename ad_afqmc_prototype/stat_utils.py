@@ -231,30 +231,78 @@ def reject_outliers(
     return data[mask], mask
 
 
-def jackknife_ratios(num: np.ndarray, denom: np.ndarray) -> tuple[float, float]:
-    r"""Jackknife estimation of standard deviation of the ratio of means.
+def jackknife_ratios(
+    num: np.ndarray,
+    denom: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Jackknife mean and standard error for a ratio estimator with array valued numerator.
 
     Parameters
     ----------
-    num : :class:`np.ndarray
-        Numerator samples.
-    denom : :class:`np.ndarray`
-        Denominator samples.
+    num : np.ndarray
+        Numerator samples, shape (n_samples, *obs_shape).
+    denom : np.ndarray
+        Denominator samples, shape (n_samples,).
 
     Returns
     -------
-    mean : :class:`np.ndarray`
-        Ratio of means.
-    sigma : :class:`np.ndarray`
-        Standard deviation of the ratio of means.
+    mean : np.ndarray
+        Jackknife estimate of the ratio mean, shape (*obs_shape,).
+    sigma : np.ndarray
+        Jackknife standard error, shape (*obs_shape,).
     """
-    n_samples = num.size
-    num_mean = np.mean(num)
-    denom_mean = np.mean(denom)
-    mean = num_mean / denom_mean
-    mean_num_all = (num_mean * n_samples - num) / (n_samples - 1)
-    mean_denom_all = (denom_mean * n_samples - denom) / (n_samples - 1)
-    jackknife_estimates = (mean_num_all / mean_denom_all).real
-    mean = np.mean(jackknife_estimates)
-    sigma = np.sqrt((n_samples - 1) * np.var(jackknife_estimates))
-    return float(mean), float(sigma)
+    num = np.asarray(num)
+    denom = np.asarray(denom).ravel()
+    n = num.shape[0]
+    assert denom.shape[0] == n
+
+    num_sum = num.sum(axis=0)
+    denom_sum = denom.sum()
+
+    # leave one out sums
+    loo_num = (num_sum - num) / (n - 1)  # (n, *obs_shape)
+    d_shape = (n,) + (1,) * (num.ndim - 1)
+    loo_denom = (denom_sum - denom).reshape(d_shape) / (n - 1)  # (n, 1, ...)
+
+    loo_ratio = (loo_num / loo_denom).real  # (n, *obs_shape)
+    mean = loo_ratio.mean(axis=0)
+    sigma = np.sqrt((n - 1) * np.var(loo_ratio, axis=0))
+    return mean, sigma
+
+
+def rebin_observable(
+    obs: np.ndarray,
+    weights: np.ndarray,
+    block_size: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Rebin block-level observable data into larger super-blocks.
+
+    Parameters
+    ----------
+    obs : np.ndarray
+        Per-block weighted-mean observable, shape ``(n_blocks, *obs_shape)``.
+    weights : np.ndarray
+        Per-block total weights, shape ``(n_blocks,)``.
+    block_size : int
+        Number of original blocks per super-block.
+
+    Returns
+    -------
+    num : np.ndarray
+        Super-block numerator sums, shape ``(n_groups, *obs_shape)``.
+    denom : np.ndarray
+        Super-block denominator sums, shape ``(n_groups,)``.
+    """
+    obs = np.asarray(obs)
+    weights = np.asarray(weights).ravel()
+    n = obs.shape[0]
+    n_groups = n // block_size
+    usable = n_groups * block_size
+
+    w = weights[:usable].reshape(n_groups, block_size)
+    w_shape = (n_groups, block_size) + (1,) * (obs.ndim - 1)
+    o = obs[:usable].reshape((n_groups, block_size) + obs.shape[1:])
+
+    denom = w.sum(axis=1)  # (n_groups,)
+    num = (w.reshape(w_shape) * o).sum(axis=1)  # (n_groups, *obs_shape)
+    return num, denom
