@@ -112,7 +112,6 @@ def _build_prop_ctx(
     sqrt_dt = jnp.sqrt(dt_a)
 
     mf = _mf_shifts(ham_data, rdm1)
-    print("cholesky flat precision",chol_flat_precision)
     h0_prop = -ham_data.h0 - 0.5 * jnp.sum(mf**2)
     h1_eff = _get_h1_eff(ham_data, mf, h0_prop, rdm1)
 

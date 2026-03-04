@@ -10,5 +10,5 @@ mol = gto.M(
 mf = scf.RHF(mol)
 mf.kernel()
 
-afqmc = Rhf(mf)
+afqmc = AFQMC(mf)
 mean, err, block_e_all, block_w_all = afqmc.kernel()

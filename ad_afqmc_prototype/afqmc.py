@@ -6,11 +6,12 @@ configure_once()
 
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
+import dataclasses
 
 import numpy as np
 
 from .core.system import WalkerKind
-from .prop.types import QmcParams
+from .prop.types import QmcParams, QmcParamsFp
 from .setup import Job, _filter_kwargs_for
 from .setup_fp import JobFp
 from .setup import setup as setup_job
@@ -125,6 +126,14 @@ class AFQMC:
     def job(self) -> Optional[Job]:
         return self._job
 
+    def _dump_params(self, params: QmcParams):
+        fields = dataclasses.fields(params)
+        width = len(max(fields, key=lambda f: len(f.name)).name)
+        print(" QmcParams:")
+        for field in fields:
+            print(f"  {field.name:<{width}} = {getattr(params, field.name)}")
+        print("")
+
     def dump_flags(self, job) -> None:
         meta = job.staged.meta
         src = meta["source_kind"]
@@ -144,13 +153,7 @@ class AFQMC:
         print(f" cache           = {str(self.cache) if self.cache else None}")
         print(f" walker_kind     = {sys.walker_kind}")
         print(f" mixed_precision = {self.mixed_precision}\n")
-        print(" QmcParams:")
-        print(f"  dt             = {params.dt}")
-        print(f"  n_walkers      = {params.n_walkers}")
-        print(f"  n_chunk        = {params.n_chunks}")
-        print(f"  n_eql_blocks   = {params.n_eql_blocks}")
-        print(f"  n_blocks       = {params.n_blocks}")
-        print(f"  seed           = {params.seed}\n")
+        self._dump_params(params)
 
     def _key(self) -> tuple:
         """Key for determining whether staged/job caches are still valid."""
@@ -205,23 +208,19 @@ class AFQMC:
         """
         Create QmcParams if user didn't provide one.
         """
-        if self.params is not None:
-            return self.params
+        if self.params is not None and isinstance(self.params, QmcParams):
+            params = self.params
+        elif self.params is not None and not isinstance(self.params, QmcParams):
+            raise TypeError(f"Expected type QmcParams for self.params, but received '{type(self.params)}'")
+        else:
+            kwargs : dict[str, Any] = {}
+            for field in dataclasses.fields(QmcParams):
+                if hasattr(self, field.name):
+                    kwargs[field.name] = getattr(self, field.name)
 
-        kwargs: dict[str, Any] = {
-            "n_eql_blocks": self.n_eql_blocks,
-            "n_blocks": self.n_blocks,
-            "seed": _default_seed() if self.seed is None else int(self.seed),
-        }
-        if self.dt is not None:
-            kwargs["dt"] = float(self.dt)
-        if self.n_walkers is not None:
-            kwargs["n_walkers"] = int(self.n_walkers)
-        if self.n_chunks is not None:
-            kwargs["n_chunks"] = int(self.n_chunks)
+            params = QmcParams(**kwargs)
 
-        kwargs = _filter_kwargs_for(QmcParams, kwargs)
-        return QmcParams(**kwargs)
+        return params
 
     def build_job(
         self,
@@ -340,14 +339,13 @@ class AFQMC_fp(AFQMC):
         norb_frozen: Optional[int] = None,
         chol_cut: float = 1e-5,
         cache: Optional[Union[str, Path]] = None,
-        n_eql_blocks: Optional[int] = None,
         n_blocks: Optional[int] = None,
         seed: Optional[int] = None,
         dt: Optional[float] = None,
         n_walkers: Optional[int] = None,
         n_chunks: Optional[int] = 1,
         ene0: Optional[float] = None,
-        n_ene_blocks: Optional[int] = None
+        n_traj: Optional[int] = None
         ):
             super().__init__(
                 mf_or_cc,
@@ -361,10 +359,17 @@ class AFQMC_fp(AFQMC):
                 n_walkers=n_walkers,
                 n_chunks=n_chunks,
                 )
-            self.n_ene_blocks = n_ene_blocks
+            self.n_traj = n_traj
             self.ene0 = ene0
-            self.n_eql_blocks = None
-    
+
+    def _dump_params(self, params: QmcParamsFp):
+        fields = dataclasses.fields(params)
+        width = len(max(fields, key=lambda f: len(f.name)).name)
+        print(" QmcParamsFp:")
+        for field in fields:
+            print(f"  {field.name:<{width}} = {getattr(params, field.name)}")
+        print("")
+ 
     def dump_flags(self, job) -> None:
         meta = job.staged.meta
         src = meta["source_kind"]
@@ -385,39 +390,28 @@ class AFQMC_fp(AFQMC):
         print(f" cache           = {str(self.cache) if self.cache else None}")
         print(f" walker_kind     = {sys.walker_kind}")
         print(f" mixed_precision = {self.mixed_precision}\n")
-        print(" QmcParams:")
-        print(f"  dt             = {params.dt}")
-        print(f"  n_walkers      = {params.n_walkers}")
-        print(f"  n_chunk        = {params.n_chunks}")
-        print(f"  n_blocks       = {params.n_blocks}")
-        print(f"  n_ene_blocks   = {params.n_ene_blocks}")
-        print(f"  ene0           = {params.ene0}")
-        print(f"  seed           = {params.seed}\n")
-        
+        self._dump_params(params)
 
-    def _make_params(self) -> Optional[QmcParams]:
+
+    def _make_params(self) -> Optional[QmcParamsFp]:
         """
-        Create QmcParams if user didn't provide one.
+        Create QmcParamsFp if user didn't provide one.
         """
-        if self.params is not None:
-            return self.params
+        if self.params is not None and isinstance(self.params, QmcParamsFp):
+            params = self.params
+        elif self.params is not None and not isinstance(self.params, QmcParamsFp):
+            raise TypeError(f"Expected type QmcParamsFp for self.params, but received '{type(self.params)}'")
+        else:
+            kwargs : dict[str, Any] = {}
+            for field in dataclasses.fields(QmcParamsFp):
+                if hasattr(self, field.name):
+                    kwargs[field.name] = getattr(self, field.name)
 
-        kwargs: dict[str, Any] = {
-            "n_blocks": self.n_blocks,
-            "seed": _default_seed() if self.seed is None else int(self.seed),
-            "ene0" : self.ene0,
-            "n_ene_blocks" : self.n_ene_blocks,
-        }
-        if self.dt is not None:
-            kwargs["dt"] = float(self.dt)
-        if self.n_walkers is not None:
-            kwargs["n_walkers"] = int(self.n_walkers)
-        if self.n_chunks is not None:
-            kwargs["n_chunks"] = int(self.n_chunks)
+            params = QmcParamsFp(**kwargs)
 
-        kwargs = _filter_kwargs_for(QmcParams, kwargs)
-        return QmcParams(**kwargs)
-    
+        return params
+
+
     def build_job(
             self,
             *,

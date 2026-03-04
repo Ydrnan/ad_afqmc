@@ -9,7 +9,7 @@ from pyscf import gto, scf
 
 from ad_afqmc_prototype import driver
 from ad_afqmc_prototype.afqmc import AFQMC_fp
-from ad_afqmc_prototype.prop.types import QmcParams
+from ad_afqmc_prototype.prop.types import QmcParamsFp
 
 @pytest.mark.parametrize(
     "walker_kind, e_ref, err_ref",
@@ -46,12 +46,12 @@ def mf():
 
 @pytest.fixture(scope="module")
 def params():
-    return QmcParams(
+    return QmcParamsFp(
         n_blocks=1,
         n_prop_steps=1000,
         seed=6,
         n_walkers=5,
-        n_ene_blocks = 3,
+        n_traj = 3,
         dt = 0.005,
         ene0 = -75.67863248572299,
     )

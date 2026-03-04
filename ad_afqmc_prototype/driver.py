@@ -14,7 +14,7 @@ from jax.sharding import PartitionSpec as P
 from .core.ops import MeasOps, TrialOps
 from .core.system import System
 from .prop.blocks import BlockFn
-from .prop.types import PropOps, PropState, QmcParams
+from .prop.types import PropOps, PropState, QmcParams, QmcParamsFp
 from .stat_utils import blocking_analysis_ratio, reject_outliers
 from .walkers import stochastic_reconfiguration
 
@@ -42,7 +42,7 @@ def make_run_blocks(
     *,
     block_fn: BlockFn,
     sys: System,
-    params: QmcParams,
+    params: QmcParams | QmcParamsFp,
     trial_ops: TrialOps,
     meas_ops: MeasOps,
     prop_ops: PropOps | PropOpsFp,
@@ -388,7 +388,7 @@ def run_qmc_energy(
 def run_qmc_energy_fp(
     *,
     sys: System,
-    params: QmcParams,
+    params: QmcParamsFp,
     ham_data: Any,
     trial_data: Any,
     meas_ops: MeasOps,
@@ -404,11 +404,6 @@ def run_qmc_energy_fp(
     Returns:
       (mean_energy, stderr, block_energies, block_weights)
     """
-    print("Starting QMC driver...")
-    print(f"Parameters:")
-    print(params)
-    print("")
-
     # build ctx
     prop_ctx = prop_ops.build_prop_ctx(ham_data,sys, trial_ops.get_rdm1(trial_data), params)
     if meas_ctx is None:
@@ -442,14 +437,14 @@ def run_qmc_energy_fp(
     print("\nSampling:\n")
     #print_every = params.n_blocks // 10 if params.n_blocks >= 10 else 1
     print_every = 1
-    block_e_all = jnp.zeros((params.n_ene_blocks, params.n_blocks+1)) + 0.0j
-    block_w_all = jnp.zeros((params.n_ene_blocks, params.n_blocks+1)) + 0.0j
-    total_sign =  jnp.ones((params.n_ene_blocks, params.n_blocks+1)) + 0.0j
+    block_e_all = jnp.zeros((params.n_traj, params.n_blocks+1)) + 0.0j
+    block_w_all = jnp.zeros((params.n_traj, params.n_blocks+1)) + 0.0j
+    total_sign =  jnp.ones((params.n_traj, params.n_blocks+1)) + 0.0j
     block_e_all = block_e_all.at[:,0].set(jnp.array(state.e_estimate))
     block_w_all = block_w_all.at[:,0].set(jnp.sum(state.weights))
     total_sign = total_sign.at[:,0].set(jnp.sum(state.overlaps) / (jnp.sum(jnp.abs(state.overlaps))))
     chunk = print_every
-    for i in range(params.n_ene_blocks):
+    for i in range(params.n_traj):
         block_e_s = []
         block_w_s = []
         block_ov_s = []

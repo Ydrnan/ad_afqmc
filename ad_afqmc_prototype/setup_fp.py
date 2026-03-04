@@ -13,23 +13,23 @@ from .core.system import System, WalkerKind
 from .ham.chol import HamChol
 from .prop.afqmc_fp import make_prop_ops_fp
 from .prop.blocks import block_fp as default_block
-from .prop.types import QmcParams
+from .prop.types import QmcParamsFp
 from .staging import StagedInputs, load, stage
 from .setup import _filter_kwargs_for, _make_trial_bundle
 
 
 def _make_params_fp(
     *,
-    params: Optional[QmcParams] = None,
-    n_ene_blocks: Optional[int] = None,
+    params: Optional[QmcParamsFp] = None,
+    n_traj: Optional[int] = None,
     ene0: Optional[float] = None,
     n_blocks: Optional[int] = None,
     seed: Optional[int] = None,
     dt: Optional[float] = None,
     n_walkers: Optional[int] = None,
     **params_kwargs: Any,
-) -> QmcParams:
-    base = params or QmcParams()
+) -> QmcParamsFp:
+    base = params or QmcParamsFp()
 
     if seed is None and params is None:
         seed = int(np.random.randint(0, int(1e9)))
@@ -43,15 +43,15 @@ def _make_params_fp(
         explicit["n_walkers"] = int(n_walkers)
     if seed is not None:
         explicit["seed"] = int(seed)
-    if n_ene_blocks is not None:
-        explicit["n_ene_blocks"] = int(n_ene_blocks)
+    if n_traj is not None:
+        explicit["n_traj"] = int(n_traj)
     if ene0 is not None:
         explicit["ene0"] = float(ene0)
 
     merged = dict(params_kwargs)
     merged.update(explicit)
 
-    merged = _filter_kwargs_for(QmcParams, merged)
+    merged = _filter_kwargs_for(QmcParamsFp, merged)
 
     return replace(base, **merged)
 
@@ -79,7 +79,7 @@ class JobFp:
 
     staged: StagedInputs
     sys: System
-    params: QmcParams
+    params: QmcParamsFp
     ham_data: Any
     trial_data: Any
     trial_ops: Any
@@ -117,7 +117,7 @@ def setup_fp(
     walker_kind: Optional[WalkerKind] = None,
     mixed_precision: bool = True,
     # params options
-    params: Optional[QmcParams] = None,
+    params: Optional[QmcParamsFp] = None,
     # overrides for customized runs
     trial_data: Any = None,
     trial_ops: Any = None,
