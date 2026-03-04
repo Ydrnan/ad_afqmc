@@ -1,5 +1,8 @@
 import os
-os.environ["OMP_NUM_THREADS"] = "1"   #For reproducibility. LNO makes slightly different orbitals every time. 
+
+os.environ["OMP_NUM_THREADS"] = (
+    "1"  # For reproducibility. LNO makes slightly different orbitals every time.
+)
 import sys
 import numpy as np
 from pyscf import gto, scf, mp
@@ -7,12 +10,13 @@ from pyscf.data.elements import chemcore
 from pyscf.lib import logger
 from ad_afqmc_prototype import lnoafqmc
 from ad_afqmc_prototype.wrapper import lno_wrapper
+
 log = logger.Logger(sys.stdout, 6)
 
 
 # Assumes lno code is obtained from pyscf_forge repository: https://github.com/hongzhouye/pyscf-forge/tree/lnocc
 
-#water dimer
+# water dimer
 atom = """
 O   -1.485163346097   -0.114724564047    0.000000000000
 H   -1.868415346097    0.762298435953    0.000000000000
@@ -37,7 +41,7 @@ mmp.kernel()
 efull_mp2 = mmp.e_corr
 
 lo_coeff, frag_lolist = lno_wrapper.prep_local_orbitals(mf, frozen=frozen)
-#frag_lolist=[[0]]  #One can run a particular fragment like this
+# frag_lolist=[[0]]  #One can run a particular fragment like this
 # LNO-AFQMC calculation: here we can scan over a list of thresholds
 mcc = lnoafqmc.LNOAFQMC(mf, lo_coeff, frag_lolist, frozen=frozen).set(verbose=5)
 mcc.seed = 1234
@@ -69,7 +73,5 @@ for i, thresh in enumerate(threshs):
         e0,
         err,
         e1,
-        err
+        err,
     )
-
-

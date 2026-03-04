@@ -273,6 +273,7 @@ def make_rhf_meas_ops(sys: System) -> MeasOps:
         observables=observables,
     )
 
+
 def lnoenergy_kernel_rw_rh(
     walker: jax.Array, ham_data: HamChol, meas_ctx: LnoRhfMeasCtx, trial_data: RhfTrial
 ) -> jax.Array:
@@ -280,12 +281,18 @@ def lnoenergy_kernel_rw_rh(
     g_half = _half_green_from_overlap_matrix(walker, m)  # (nocc, norb)
     prjlo_mat = jnp.dot(meas_ctx.prjlo.T, meas_ctx.prjlo)
     nocc = trial_data.nocc
-    f = jnp.einsum('gij,jk->gik', meas_ctx.rot_chol[:,:nocc,nocc:], g_half.T[nocc:,:nocc], optimize="optimal")
+    f = jnp.einsum(
+        "gij,jk->gik",
+        meas_ctx.rot_chol[:, :nocc, nocc:],
+        g_half.T[nocc:, :nocc],
+        optimize="optimal",
+    )
     c = jax.vmap(jnp.trace)(f)
-    eneo2Jt = jnp.einsum("Gxk,xk,G->",f,prjlo_mat,c)*2
-    eneo2ext = jnp.einsum("Gxy,Gyk,xk->",f,f,prjlo_mat)
+    eneo2Jt = jnp.einsum("Gxk,xk,G->", f, prjlo_mat, c) * 2
+    eneo2ext = jnp.einsum("Gxy,Gyk,xk->", f, f, prjlo_mat)
 
     return eneo2Jt - eneo2ext
+
 
 @tree_util.register_pytree_node_class
 @dataclass(frozen=True)
@@ -293,7 +300,7 @@ class LnoRhfMeasCtx:
     rot_h1: jax.Array
     rot_chol: jax.Array
     rot_chol_flat: jax.Array
-    prjlo: jax.Array  
+    prjlo: jax.Array
 
     def tree_flatten(self):
         return (self.rot_h1, self.rot_chol, self.rot_chol_flat, self.prjlo), None
@@ -308,6 +315,7 @@ class LnoRhfMeasCtx:
             prjlo=prjlo,
         )
 
+
 def build_lno_meas_ctx(
     ham_data: HamChol,
     trial_data: RhfTrial,
@@ -321,6 +329,7 @@ def build_lno_meas_ctx(
     rot_chol_flat = rot_chol.reshape(rot_chol.shape[0], -1)
     return LnoRhfMeasCtx(rot_h1=rot_h1, rot_chol=rot_chol, rot_chol_flat=rot_chol_flat, prjlo=prjlo)
 
+
 def make_build_lno_meas_ctx(prjlo):
     def build_meas_ctx(ham_data: HamChol, trial_data: RhfTrial) -> LnoRhfMeasCtx:
         return build_lno_meas_ctx(
@@ -328,4 +337,5 @@ def make_build_lno_meas_ctx(prjlo):
             trial_data=trial_data,
             prjlo=prjlo,
         )
+
     return build_meas_ctx

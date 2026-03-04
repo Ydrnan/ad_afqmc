@@ -17,6 +17,7 @@ from ad_afqmc_prototype.prop.types import QmcParams
 from ad_afqmc_prototype.trial.rhf import RhfTrial
 from ad_afqmc_prototype.wrapper.lno_wrapper import run_afqmc_lno_mf
 
+
 def _make_random_rhf_trial(key, norb, nocc):
     return RhfTrial(mo_coeff=testing.rand_orthonormal_cols(key, norb, nocc))
 
@@ -34,41 +35,43 @@ def mf():
     mf.kernel()
     return mf
 
+
 mf = mf()  # type: ignore
 
 
 @pytest.mark.parametrize(
     "mf, e_ref, err_ref,norb_frozen",
     [
-        (mf,-0.06714345  ,0.01170026,0),
-        (mf,-0.04946941 , 0.00817172,1),
+        (mf, -0.06714345, 0.01170026, 0),
+        (mf, -0.04946941, 0.00817172, 1),
     ],
 )
-def test_calc_rhf(mf, params, e_ref, err_ref,norb_frozen):
+def test_calc_rhf(mf, params, e_ref, err_ref, norb_frozen):
     mo_coeff = mf.mo_coeff
     orbs_frozen = [i for i in range(norb_frozen)]
     norb_act = mf.mo_coeff.shape[1] - norb_frozen
     nactocc = mf.mol.nelectron // 2 - norb_frozen
-    prjlo = [[0] for i in range(nactocc-1)] + [[1]]
+    prjlo = [[0] for i in range(nactocc - 1)] + [[1]]
 
     elcorr_afqmc, err_afqmc = run_afqmc_lno_mf(
-    mf,
-    mo_coeff=mo_coeff,
-    norb_act=norb_act,
-    nelec_act=nactocc * 2,
-    norb_frozen=orbs_frozen,
-    n_walkers=params.n_walkers,
-    nblocks=params.n_blocks,
-    seed=params.seed,
-    chol_cut=1e-5,
-    target_error=0,
-    dt=0.01,
-    prjlo=prjlo,
-    n_eql=params.n_eql_blocks,
-    ) 
+        mf,
+        mo_coeff=mo_coeff,
+        norb_act=norb_act,
+        nelec_act=nactocc * 2,
+        norb_frozen=orbs_frozen,
+        n_walkers=params.n_walkers,
+        nblocks=params.n_blocks,
+        seed=params.seed,
+        chol_cut=1e-5,
+        target_error=0,
+        dt=0.01,
+        prjlo=prjlo,
+        n_eql=params.n_eql_blocks,
+    )
 
     assert jnp.isclose(elcorr_afqmc, e_ref), (elcorr_afqmc, e_ref, elcorr_afqmc - e_ref)
     assert jnp.isclose(err_afqmc, err_ref), (err_afqmc, err_ref, err_afqmc - err_ref)
+
 
 @pytest.fixture(scope="module")
 def params():

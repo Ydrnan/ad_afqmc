@@ -1,10 +1,16 @@
 import numpy as np
 from functools import partial
 
-from .. import driver #lnodriver
+from .. import driver  # lnodriver
 from ..core.system import System
 from ..ham.chol import HamChol
-from ..meas.rhf import overlap_r,make_build_lno_meas_ctx,force_bias_kernel_rw_rh, energy_kernel_rw_rh, lnoenergy_kernel_rw_rh
+from ..meas.rhf import (
+    overlap_r,
+    make_build_lno_meas_ctx,
+    force_bias_kernel_rw_rh,
+    energy_kernel_rw_rh,
+    lnoenergy_kernel_rw_rh,
+)
 from ..prop.afqmc import make_prop_ops
 from ..prop.blocks import block
 from ..prop.types import QmcParams
@@ -14,12 +20,13 @@ from ..meas.rhf import make_build_lno_meas_ctx
 from ..stat_utils import blocking_analysis_ratio, reject_outliers
 from ..config import setup_jax
 import numpy as np
-from pyscf import mcscf, ao2mo,lo
+from pyscf import mcscf, ao2mo, lo
 from ad_afqmc_prototype.staging import modified_cholesky
 
 import jax.numpy as jnp
 
-class LnoRhf: #Right now only works for RHF trial and walkers
+
+class LnoRhf:  # Right now only works for RHF trial and walkers
     def __init__(
         self,
         mf,
@@ -60,8 +67,7 @@ class LnoRhf: #Right now only works for RHF trial and walkers
         self.h1 = None if h1 is None else jnp.asarray(h1)
         self.chol = None if chol is None else jnp.asarray(chol)
         self.mo_coeff = None if mo_coeff is None else jnp.asarray(mo_coeff)
-        self.target_error = target_error  
-          
+        self.target_error = target_error
 
         self._built = False
 
@@ -84,22 +90,23 @@ class LnoRhf: #Right now only works for RHF trial and walkers
 
         self.sys = System(norb=norb, nelec=[nelec, nelec], walker_kind="restricted")
         self.ham_data = HamChol(self.h0, self.h1, self.chol)
-        self.trial_data = RhfTrial(self.mo_coeff[:, : nelec])
+        self.trial_data = RhfTrial(self.mo_coeff[:, :nelec])
         self.trial_ops = make_rhf_trial_ops(sys=self.sys)
         self.meas_ops = MeasOps(
             overlap=overlap_r,
-            build_meas_ctx= make_build_lno_meas_ctx(self.prjlo),
+            build_meas_ctx=make_build_lno_meas_ctx(self.prjlo),
             kernels={
                 k_force_bias: force_bias_kernel_rw_rh,
                 k_energy: energy_kernel_rw_rh,
             },
             observables={
                 o_orb_corr: lnoenergy_kernel_rw_rh,
-            }
+            },
         )
 
-
-        self.prop_ops = make_prop_ops(ham_basis="restricted", walker_kind=self.sys.walker_kind,mixed_precision = False)
+        self.prop_ops = make_prop_ops(
+            ham_basis="restricted", walker_kind=self.sys.walker_kind, mixed_precision=False
+        )
 
         self.params = QmcParams(
             n_eql_blocks=self.n_eql_blocks,
@@ -109,10 +116,9 @@ class LnoRhf: #Right now only works for RHF trial and walkers
             dt=self.dt,
             n_chunks=self.n_chunks,
         )
-        self.initial_walkers = None 
+        self.initial_walkers = None
         self.block_fn = block
         return self
-
 
     def kernel(self):
         self.setup(self.prjlo, self.mo_coeff, self.h0, self.h1, self.chol)
@@ -126,13 +132,14 @@ class LnoRhf: #Right now only works for RHF trial and walkers
             prop_ops=self.prop_ops,
             block_fn=self.block_fn,
             target_error=self.target_error,
-            observable_names=["orb_corr"]
+            observable_names=["orb_corr"],
         )
         orb_corr = qmc_result.observable_means["orb_corr"].real
         orb_corr_stderr = qmc_result.observable_stderrs["orb_corr"]
         print(f"Orbital correlation energy: {orb_corr:.6f} +/- {orb_corr_stderr:.6f}")
 
         return orb_corr, orb_corr_stderr
+
 
 def run_afqmc_lno_mf(
     mf,
@@ -161,7 +168,7 @@ def run_afqmc_lno_mf(
 
     # calculate cholesky integrals
     # print("# Calculating Cholesky integrals")
-    
+
     h1e, chol, nelec, enuc, nbasis, nchol = [None] * 6
     DFbas = mf.with_df.auxmol.basis
     nbasis = mol.nao
@@ -173,7 +180,7 @@ def run_afqmc_lno_mf(
     nbasis = mo_coeff.shape[-1]
     # if norb_frozen == 0: norb_frozen = []
     act = [i for i in range(nbasis) if i not in norb_frozen]
-    e = ao2mo.kernel(mf.mol, mo_coeff[:, act])#, compact=False)
+    e = ao2mo.kernel(mf.mol, mo_coeff[:, act])  # , compact=False)
     chol = modified_cholesky(e, max_error=chol_cut)
 
     h1e = np.asarray(h1e)
@@ -189,7 +196,9 @@ def run_afqmc_lno_mf(
     trial_coeffs[1] = q
     mo_coeff = trial_coeffs
     from ad_afqmc_prototype.wrapper.lno_wrapper import LnoRhf
-    myafqmc = LnoRhf(mf,
+
+    myafqmc = LnoRhf(
+        mf,
         n_eql_blocks=n_eql,
         n_blocks=nblocks,
         seed=seed,
@@ -197,14 +206,14 @@ def run_afqmc_lno_mf(
         n_walkers=n_walkers,
         prjlo=prjlo,
         target_error=target_error,
-        h0 =enuc,
-        h1 = h1e,
-        chol = chol,
-        mo_coeff = mo_coeff[0][:,:nelec[0]],
-
+        h0=enuc,
+        h1=h1e,
+        chol=chol,
+        mo_coeff=mo_coeff[0][:, : nelec[0]],
     )
-    mean_ecorr,err_ecorr = myafqmc.kernel()
-    return mean_ecorr, err_ecorr 
+    mean_ecorr, err_ecorr = myafqmc.kernel()
+    return mean_ecorr, err_ecorr
+
 
 def prep_local_orbitals(mf, frozen=0, localization_method="pm"):
     if localization_method not in ["pm"]:
@@ -215,9 +224,7 @@ def prep_local_orbitals(mf, frozen=0, localization_method="pm"):
     # lo_coeff = lo.PipekMezey(mf.mol, orbocc).kernel()
     mlo = lo.PipekMezey(mf.mol, orbocc)
     lo_coeff = mlo.kernel()
-    while (
-        True
-    ):  # always performing jacobi sweep to avoid trapping in local minimum/saddle point
+    while True:  # always performing jacobi sweep to avoid trapping in local minimum/saddle point
         lo_coeff1 = mlo.stability_jacobi()[1]
         if lo_coeff1 is lo_coeff:
             break
@@ -229,5 +236,3 @@ def prep_local_orbitals(mf, frozen=0, localization_method="pm"):
     frag_lolist = [[i] for i in range(lo_coeff.shape[1])]
 
     return lo_coeff, frag_lolist
-
-
