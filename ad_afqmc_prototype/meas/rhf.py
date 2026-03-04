@@ -224,11 +224,11 @@ def build_meas_ctx(ham_data: HamChol, trial_data: RhfTrial) -> RhfMeasCtx:
         raise ValueError("RHF MeasOps currently assumes HamChol.basis == 'restricted'.")
     cH = trial_data.mo_coeff.conj().T  # (nocc, norb)
     rot_h1 = cH @ ham_data.h1  # (nocc, norb)
-#    jax.debug.print("rot_h1 {a}", a=rot_h1)
+    #    jax.debug.print("rot_h1 {a}", a=rot_h1)
     rot_chol = jnp.einsum("pi,gij->gpj", cH, ham_data.chol, optimize="optimal")
-#    jax.debug.print("rot_chol {a}", a=rot_chol)
+    #    jax.debug.print("rot_chol {a}", a=rot_chol)
     rot_chol_flat = rot_chol.reshape(rot_chol.shape[0], -1)
-#    jax.debug.print("rot_chol_flat {a}", a=rot_chol_flat)
+    #    jax.debug.print("rot_chol_flat {a}", a=rot_chol_flat)
     return RhfMeasCtx(rot_h1=rot_h1, rot_chol=rot_chol, rot_chol_flat=rot_chol_flat)
 
 

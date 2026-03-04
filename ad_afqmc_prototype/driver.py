@@ -14,7 +14,7 @@ from jax.sharding import PartitionSpec as P
 from .core.ops import MeasOps, TrialOps
 from .core.system import System
 from .prop.blocks import BlockFn
-from .prop.types import PropOps, PropState, QmcParams, QmcParamsFp
+from .prop.types import PropOps, PropOpsFp, PropState, QmcParams, QmcParamsFp
 from .stat_utils import blocking_analysis_ratio, jackknife_ratios, rebin_observable, reject_outliers
 from .walkers import stochastic_reconfiguration
 
@@ -88,7 +88,7 @@ def make_run_blocks(
     return run_blocks
 
 
-#def make_run_blocks_fp(
+# def make_run_blocks_fp(
 #    *,
 #    block_fn: BlockFn,
 #    sys: System,
@@ -96,7 +96,7 @@ def make_run_blocks(
 #    trial_ops: TrialOps,
 #    meas_ops: MeasOps,
 #    prop_ops: PropOpsFp,
-#) -> Callable:
+# ) -> Callable:
 #    """
 #    Build a jitted run_blocks.
 #    We keep ham_data, trial_data, meas_ctx, prop_ctx as arguments to
@@ -422,7 +422,7 @@ def run_qmc_energy_fp(
       (mean_energy, stderr, block_energies, block_weights)
     """
     # build ctx
-    prop_ctx = prop_ops.build_prop_ctx(ham_data,sys, trial_ops.get_rdm1(trial_data), params)
+    prop_ctx = prop_ops.build_prop_ctx(ham_data, sys, trial_ops.get_rdm1(trial_data), params)
     if meas_ctx is None:
         meas_ctx = meas_ops.build_meas_ctx(ham_data, trial_data)
     if state is None:
@@ -448,27 +448,28 @@ def run_qmc_energy_fp(
     )
 
     t0 = time.perf_counter()
-    t_mark = t0
 
     # sampling
     print("\nSampling:\n")
-    #print_every = params.n_blocks // 10 if params.n_blocks >= 10 else 1
+    # print_every = params.n_blocks // 10 if params.n_blocks >= 10 else 1
     print_every = 1
-    block_e_all = jnp.zeros((params.n_traj, params.n_blocks+1)) + 0.0j
-    block_w_all = jnp.zeros((params.n_traj, params.n_blocks+1)) + 0.0j
-    total_sign =  jnp.ones((params.n_traj, params.n_blocks+1)) + 0.0j
-    block_e_all = block_e_all.at[:,0].set(jnp.array(state.e_estimate))
-    block_w_all = block_w_all.at[:,0].set(jnp.sum(state.weights))
-    total_sign = total_sign.at[:,0].set(jnp.sum(state.overlaps) / (jnp.sum(jnp.abs(state.overlaps))))
+    block_e_all = jnp.zeros((params.n_traj, params.n_blocks + 1)) + 0.0j
+    block_w_all = jnp.zeros((params.n_traj, params.n_blocks + 1)) + 0.0j
+    total_sign = jnp.ones((params.n_traj, params.n_blocks + 1)) + 0.0j
+    block_e_all = block_e_all.at[:, 0].set(jnp.array(state.e_estimate))
+    block_w_all = block_w_all.at[:, 0].set(jnp.sum(state.weights))
+    total_sign = total_sign.at[:, 0].set(
+        jnp.sum(state.overlaps) / (jnp.sum(jnp.abs(state.overlaps)))
+    )
     chunk = print_every
     for i in range(params.n_traj):
         block_e_s = []
         block_w_s = []
         block_ov_s = []
         block_abs_ov_s = []
-        print("Trajectory count", i+1)
-        if i > 0 :
-            params = dataclasses.replace( params, seed = params.seed + i)
+        print("Trajectory count", i + 1)
+        if i > 0:
+            params = dataclasses.replace(params, seed=params.seed + i)
             state = prop_ops.init_prop_state(
                 sys=sys,
                 ham_data=ham_data,
@@ -479,8 +480,7 @@ def run_qmc_energy_fp(
                 mesh=mesh,
             )
 
-        
-        for j, start in enumerate(range(0, params.n_blocks+1, chunk)):
+        for j, start in enumerate(range(0, params.n_blocks + 1, chunk)):
             n = min(chunk, params.n_blocks - start)
             state, e_chunk, w_chunk, (ov_chunk, abs_ov_chunk) = run_blocks(
                 state,
@@ -495,19 +495,23 @@ def run_qmc_energy_fp(
             block_ov_s.extend(ov_chunk.tolist())
             block_abs_ov_s.extend(abs_ov_chunk.tolist())
 
-        block_e_all = block_e_all.at[i,1:].set(jnp.array(block_e_s))
-        block_w_all = block_w_all.at[i,1:].set(jnp.array(block_w_s))
+        block_e_all = block_e_all.at[i, 1:].set(jnp.array(block_e_s))
+        block_w_all = block_w_all.at[i, 1:].set(jnp.array(block_w_s))
         sign = jnp.array(block_ov_s) / jnp.array(block_abs_ov_s)
-        total_sign = total_sign.at[i,1:].set(sign)
-        mean_energies = jnp.sum(block_e_all[:i+1]*block_w_all[:i+1],axis=0)/jnp.sum(block_w_all[:i+1],axis=0)
-        mean_sign = jnp.sum(total_sign[:i+1]*block_w_all[:i+1],axis=0)/jnp.sum(block_w_all[:i+1],axis=0)
+        total_sign = total_sign.at[i, 1:].set(sign)
+        mean_energies = jnp.sum(block_e_all[: i + 1] * block_w_all[: i + 1], axis=0) / jnp.sum(
+            block_w_all[: i + 1], axis=0
+        )
+        mean_sign = jnp.sum(total_sign[: i + 1] * block_w_all[: i + 1], axis=0) / jnp.sum(
+            block_w_all[: i + 1], axis=0
+        )
         if i == 0:
             error = jnp.zeros_like(mean_energies)
         else:
-            error = jnp.std(block_e_all[:i+1],axis=0)/jnp.sqrt(i)
+            error = jnp.std(block_e_all[: i + 1], axis=0) / jnp.sqrt(i)
 
-        timer = params.dt*params.n_prop_steps*chunk*jnp.arange(params.n_blocks+1)
-        for j in range(0, params.n_blocks+1, chunk):
+        timer = params.dt * params.n_prop_steps * chunk * jnp.arange(params.n_blocks + 1)
+        for j in range(0, params.n_blocks + 1, chunk):
             print(
                 f"{(timer[j]):14.4f} "
                 f"{(mean_energies[j*chunk].real):14.10f}  "
@@ -518,4 +522,4 @@ def run_qmc_energy_fp(
 
         print(f"Wall time :{elapsed:12.1f} s\n")
 
-    return  mean_energies, error, block_e_all, block_w_all
+    return mean_energies, error, block_e_all, block_w_all

@@ -35,7 +35,7 @@ class QmcParams:
     n_walkers: int = 200
     seed: int = 42
 
-    
+
 @dataclass(frozen=True)
 class QmcParamsFp:
     dt: float = 0.025

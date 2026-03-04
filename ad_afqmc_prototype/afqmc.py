@@ -12,10 +12,10 @@ import numpy as np
 
 from .core.system import WalkerKind
 from .prop.types import QmcParams, QmcParamsFp
-from .setup import Job, _filter_kwargs_for
+from .setup import Job
 from .setup_fp import JobFp
 from .setup import setup as setup_job
-from .setup_fp import setup_fp 
+from .setup_fp import setup_fp
 from .staging import StagedInputs, _is_cc_like
 from .staging import dump as dump_staged
 from .staging import load as load_staged
@@ -36,6 +36,7 @@ def banner_afqmc() -> str:
 ╚═╝  ╚═╝╚═════╝       ╚═╝  ╚═╝╚═╝      ╚══▀▀═╝ ╚═╝     ╚═╝ ╚═════╝
      differentiable auxiliary-field quantum Monte Carlo
 """
+
 
 class AFQMC:
     """
@@ -211,9 +212,11 @@ class AFQMC:
         if self.params is not None and isinstance(self.params, QmcParams):
             params = self.params
         elif self.params is not None and not isinstance(self.params, QmcParams):
-            raise TypeError(f"Expected type QmcParams for self.params, but received '{type(self.params)}'")
+            raise TypeError(
+                f"Expected type QmcParams for self.params, but received '{type(self.params)}'"
+            )
         else:
-            kwargs : dict[str, Any] = {}
+            kwargs: dict[str, Any] = {}
             for field in dataclasses.fields(QmcParams):
                 if hasattr(self, field.name):
                     kwargs[field.name] = getattr(self, field.name)
@@ -331,6 +334,7 @@ def from_staged(
 
     return af
 
+
 class AFQMC_fp(AFQMC):
     def __init__(
         self,
@@ -345,22 +349,22 @@ class AFQMC_fp(AFQMC):
         n_walkers: Optional[int] = None,
         n_chunks: Optional[int] = 1,
         ene0: Optional[float] = None,
-        n_traj: Optional[int] = None
-        ):
-            super().__init__(
-                mf_or_cc,
-                norb_frozen=norb_frozen,
-                chol_cut=chol_cut,
-                cache=cache,
-                n_eql_blocks=None,
-                n_blocks=n_blocks,
-                seed=seed,
-                dt=dt,
-                n_walkers=n_walkers,
-                n_chunks=n_chunks,
-                )
-            self.n_traj = n_traj
-            self.ene0 = ene0
+        n_traj: Optional[int] = None,
+    ):
+        super().__init__(
+            mf_or_cc,
+            norb_frozen=norb_frozen,
+            chol_cut=chol_cut,
+            cache=cache,
+            n_eql_blocks=None,
+            n_blocks=n_blocks,
+            seed=seed,
+            dt=dt,
+            n_walkers=n_walkers,
+            n_chunks=n_chunks,
+        )
+        self.n_traj = n_traj
+        self.ene0 = ene0
 
     def _dump_params(self, params: QmcParamsFp):
         fields = dataclasses.fields(params)
@@ -369,11 +373,10 @@ class AFQMC_fp(AFQMC):
         for field in fields:
             print(f"  {field.name:<{width}} = {getattr(params, field.name)}")
         print("")
- 
+
     def dump_flags(self, job) -> None:
         meta = job.staged.meta
         src = meta["source_kind"]
-        norb_frozen = meta["norb_frozen"]
         chol_cut = meta["chol_cut"]
         sys = job.sys
         nchol = job.staged.ham.chol.shape[0]
@@ -392,7 +395,6 @@ class AFQMC_fp(AFQMC):
         print(f" mixed_precision = {self.mixed_precision}\n")
         self._dump_params(params)
 
-
     def _make_params(self) -> Optional[QmcParamsFp]:
         """
         Create QmcParamsFp if user didn't provide one.
@@ -400,9 +402,11 @@ class AFQMC_fp(AFQMC):
         if self.params is not None and isinstance(self.params, QmcParamsFp):
             params = self.params
         elif self.params is not None and not isinstance(self.params, QmcParamsFp):
-            raise TypeError(f"Expected type QmcParamsFp for self.params, but received '{type(self.params)}'")
+            raise TypeError(
+                f"Expected type QmcParamsFp for self.params, but received '{type(self.params)}'"
+            )
         else:
-            kwargs : dict[str, Any] = {}
+            kwargs: dict[str, Any] = {}
             for field in dataclasses.fields(QmcParamsFp):
                 if hasattr(self, field.name):
                     kwargs[field.name] = getattr(self, field.name)
@@ -411,18 +415,17 @@ class AFQMC_fp(AFQMC):
 
         return params
 
-
     def build_job(
-            self,
-            *,
-            force: bool = False,
-            trial_data: Any = None,
-            trial_ops: Any = None,
-            meas_ops: Any = None,
-            prop_ops: Any = None,
-            block_fn: Optional[Callable[..., Any]] = None,
-            prop_kwargs: Optional[dict[str, Any]] = None,
-        )-> Job_fp:
+        self,
+        *,
+        force: bool = False,
+        trial_data: Any = None,
+        trial_ops: Any = None,
+        meas_ops: Any = None,
+        prop_ops: Any = None,
+        block_fn: Optional[Callable[..., Any]] = None,
+        prop_kwargs: Optional[dict[str, Any]] = None,
+    ) -> JobFp:
         """
         Assemble a runnable Job from current settings and staged inputs.
         """
@@ -448,8 +451,7 @@ class AFQMC_fp(AFQMC):
         self._job = job
         return job
 
-
-    def kernel(self, **driver_kwargs: Any) -> tuple[float,float]:
+    def kernel(self, **driver_kwargs: Any) -> tuple[float, float]:
 
         print(banner_afqmc())
         job = self.build_job()
@@ -462,9 +464,7 @@ class AFQMC_fp(AFQMC):
             block_e = out[2] if len(out) > 2 else None
             block_w = out[3] if len(out) > 3 else None
         else:
-            raise TypeError(
-                "Unexpected return from Job.kernel(), expected tuple output."
-            )
+            raise TypeError("Unexpected return from Job.kernel(), expected tuple output.")
 
         self.e_tot = e_tot
         self.e_err = e_err

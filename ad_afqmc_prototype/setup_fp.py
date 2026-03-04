@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
@@ -104,6 +103,7 @@ class JobFp:
             **driver_kwargs,
         )
 
+
 def setup_fp(
     obj_or_staged: Union[Any, StagedInputs, str, Path],
     *,
@@ -177,10 +177,7 @@ def setup_fp(
     sys = System(norb=int(ham.norb), nelec=ham.nelec, walker_kind=walker_kind)
 
     ham_data = HamChol(
-        jnp.asarray(ham.h0),
-        jnp.asarray(ham.h1),
-        jnp.asarray(ham.chol),
-        basis=ham.basis
+        jnp.asarray(ham.h0), jnp.asarray(ham.h1), jnp.asarray(ham.chol), basis=ham.basis
     )
 
     if params_kwargs is None:

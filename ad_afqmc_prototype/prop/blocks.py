@@ -128,6 +128,7 @@ def block(
     )
     return state, obs
 
+
 def block_fp(
     state: PropState,
     *,
@@ -156,19 +157,20 @@ def block_fp(
         prop_ctx=prop_ctx,
         meas_ctx=meas_ctx,
     )
+
     def _scan_step(carry: PropState, _x: Any):
         carry = step_fp(carry)
         return carry, None
 
     state, _ = lax.scan(_scan_step, state, xs=None, length=params.n_prop_steps)
-    overlaps_new = wk.vmap_chunked(
-         meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
-    )(state.walkers, trial_data)
+    overlaps_new = wk.vmap_chunked(meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None))(
+        state.walkers, trial_data
+    )
     state = state._replace(overlaps=overlaps_new)
     e_kernel = meas_ops.require_kernel(k_energy)
-    e_samples = wk.vmap_chunked(
-        e_kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None)
-    )(state.walkers, ham_data, meas_ctx, trial_data)
+    e_samples = wk.vmap_chunked(e_kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None))(
+        state.walkers, ham_data, meas_ctx, trial_data
+    )
 
     thresh = jnp.sqrt(2.0 / jnp.asarray(params.dt))
 
@@ -177,7 +179,7 @@ def block_fp(
     weights = state.weights
     overlaps = state.overlaps
     w_sum = jnp.sum(weights * overlaps)
-    e_block = jnp.sum(weights * overlaps * e_samples) / w_sum  
+    e_block = jnp.sum(weights * overlaps * e_samples) / w_sum
     ov = jnp.sum(overlaps)
     abs_ov = jnp.sum(jnp.abs(overlaps))
 
@@ -186,6 +188,7 @@ def block_fp(
         observables={"overlap": ov, "abs_overlap": abs_ov},
     )
     return state, obs
+
 
 @tree_util.register_pytree_node_class
 class MlmcMeasCtx(NamedTuple):
