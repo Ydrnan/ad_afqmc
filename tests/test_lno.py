@@ -1,18 +1,11 @@
 from ad_afqmc_prototype import config
 
 config.configure_once()
-from ad_afqmc_prototype.wrapper.lno_wrapper import LnoRhf
-from typing import cast
-
-import jax
 import jax.numpy as jnp
 import pytest
-from jax import lax
 from pyscf import gto, scf
 
 from ad_afqmc_prototype import testing
-from ad_afqmc_prototype.afqmc import AFQMC
-from ad_afqmc_prototype.core.ops import k_energy, k_force_bias
 from ad_afqmc_prototype.prop.types import QmcParams
 from ad_afqmc_prototype.trial.rhf import RhfTrial
 from ad_afqmc_prototype.wrapper.lno_wrapper import run_afqmc_lno_mf

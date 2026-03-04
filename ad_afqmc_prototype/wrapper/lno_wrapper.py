@@ -1,5 +1,4 @@
 import numpy as np
-from functools import partial
 
 from .. import driver  # lnodriver
 from ..core.system import System
@@ -16,11 +15,8 @@ from ..prop.blocks import block
 from ..prop.types import QmcParams
 from ..trial.rhf import RhfTrial, make_rhf_trial_ops
 from ..core.ops import MeasOps, k_energy, k_force_bias, o_orb_corr
-from ..meas.rhf import make_build_lno_meas_ctx
-from ..stat_utils import blocking_analysis_ratio, reject_outliers
 from ..config import setup_jax
-import numpy as np
-from pyscf import mcscf, ao2mo, lo
+from pyscf import mcscf, ao2mo, lo, scf
 from ad_afqmc_prototype.staging import modified_cholesky
 
 import jax.numpy as jnp
@@ -170,7 +166,6 @@ def run_afqmc_lno_mf(
     # print("# Calculating Cholesky integrals")
 
     h1e, chol, nelec, enuc, nbasis, nchol = [None] * 6
-    DFbas = mf.with_df.auxmol.basis
     nbasis = mol.nao
     mc = mcscf.CASSCF(mf, norb_act, nelec_act)
     mc.frozen = norb_frozen

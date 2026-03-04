@@ -1,9 +1,7 @@
-import sys
-import os
 import numpy as np
 from functools import reduce
 from pyscf.lib import logger
-from pyscf import lib, lo
+from pyscf import lib
 
 from ad_afqmc_prototype.wrapper.lno_wrapper import run_afqmc_lno_mf
 from pyscf.lno import LNO
@@ -85,7 +83,7 @@ def impurity_solve(
                 nactmo,
                 max_las_size_afqmc,
             )
-            elcorr_pt2 = elcorr_cc = lib.tag_array(0.0, spin_comp=np.array((0.0, 0.0)))
+            elcorr_pt2 = lib.tag_array(0.0, spin_comp=np.array((0.0, 0.0)))
             elcorr_afqmc = 0.0
         else:
             # Impurity problem
