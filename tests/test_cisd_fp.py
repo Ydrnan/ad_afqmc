@@ -2,19 +2,18 @@ from ad_afqmc_prototype import config
 
 config.configure_once()
 
-import jax
 import jax.numpy as jnp
 import pytest
 from pyscf import gto, scf, cc
 
-from ad_afqmc_prototype import driver
 from ad_afqmc_prototype.afqmc import AFQMC_fp
 from ad_afqmc_prototype.prop.types import QmcParamsFp
+
 
 @pytest.mark.parametrize(
     "walker_kind, e_ref, err_ref",
     [
-        ("restricted",  -76.1196590973, 6.3008055e-04),
+        ("restricted", -76.1196590973, 6.3008055e-04),
     ],
 )
 def test_calc_uhf_hamiltonian(mycc, params, walker_kind, e_ref, err_ref):
@@ -52,12 +51,11 @@ def params():
         n_prop_steps=50,
         seed=6,
         n_walkers=5,
-        n_traj = 2,
-        dt = 0.005,
-        ene0 = -76.11915086149004,
+        n_traj=2,
+        dt=0.005,
+        ene0=-76.11915086149004,
     )
 
 
 if __name__ == "__main__":
     pytest.main([__file__])
-

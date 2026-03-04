@@ -2,14 +2,13 @@ from ad_afqmc_prototype import config
 
 config.configure_once()
 
-import jax
 import jax.numpy as jnp
 import pytest
 from pyscf import gto, scf
 
-from ad_afqmc_prototype import driver
 from ad_afqmc_prototype.afqmc import AFQMC_fp
 from ad_afqmc_prototype.prop.types import QmcParamsFp
+
 
 @pytest.mark.parametrize(
     "walker_kind, e_ref, err_ref",
@@ -51,12 +50,11 @@ def params():
         n_prop_steps=1000,
         seed=6,
         n_walkers=5,
-        n_traj = 3,
-        dt = 0.005,
-        ene0 = -75.67863248572299,
+        n_traj=3,
+        dt=0.005,
+        ene0=-75.67863248572299,
     )
 
 
 if __name__ == "__main__":
     pytest.main([__file__])
-

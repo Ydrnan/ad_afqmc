@@ -1,13 +1,15 @@
 from pyscf import gto, scf, cc
 from ad_afqmc_prototype.afqmc import AFQMC_fp
 
-mol =  gto.M(atom ="""
+mol = gto.M(
+    atom="""
     O        0.0000000000      0.0000000000      0.0000000000
     H        0.9562300000      0.0000000000      0.0000000000
     H       -0.2353791634      0.9268076728      0.0000000000
     """,
-    basis = '6-31G',
-    verbose = 3)
+    basis="6-31G",
+    verbose=3,
+)
 
 # RHF
 mf = scf.RHF(mol)
@@ -22,4 +24,3 @@ af.ene0 = mycc.e_tot
 af.n_ene_blocks = 10
 af.seed = 6
 mean, err = af.kernel()
-
