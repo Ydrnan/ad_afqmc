@@ -15,7 +15,7 @@ from .core.ops import MeasOps, TrialOps
 from .core.system import System
 from .prop.blocks import BlockFn
 from .prop.types import PropOps, PropState, QmcParams, QmcParamsFp
-from .stat_utils import blocking_analysis_ratio, reject_outliers
+from .stat_utils import blocking_analysis_ratio, jackknife_ratios, rebin_observable, reject_outliers
 from .walkers import stochastic_reconfiguration
 
 print = partial(print, flush=True)
@@ -28,6 +28,7 @@ class QmcResult(NamedTuple):
     block_weights: jax.Array
     block_observables: dict[str, jax.Array]
     observable_means: dict[str, jax.Array]
+    observable_stderrs: dict[str, jax.Array]
 
 
 def _weighted_block_mean(values: jax.Array, weights: jax.Array) -> jax.Array:
@@ -336,11 +337,26 @@ def run_qmc(
         block_obs_all[name] = jnp.concatenate([arr_eq, arr_s], axis=0)
 
     obs_means: dict[str, jax.Array] = {}
+    obs_stderrs: dict[str, jax.Array] = {}
+    b_star = stats.get("B_star")
     for name in observable_names:
         arr = block_obs_s[name]
-        obs_means[name] = (
-            _weighted_block_mean(arr, block_w_s) if arr is not None else jnp.zeros((0,))
-        )
+        if arr is None:
+            obs_means[name] = jnp.zeros((0,))
+            obs_stderrs[name] = jnp.zeros((0,))
+            continue
+        obs_means[name] = _weighted_block_mean(arr, block_w_s)
+        if b_star is not None and b_star >= 1:
+            import numpy as np
+
+            num, denom = rebin_observable(np.asarray(arr), np.asarray(block_w_s), b_star)
+            if num.shape[0] >= 2:
+                _, se = jackknife_ratios(num, denom)
+                obs_stderrs[name] = jnp.asarray(se)
+            else:
+                obs_stderrs[name] = jnp.full(arr.shape[1:], jnp.nan)
+        else:
+            obs_stderrs[name] = jnp.full(arr.shape[1:], jnp.nan)
 
     return QmcResult(
         mean_energy=mean,
@@ -349,6 +365,7 @@ def run_qmc(
         block_weights=block_w_all,
         block_observables=block_obs_all,
         observable_means=obs_means,
+        observable_stderrs=obs_stderrs,
     )
 
 
