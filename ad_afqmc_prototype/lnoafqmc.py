@@ -3,10 +3,11 @@ import os
 import numpy as np
 from functools import reduce
 from pyscf.lib import logger
-from pyscf import lib,lo
+from pyscf import lib, lo
 
 from ad_afqmc_prototype.wrapper.lno_wrapper import run_afqmc_lno_mf
 from pyscf.lno import LNO
+
 _fdot = np.dot
 fdot = lambda *args: reduce(_fdot, args)
 einsum = lib.einsum
@@ -94,9 +95,7 @@ def impurity_solve(
                 ovov = imp_eris.ovov
             else:
                 ovov = imp_eris.ovov[()]
-            oovv = ovov.reshape(nactocc, nactvir, nactocc, nactvir).transpose(
-                0, 2, 1, 3
-            )
+            oovv = ovov.reshape(nactocc, nactvir, nactocc, nactvir).transpose(0, 2, 1, 3)
             ovov = None
             cput1 = log.timer_debug1("imp sol - eri    ", *cput1)
             # MP2 fragment energy
@@ -129,11 +128,10 @@ def impurity_solve(
             )
             sig_e_orbe = np.around(elcorr_afqmc, sig_dec_orbe)
 
-
     frag_msg = "  ".join(
         [
             f"E_corr(MP2) = {elcorr_pt2:.15g}",
-            f"E_corr(AFQMC) = {sig_e_orbe:.{sig_dec_orbe}f} +/- {sig_err_orbe:.{sig_dec_orbe}f}", 
+            f"E_corr(AFQMC) = {sig_e_orbe:.{sig_dec_orbe}f} +/- {sig_err_orbe:.{sig_dec_orbe}f}",
         ]
     )
 
@@ -148,9 +146,7 @@ def get_maskact(frozen, nmo):
         frozen = 0
 
     if isinstance(frozen, (int, np.integer)):
-        maskact = np.hstack(
-            [np.zeros(frozen, dtype=bool), np.ones(nmo - frozen, dtype=bool)]
-        )
+        maskact = np.hstack([np.zeros(frozen, dtype=bool), np.ones(nmo - frozen, dtype=bool)])
     elif isinstance(frozen, (list, tuple, np.ndarray)):
         maskact = np.array([i not in frozen for i in range(nmo)])
     else:
@@ -178,9 +174,7 @@ class LNOAFQMC(LNO):
 
     _max_las_size_afqmc = 300
 
-    def __init__(
-        self, mf, lo_coeff, frag_lolist, lno_type=None, lno_thresh=None, frozen=None
-    ):
+    def __init__(self, mf, lo_coeff, frag_lolist, lno_type=None, lno_thresh=None, frozen=None):
 
         super().__init__(
             mf,
@@ -369,17 +363,8 @@ def fock_from_mo(mymf, s1e=None, force_exxdiv_none=True):
     fock = np.dot(mo0 * moe0, mo0.T.conj())
     return fock
 
-def save_debug_data(filename,
-                    mo_coeff,
-                    norb_act,
-                    nelec_act,
-                    norb_frozen,
-                    h1e,
-                    enuc,
-                    act,
-                    e,
-                    chol):
 
+def save_debug_data(filename, mo_coeff, norb_act, nelec_act, norb_frozen, h1e, enuc, act, e, chol):
     np.savez(
         filename,
         mo_coeff=mo_coeff,
@@ -392,5 +377,3 @@ def save_debug_data(filename,
         e=e,
         chol=chol,
     )
-
-
