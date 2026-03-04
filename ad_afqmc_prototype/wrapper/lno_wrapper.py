@@ -14,6 +14,8 @@ from ..meas.rhf import make_build_lno_meas_ctx
 from ..stat_utils import blocking_analysis_ratio, reject_outliers
 from ..config import setup_jax
 import numpy as np
+from pyscf import mcscf, ao2mo,lo
+from ad_afqmc_prototype.staging import modified_cholesky
 
 import jax.numpy as jnp
 
@@ -184,4 +186,101 @@ class LnoRhf: #Right now only works for RHF trial and walkers
         print(f"Orbital correlation energy: {orb_corr:.6f} +/- {orb_corr_stderr:.6f}")
 
         return orb_corr, orb_corr_stderr
+
+def run_afqmc_lno_mf(
+    mf,
+    norb_act=None,
+    nelec_act=None,
+    mo_coeff=None,
+    norb_frozen=[],
+    chol_cut=1e-5,
+    seed=None,
+    dt=0.005,
+    n_walkers=5,
+    nblocks=1000,
+    target_error=1e-4,
+    prjlo=None,
+    n_eql=2,
+):
+    mol = mf.mol
+    # choose the orbital basis
+    if mo_coeff is None:
+        if isinstance(mf, scf.uhf.UHF):
+            mo_coeff = mf.mo_coeff[0]
+        elif isinstance(mf, scf.rhf.RHF):
+            mo_coeff = mf.mo_coeff
+        else:
+            raise Exception("# Invalid mean field object!")
+
+    # calculate cholesky integrals
+    # print("# Calculating Cholesky integrals")
+    
+    h1e, chol, nelec, enuc, nbasis, nchol = [None] * 6
+    DFbas = mf.with_df.auxmol.basis
+    nbasis = mol.nao
+    mc = mcscf.CASSCF(mf, norb_act, nelec_act)
+    mc.frozen = norb_frozen
+    nelec = mc.nelecas
+    mc.mo_coeff = mo_coeff
+    h1e, enuc = mc.get_h1eff()
+    nbasis = mo_coeff.shape[-1]
+    # if norb_frozen == 0: norb_frozen = []
+    act = [i for i in range(nbasis) if i not in norb_frozen]
+    e = ao2mo.kernel(mf.mol, mo_coeff[:, act])#, compact=False)
+    chol = modified_cholesky(e, max_error=chol_cut)
+
+    h1e = np.asarray(h1e)
+    enuc = float(enuc)
+    nbasis = h1e.shape[-1]
+    chol = chol.reshape((-1, nbasis, nbasis))
+
+    # write mo coefficients
+    trial_coeffs = np.empty((2, nbasis, nbasis))
+
+    q = np.eye(mol.nao - len(norb_frozen))
+    trial_coeffs[0] = q
+    trial_coeffs[1] = q
+    mo_coeff = trial_coeffs
+    from ad_afqmc_prototype.wrapper.lno_wrapper import LnoRhf
+    myafqmc = LnoRhf(mf,
+        n_eql_blocks=n_eql,
+        n_blocks=nblocks,
+        seed=seed,
+        dt=dt,
+        n_walkers=n_walkers,
+        prjlo=prjlo,
+        target_error=target_error,
+        h0 =enuc,
+        h1 = h1e,
+        chol = chol,
+        mo_coeff = mo_coeff[0][:,:nelec[0]],
+
+    )
+    mean_ecorr,err_ecorr = myafqmc.kernel()
+    return mean_ecorr, err_ecorr 
+
+def prep_local_orbitals(mf, frozen=0, localization_method="pm"):
+    if localization_method not in ["pm"]:
+        raise ValueError(
+            f"Localization method '{localization_method}' is not supported. Make LOs by yourself."
+        )
+    orbocc = mf.mo_coeff[:, frozen : np.count_nonzero(mf.mo_occ)]
+    # lo_coeff = lo.PipekMezey(mf.mol, orbocc).kernel()
+    mlo = lo.PipekMezey(mf.mol, orbocc)
+    lo_coeff = mlo.kernel()
+    while (
+        True
+    ):  # always performing jacobi sweep to avoid trapping in local minimum/saddle point
+        lo_coeff1 = mlo.stability_jacobi()[1]
+        if lo_coeff1 is lo_coeff:
+            break
+        mlo = lo.PipekMezey(mf.mol, lo_coeff1).set(verbose=2)
+        mlo.init_guess = None
+        lo_coeff = mlo.kernel()
+
+    # # Fragment list: for PM, every orbital corresponds to a fragment
+    frag_lolist = [[i] for i in range(lo_coeff.shape[1])]
+
+    return lo_coeff, frag_lolist
+
 

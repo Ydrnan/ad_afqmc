@@ -15,7 +15,7 @@ from ad_afqmc_prototype.afqmc import AFQMC
 from ad_afqmc_prototype.core.ops import k_energy, k_force_bias
 from ad_afqmc_prototype.prop.types import QmcParams
 from ad_afqmc_prototype.trial.rhf import RhfTrial
-from ad_afqmc_prototype.lnoafqmc import run_afqmc_lno_mf
+from ad_afqmc_prototype.wrapper.lno_wrapper import run_afqmc_lno_mf
 
 def _make_random_rhf_trial(key, norb, nocc):
     return RhfTrial(mo_coeff=testing.rand_orthonormal_cols(key, norb, nocc))
