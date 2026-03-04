@@ -31,6 +31,13 @@ class QmcResult(NamedTuple):
     observable_stderrs: dict[str, jax.Array]
 
 
+class QmcResultFp(NamedTuple):
+    mean_energy: jax.Array
+    stderr_energy: jax.Array
+    block_energies: jax.Array
+    block_weights: jax.Array
+
+
 def _weighted_block_mean(values: jax.Array, weights: jax.Array) -> jax.Array:
     w_sum = jnp.sum(weights)
     w_shape = (weights.shape[0],) + (1,) * max(values.ndim - 1, 0)
@@ -86,52 +93,6 @@ def make_run_blocks(
         return stateN, e, w, obs
 
     return run_blocks
-
-
-# def make_run_blocks_fp(
-#    *,
-#    block_fn: BlockFn,
-#    sys: System,
-#    params: QmcParams,
-#    trial_ops: TrialOps,
-#    meas_ops: MeasOps,
-#    prop_ops: PropOpsFp,
-# ) -> Callable:
-#    """
-#    Build a jitted run_blocks.
-#    We keep ham_data, trial_data, meas_ctx, prop_ctx as arguments to
-#    improve compilation, as these objects can be large.
-#    """
-#
-#    @partial(jax.jit, static_argnames=("n_blocks",))
-#    def run_blocks(
-#        state0,
-#        *,
-#        ham_data,
-#        trial_data,
-#        meas_ctx,
-#        prop_ctx,
-#        n_blocks: int,
-#    ):
-#        def one_block(state, n):
-#            state, obs = block_fn(
-#                    state,
-#                    sys=sys,
-#                    params=params,
-#                    ham_data=ham_data,
-#                    trial_data=trial_data,
-#                    trial_ops=trial_ops,
-#                    meas_ops=meas_ops,
-#                    meas_ctx=meas_ctx,
-#                    prop_ops=prop_ops,
-#                    prop_ctx=prop_ctx,
-#                )
-#            return state, (obs.scalars["energy"], obs.scalars["weight"], obs.scalars["overlap"], obs.scalars["abs_overlap"])
-#
-#        stateN, (e, w, ov, abs_ov) = lax.scan(one_block, state0, xs=None, length=n_blocks)
-#        return stateN, e, w, ov, abs_ov
-#
-#    return run_blocks
 
 
 def run_qmc(
@@ -402,7 +363,7 @@ def run_qmc_energy(
     return out.mean_energy, out.stderr_energy, out.block_energies, out.block_weights
 
 
-def run_qmc_energy_fp(
+def run_qmc_fp(
     *,
     sys: System,
     params: QmcParamsFp,
@@ -415,7 +376,6 @@ def run_qmc_energy_fp(
     state: PropState | None = None,
     meas_ctx: Any | None = None,
     target_error: float | None = None,
-    mesh: Mesh | None = None,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     """
     Returns:
@@ -433,7 +393,6 @@ def run_qmc_energy_fp(
             trial_data=trial_data,
             meas_ops=meas_ops,
             params=params,
-            mesh=mesh,
         )
 
     block_fn_sr = block_fn
@@ -477,7 +436,6 @@ def run_qmc_energy_fp(
                 trial_data=trial_data,
                 meas_ops=meas_ops,
                 params=params,
-                mesh=mesh,
             )
 
         for j, start in enumerate(range(0, params.n_blocks + 1, chunk)):
@@ -499,27 +457,63 @@ def run_qmc_energy_fp(
         block_w_all = block_w_all.at[i, 1:].set(jnp.array(block_w_s))
         sign = jnp.array(block_ov_s) / jnp.array(block_abs_ov_s)
         total_sign = total_sign.at[i, 1:].set(sign)
-        mean_energies = jnp.sum(block_e_all[: i + 1] * block_w_all[: i + 1], axis=0) / jnp.sum(
+        mean = jnp.sum(block_e_all[: i + 1] * block_w_all[: i + 1], axis=0) / jnp.sum(
             block_w_all[: i + 1], axis=0
         )
-        mean_sign = jnp.sum(total_sign[: i + 1] * block_w_all[: i + 1], axis=0) / jnp.sum(
+        sign = jnp.sum(total_sign[: i + 1] * block_w_all[: i + 1], axis=0) / jnp.sum(
             block_w_all[: i + 1], axis=0
         )
         if i == 0:
-            error = jnp.zeros_like(mean_energies)
+            err = jnp.zeros_like(mean)
         else:
-            error = jnp.std(block_e_all[: i + 1], axis=0) / jnp.sqrt(i)
+            err = jnp.std(block_e_all[: i + 1], axis=0) / jnp.sqrt(i)
 
         timer = params.dt * params.n_prop_steps * chunk * jnp.arange(params.n_blocks + 1)
         for j in range(0, params.n_blocks + 1, chunk):
             print(
                 f"{(timer[j]):14.4f} "
-                f"{(mean_energies[j*chunk].real):14.10f}  "
-                f"{(error[j*chunk].real):10.7e}  "
-                f"{(mean_sign[j*chunk].real):10.2f}"
+                f"{(mean[j*chunk].real):14.10f}  "
+                f"{(err[j*chunk].real):10.7e}  "
+                f"{(sign[j*chunk].real):10.2f}"
             )
         elapsed = time.perf_counter() - t0
 
         print(f"Wall time :{elapsed:12.1f} s\n")
 
-    return mean_energies, error, block_e_all, block_w_all
+    return QmcResultFp(
+        mean_energy=mean,
+        stderr_energy=err,
+        block_energies=block_e_all,
+        block_weights=block_w_all,
+    )
+
+
+def run_qmc_energy_fp(
+    *,
+    sys: System,
+    params: QmcParams,
+    ham_data: Any,
+    trial_data: Any,
+    meas_ops: MeasOps,
+    trial_ops: TrialOps,
+    prop_ops: PropOps,
+    block_fn: BlockFn,
+    state: PropState | None = None,
+    meas_ctx: Any | None = None,
+    target_error: float | None = None,
+    mesh: Mesh | None = None,
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+    out = run_qmc_fp(
+        sys=sys,
+        params=params,
+        ham_data=ham_data,
+        trial_data=trial_data,
+        meas_ops=meas_ops,
+        trial_ops=trial_ops,
+        prop_ops=prop_ops,
+        block_fn=block_fn,
+        state=state,
+        meas_ctx=meas_ctx,
+        target_error=target_error,
+    )
+    return out.mean_energy, out.stderr_energy, out.block_energies, out.block_weights
