@@ -219,7 +219,9 @@ class AFQMC:
             kwargs: dict[str, Any] = {}
             for field in dataclasses.fields(QmcParams):
                 if hasattr(self, field.name):
-                    kwargs[field.name] = getattr(self, field.name)
+                    val = getattr(self, field.name)
+                    if val is not None:
+                        kwargs[field.name] = val
 
             params = QmcParams(**kwargs)
 
@@ -409,7 +411,9 @@ class AFQMC_fp(AFQMC):
             kwargs: dict[str, Any] = {}
             for field in dataclasses.fields(QmcParamsFp):
                 if hasattr(self, field.name):
-                    kwargs[field.name] = getattr(self, field.name)
+                    val = getattr(self, field.name)
+                    if val is not None:
+                        kwargs[field.name] = val
 
             params = QmcParamsFp(**kwargs)
 

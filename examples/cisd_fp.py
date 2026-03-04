@@ -21,6 +21,6 @@ mycc.kernel()
 af = AFQMC_fp(mycc)
 af.n_blocks = 30
 af.ene0 = mycc.e_tot
-af.n_ene_blocks = 10
+af.n_traj = 10
 af.seed = 6
 mean, err = af.kernel()

@@ -14,6 +14,6 @@ af = AFQMC_fp(mf)
 af.dt = 0.005
 af.n_blocks = 50
 af.ene0 = mf.e_tot
-af.n_ene_blocks = 10
+af.n_traj = 10
 af.seed = 6
 mean, err = af.kernel()
