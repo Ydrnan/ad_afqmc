@@ -7,7 +7,8 @@ import jax.numpy as jnp
 from jax import tree_util
 
 from ..ham.chol import HamChol
-from ..prop.chol_afqmc_ops import _mf_shifts, _build_exp_h1_half_from_h1
+from .chol_afqmc_ops import _mf_shifts, _build_exp_h1_half_from_h1
+from .chol_afqmc_ops import _get_h1_eff
 from ..core.system import System
 
 
@@ -54,19 +55,6 @@ class FpCholAfqmcCtx:
         )
 
 
-def _get_h1_eff(ham_data: HamChol, mf: jax.Array) -> jax.Array:
-    match ham_data.basis:
-        case "restricted" | "generalized":
-            v0m = 0.5 * jnp.einsum("gik,gkj->ij", ham_data.chol, ham_data.chol, optimize="optimal")
-            mf_r = (1.0j * mf).real
-            v1m = jnp.einsum("g,gik->ik", mf_r, ham_data.chol, optimize="optimal")
-            h1_eff = ham_data.h1 - v0m - v1m
-        case _:
-            raise ValueError(f"Unknown Hamiltonian basis kind: {ham_data.basis}")
-
-    return h1_eff
-
-
 def _build_prop_ctx_fp(
     ham_data: HamChol,
     sys: System,
@@ -80,25 +68,27 @@ def _build_prop_ctx_fp(
     mf = _mf_shifts(ham_data, rdm1)
     h0_prop = -ham_data.h0 - 0.5 * jnp.sum(mf**2)
 
-    if sys.walker_kind.lower() == "unrestricted":
-        mf_fp = jnp.stack(
-            (
-                mf / sys.nelec[0] / 2,
-                mf / sys.nelec[1] / 2,
+    wk = sys.walker_kind.lower()
+    match wk:
+        case "unrestricted":
+            mf_fp = jnp.stack(
+                (
+                    0.5 * mf / sys.nelec[0],
+                    0.5 * mf / sys.nelec[1],
+                )
             )
-        )
-        h0_prop_fp = jnp.stack(
-            (
-                0.5 * (h0_prop + ene0) / sys.nelec[0],
-                0.5 * (h0_prop + ene0) / sys.nelec[1],
+            h0_prop_fp = jnp.stack(
+                (
+                    0.5 * (h0_prop + ene0) / sys.nelec[0],
+                    0.5 * (h0_prop + ene0) / sys.nelec[1],
+                )
             )
-        )
+        case "restricted":
+            mf_fp = mf * 0.5 / sys.nelec[0]
+            h0_prop_fp = 0.5 * (h0_prop + ene0) / sys.nelec[0]
 
-    if sys.walker_kind.lower() == "restricted":
-        mf_fp = mf * 0.5 / sys.nelec[0]
-        h0_prop_fp = 0.5 * (h0_prop + ene0) / sys.nelec[0]
-        h1_eff = _get_h1_eff(ham_data, mf)
-        exp_h1_half = _build_exp_h1_half_from_h1(h1_eff, dt_a)
+        case _:
+            raise NotImplementedError(f"_build_prop_ctx_fp does not handle '{wk}' walkers.")
 
     h1_eff = _get_h1_eff(ham_data, mf)
     exp_h1_half = _build_exp_h1_half_from_h1(h1_eff, dt_a)
