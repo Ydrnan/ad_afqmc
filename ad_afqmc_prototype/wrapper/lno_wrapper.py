@@ -65,59 +65,6 @@ class LnoRhf: #Right now only works for RHF trial and walkers
 
         self._built = False
 
-    # def build_job_lno(self,prjlo,mo_coeff,h0,h1,chol):
-    #     self.params = QmcParams(
-    #         n_eql_blocks=self.n_eql_blocks,
-    #         n_blocks=self.n_blocks,
-    #         seed=self.seed,
-    #         n_walkers=self.n_walkers,
-    #         dt=self.dt,
-    #         n_chunks=self.n_chunks,
-    #         # n_exp_terms=self.n_exp_terms,
-    #         # pop_control_damping=self.pop_control_damping,
-    #         # weight_floor=self.weight_floor,
-    #         # weight_cap=self.weight_cap,
-    #         # n_prop_steps=self.n_prop_steps,
-    #         # shift_ema=self.shift_ema,
-    #     )
-    #     from ..staging import StagedInputs, HamInput,TrialInput
-    #     from ..setup import setup as setup_job
-    #     ham = HamInput(h0 = self.h0,
-    #                    h1 = np.asarray(self.h1),
-    #                    chol=np.asarray(chol),
-    #                    nelec=(mo_coeff.shape[1],mo_coeff.shape[1]),
-    #                    norb=mo_coeff.shape[0],
-    #                    chol_cut = 1e-5,
-    #                    norb_frozen=0,
-    #                    source_kind = "rhf",
-    #                    basis="restricted") # type: ignore
-    #     self.sys = System(norb=mo_coeff.shape[0], nelec=[mo_coeff.shape[1], mo_coeff.shape[1]], walker_kind="restricted")
-    #     trial = TrialInput(kind="rhf",data={"mo":make_rhf_trial_ops(sys=self.sys)},norb_frozen=0,source_kind="rhf")
-    #     meta = {}
-    #     self.staged = StagedInputs(ham=ham,trial=trial,meta=meta) # type: ignore
-    #     job = setup_job(self.staged,
-    #                     walker_kind = "rhf",
-    #                     mixed_precision=False,
-    #                     params = self.params,
-    #                     trial_data=trial,
-    #                     trial_ops = make_rhf_trial_ops(sys=self.sys),
-    #                     meas_ops = MeasOps(
-    #                             overlap=overlap_r,
-    #                             build_meas_ctx= make_build_lno_meas_ctx(self.prjlo),
-    #                             kernels={
-    #                                 k_force_bias: force_bias_kernel_rw_rh,
-    #                                 k_energy: energy_kernel_rw_rh,
-    #                             },
-    #                             observables={
-    #                                 o_orb_corr: lnoenergy_kernel_rw_rh,
-    #                             }
-    #                         ),
-    #                     prop_ops = make_prop_ops(ham_basis="restricted", walker_kind=self.sys.walker_kind,mixed_precision = False),
-    #                     block_fn = block
-    #                     )
-    #     return job
-
-
     def setup(self, prjlo, mo_coeff, h0, h1, chol):
         """Build everything that depends on prjlo/mo_coeff/integrals."""
         if prjlo is None:
