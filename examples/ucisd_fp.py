@@ -4,7 +4,7 @@ from ad_afqmc_prototype import config
 
 config.configure_once()
 
-from ad_afqmc_prototype.afqmc import AFQMC_fp
+from ad_afqmc_prototype.afqmc import AfqmcFp
 
 mol = gto.M(
     atom="""
@@ -23,7 +23,7 @@ mf.kernel()
 mycc = cc.UCCSD(mf)
 mycc.kernel()
 
-afqmc = AFQMC_fp(mycc)
+afqmc = AfqmcFp(mycc)
 afqmc.dt = 0.005
 afqmc.n_blocks = 50
 afqmc.ene0 = mycc.e_tot

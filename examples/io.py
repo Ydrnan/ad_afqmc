@@ -4,7 +4,7 @@ from ad_afqmc_prototype import config
 
 config.configure_once()
 
-from ad_afqmc_prototype.afqmc import AFQMC, from_staged
+from ad_afqmc_prototype.afqmc import Afqmc, from_staged
 
 mol = gto.M(
     atom="O 0 0 0; H 0 -0.757 0.587; H 0 0.757 0.587",
@@ -14,7 +14,7 @@ mol = gto.M(
 mf = scf.RHF(mol)
 mf.kernel()
 
-af = AFQMC(mf)
+af = Afqmc(mf)
 af.chol_cut = 1e-6  # Cholesky decomposition threshold
 af.norb_frozen = 1  # freeze O 1s core
 af.n_walkers = 20  # number of walkers

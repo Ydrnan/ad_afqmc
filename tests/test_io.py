@@ -5,7 +5,7 @@ config.configure_once()
 import pytest
 import jax.numpy as jnp
 from pyscf import gto, scf
-from ad_afqmc_prototype.afqmc import AFQMC, from_staged
+from ad_afqmc_prototype.afqmc import Afqmc, from_staged
 from ad_afqmc_prototype.prop.types import QmcParams
 
 
@@ -35,7 +35,7 @@ mf = mf()  # type: ignore
 )
 def test_calc_rhf_hamiltonian(mf, tmp_path, params, walker_kind, e_ref, err_ref):
     h5_file = str(tmp_path / "nh2.h5")
-    myafqmc = AFQMC(mf)
+    myafqmc = Afqmc(mf)
     myafqmc.chol_cut = 1e-6
     myafqmc.save_staged(h5_file)
 

@@ -37,7 +37,7 @@ def banner_afqmc() -> str:
 """
 
 
-class AFQMC:
+class Afqmc:
     """
     AFQMC driver object.
 
@@ -82,7 +82,7 @@ class AFQMC:
         n_chunks: int | None = None,
     ):
         self._obj = mf_or_cc
-        self._cc: Any | None = None
+        self._cc: Any = None
         if _is_cc_like(mf_or_cc):
             self._cc = mf_or_cc
             self._scf = mf_or_cc._scf
@@ -299,7 +299,7 @@ def from_staged(
     dt: float | None = None,
     n_walkers: int | None = None,
     n_chunks: int = 1,
-):
+) -> Afqmc:
     """
     Returns a new AFQMC object from a previously staged calculations
     (using save_staged method). The number of frozen orbitals, norb_frozen,
@@ -318,7 +318,7 @@ def from_staged(
     norb_frozen = meta["norb_frozen"]
     chol_cut = meta["chol_cut"]
 
-    af = AFQMC(
+    af = Afqmc(
         mf_or_cc,
         norb_frozen=norb_frozen,
         chol_cut=chol_cut,
@@ -337,7 +337,7 @@ def from_staged(
     return af
 
 
-class AFQMC_fp(AFQMC):
+class AfqmcFp(Afqmc):
     def __init__(
         self,
         mf_or_cc: Any,

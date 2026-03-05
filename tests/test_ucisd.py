@@ -11,7 +11,7 @@ from jax import lax
 from pyscf import cc, gto, scf
 
 from ad_afqmc_prototype import testing
-from ad_afqmc_prototype.afqmc import AFQMC
+from ad_afqmc_prototype.afqmc import Afqmc
 from ad_afqmc_prototype.core.ops import k_energy, k_force_bias
 from ad_afqmc_prototype.meas.ucisd import (
     build_meas_ctx,
@@ -397,7 +397,7 @@ mycc2 = mycc2()
     ],
 )
 def test_calc_rhf_hamiltonian(mycc, params, walker_kind, e_ref, err_ref):
-    myafqmc = AFQMC(mycc)
+    myafqmc = Afqmc(mycc)
     myafqmc.params = params
     myafqmc.walker_kind = walker_kind
     myafqmc.mixed_precision = False

@@ -4,7 +4,7 @@ from ad_afqmc_prototype import config
 
 config.configure_once()
 
-from ad_afqmc_prototype.afqmc import AFQMC
+from ad_afqmc_prototype.afqmc import Afqmc
 
 mol = gto.M(
     atom="O 0 0 0; H 0 -0.757 0.587; H 0 0.757 0.587",
@@ -20,7 +20,7 @@ mycc.kernel()
 et = mycc.ccsd_t()  # for comparison
 print(f"CCSD(T) total energy: {mycc.e_tot + et}")
 
-afqmc = AFQMC(mycc)
+afqmc = Afqmc(mycc)
 afqmc.n_walkers = 100  # number of walkers
 afqmc.n_eql_blocks = 10  # number of equilibration blocks
 afqmc.n_blocks = 100  # number of sampling blocks

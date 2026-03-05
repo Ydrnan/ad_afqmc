@@ -4,7 +4,7 @@ from ad_afqmc_prototype import config
 
 config.configure_once()
 
-from ad_afqmc_prototype.afqmc import AFQMC
+from ad_afqmc_prototype.afqmc import Afqmc
 
 mol = gto.M(
     atom="""
@@ -25,5 +25,5 @@ mf.stability()
 mycc = cc.UCCSD(mf)
 mycc.kernel()
 
-afqmc = AFQMC(mycc)
+afqmc = Afqmc(mycc)
 mean, err = afqmc.kernel()

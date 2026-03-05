@@ -4,7 +4,7 @@ from ad_afqmc_prototype import config
 
 config.configure_once()
 
-from ad_afqmc_prototype.afqmc import AFQMC
+from ad_afqmc_prototype.afqmc import Afqmc
 
 mol = gto.M(
     atom="""
@@ -19,7 +19,7 @@ mol = gto.M(
 mf = scf.GHF(mol).newton()
 mf.kernel()
 
-afqmc = AFQMC(mf, chol_cut=1e-8)
+afqmc = Afqmc(mf, chol_cut=1e-8)
 afqmc.mixed_precision = False
 afqmc.n_walkers = 100  # number of walkers
 afqmc.n_eql_blocks = 10  # number of equilibration blocks
