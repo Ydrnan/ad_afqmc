@@ -1,6 +1,7 @@
 from pyscf import gto, scf, cc
 
 from ad_afqmc_prototype import config
+
 config.configure_once()
 
 from ad_afqmc_prototype.afqmc import AFQMC_fp
