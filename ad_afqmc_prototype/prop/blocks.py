@@ -11,7 +11,7 @@ from ..core.levels import LevelPack
 from ..core.ops import MeasOps, TrialOps, k_energy
 from ..core.system import System
 from ..walkers import SrFn
-from .types import PropOps, PropState, QmcParams, PropOpsFp
+from .types import PropOps, PropState, QmcParams, QmcParamsFp
 
 
 class BlockFn(Protocol):
@@ -133,13 +133,13 @@ def block_fp(
     state: PropState,
     *,
     sys: System,
-    params: QmcParams,
+    params: QmcParamsFp,
     ham_data: Any,
     trial_data: Any,
     trial_ops: TrialOps,
     meas_ops: MeasOps,
     meas_ctx: Any,
-    prop_ops: PropOpsFp,
+    prop_ops: PropOps,
     prop_ctx: Any,
     sr_fn: Callable = wk.stochastic_reconfiguration,
     observable_names: tuple[str, ...] = (),
@@ -175,6 +175,7 @@ def block_fp(
     thresh = jnp.sqrt(2.0 / jnp.asarray(params.dt))
 
     e_samples = jnp.where(jnp.abs(e_samples - params.ene0) > thresh, params.ene0, e_samples)
+    e_samples = jnp.array(e_samples)
 
     weights = state.weights
     overlaps = state.overlaps
@@ -184,8 +185,8 @@ def block_fp(
     abs_ov = jnp.sum(jnp.abs(overlaps))
 
     obs = BlockObs(
-        scalars={"energy": e_block, "weight": w_sum},
-        observables={"overlap": ov, "abs_overlap": abs_ov},
+        scalars={"energy": e_block, "weight": w_sum, "overlap": ov, "abs_overlap": abs_ov},
+        observables={},
     )
     return state, obs
 

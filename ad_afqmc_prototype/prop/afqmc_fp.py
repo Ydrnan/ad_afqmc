@@ -9,10 +9,10 @@ from .. import walkers as wk
 from ..core.ops import MeasOps, TrialOps
 from ..core.system import System
 from ..ham.chol import HamChol
-from .chol_afqmc_ops import TrotterOps, make_trotter_ops
 from .afqmc import init_prop_state
+from .chol_afqmc_ops import TrotterOps, make_trotter_ops
 from .chol_afqmc_ops_fp import FpCholAfqmcCtx, _build_prop_ctx_fp
-from .types import PropOpsFp, PropState, QmcParams
+from .types import PropOps, PropState, QmcParams, QmcParamsFp
 
 
 def afqmc_step_fp(
@@ -31,29 +31,15 @@ def afqmc_step_fp(
     nw = wk.n_walkers(state.walkers)
     fields = jax.random.normal(subkey, (nw, ham_data.chol.shape[0]))
     wk_kind = sys.walker_kind.lower()
-    assert wk_kind in [
-        "restricted",
-        "unrestricted",
-    ], "Free propagation is only implemented for restricted and unrestricted walkers."
-    if wk_kind == "unrestricted":
-        shift_term = jnp.einsum("wg,sg->sw", fields, prop_ctx.mf_shift_fp)
-        constants = jnp.einsum(
-            "sw,s->sw",
-            jnp.exp(-jnp.sqrt(prop_ctx.dt) * shift_term),
-            jnp.exp(prop_ctx.dt * prop_ctx.h0_prop_fp),
-        )
-        constants = (constants[0], constants[1])
-    else:
-        shift_term = jnp.einsum("wg,g->w", fields, prop_ctx.mf_shift_fp)
-        constants = jnp.exp(-jnp.sqrt(prop_ctx.dt) * shift_term) * jnp.exp(
-            prop_ctx.dt * prop_ctx.h0_prop_fp
-        )
+
+    shift_term = jnp.einsum("wg,g->w", fields, prop_ctx.mf_shifts)
+    constants = jnp.exp(-prop_ctx.sqrt_dt * shift_term + prop_ctx.dt * prop_ctx.h0_prop)
 
     walkers_new = wk.vmap_chunked(
         trotter_ops.apply_trotter, n_chunks=params.n_chunks, in_axes=(0, 0, None, None)
     )(state.walkers, fields, prop_ctx, 10)
 
-    walkers_new = wk.multiply_constants(walkers_new, constants)
+    walkers_new = wk.multiply_constants(walkers_new, constants, wk_kind)
     q, norms = wk.orthogonalize(walkers_new, wk_kind)
     weights_new = state.weights * norms.real
     key, subkey = jax.random.split(key)
@@ -73,7 +59,7 @@ def afqmc_step_fp(
 
 def make_prop_ops_fp(
     ham_basis: str, walker_kind: str, sys: System, mixed_precision=False
-) -> PropOpsFp:
+) -> PropOps:
     trotter_ops = make_trotter_ops(ham_basis, walker_kind, mixed_precision=mixed_precision)
 
     def step_fp(
@@ -100,17 +86,17 @@ def make_prop_ops_fp(
         )
 
     def build_prop_ctx_fp(
-        ham_data: Any, sys: System, rdm1: jax.Array, params: QmcParams
+        ham_data: Any, rdm1: jax.Array, params: QmcParams
     ) -> FpCholAfqmcCtx:
+        assert isinstance(params, QmcParamsFp)
         return _build_prop_ctx_fp(
             ham_data,
-            sys,
             rdm1,
             params.dt,
             params.ene0,
             chol_flat_precision=jnp.float32 if mixed_precision else jnp.float64,
         )
 
-    return PropOpsFp(
+    return PropOps(
         init_prop_state=init_prop_state, build_prop_ctx=build_prop_ctx_fp, step=step_fp
     )

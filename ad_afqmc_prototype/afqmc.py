@@ -4,18 +4,17 @@ from .config import configure_once
 
 configure_once()
 
+import dataclasses
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
-import dataclasses
 
 import numpy as np
 
 from .core.system import WalkerKind
 from .prop.types import QmcParams, QmcParamsFp
 from .setup import Job
-from .setup_fp import JobFp
 from .setup import setup as setup_job
-from .setup_fp import setup_fp
+from .setup_fp import JobFp, setup_fp
 from .staging import StagedInputs, _is_cc_like
 from .staging import dump as dump_staged
 from .staging import load as load_staged
@@ -111,11 +110,11 @@ class AFQMC:
         self.n_chunks = params.n_chunks if n_chunks is None else n_chunks
 
         self._staged: Optional[StagedInputs] = None
-        self._job: Optional[Job] = None
+        self._job: Any = None
         self._cache_key: Optional[tuple] = None
 
-        self.e_tot: Optional[float] = None
-        self.e_err: Optional[float] = None
+        self.e_tot: Any = None
+        self.e_err: Any = None
         self.block_energies: Any = None
         self.block_weights: Any = None
 
@@ -136,6 +135,7 @@ class AFQMC:
         print("")
 
     def dump_flags(self, job) -> None:
+        assert isinstance(job, Job), f"Expected a Job instance, but got {type(job)}"
         meta = job.staged.meta
         src = meta["source_kind"]
         chol_cut = meta["chol_cut"]
@@ -377,6 +377,7 @@ class AFQMC_fp(AFQMC):
         print("")
 
     def dump_flags(self, job) -> None:
+        assert isinstance(job, JobFp), f"Expected a JobFp instance, but got {type(job)}"
         meta = job.staged.meta
         src = meta["source_kind"]
         chol_cut = meta["chol_cut"]
@@ -455,12 +456,12 @@ class AFQMC_fp(AFQMC):
         self._job = job
         return job
 
-    def kernel(self, **driver_kwargs: Any) -> tuple[float, float]:
+    def kernel(self, **driver_kwargs: Any):  # type: ignore[override]
 
         print(banner_afqmc())
         job = self.build_job()
         self.dump_flags(job)
-        out = job.kernel_fp(**driver_kwargs)
+        out = job.kernel(**driver_kwargs)
 
         if isinstance(out, tuple) and len(out) >= 2:
             e_tot = out[0]

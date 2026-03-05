@@ -37,15 +37,8 @@ class QmcParams:
 
 
 @dataclass(frozen=True)
-class QmcParamsFp:
-    dt: float = 0.025
-    n_chunks: int = 1
-    n_exp_terms: int = 6
-    n_prop_steps: int = 40
-    n_blocks: int = 10
-    n_walkers: int = 200
-    seed: int = 42
-    ene0: float = 0
+class QmcParamsFp(QmcParams):
+    ene0: float = 0.0
     n_traj: int = 10
 
 
@@ -88,14 +81,5 @@ class PropOps:
     init_prop_state: InitPropState
     build_prop_ctx: Callable[
         [Any, jax.Array, QmcParams], Any
-    ]  # (ham_data, rdm1, params) -> prop_ctx
-    step: StepKernel
-
-
-@dataclass(frozen=True)
-class PropOpsFp:
-    init_prop_state: InitPropState
-    build_prop_ctx: Callable[
-        [Any, System, jax.Array, QmcParamsFp], Any
     ]  # (ham_data, rdm1, params) -> prop_ctx
     step: StepKernel

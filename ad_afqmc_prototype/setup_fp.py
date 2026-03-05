@@ -13,8 +13,8 @@ from .ham.chol import HamChol
 from .prop.afqmc_fp import make_prop_ops_fp
 from .prop.blocks import block_fp as default_block
 from .prop.types import QmcParamsFp
-from .staging import StagedInputs, load, stage
 from .setup import _filter_kwargs_for, _make_trial_bundle
+from .staging import StagedInputs, load, stage
 
 
 def _make_params_fp(
@@ -86,7 +86,7 @@ class JobFp:
     prop_ops: Any
     block_fn: Callable[..., Any]
 
-    def kernel_fp(self, **driver_kwargs: Any):
+    def kernel(self, **driver_kwargs: Any):
         """
         Run FP-AFQMC energy driver.
         Extra kwargs are forwarded to driver.run_qmc_energy_fp (e.g. state=..., meas_ctx=...).
@@ -157,7 +157,7 @@ def setup_fp(
         else:
             staged = stage(
                 obj_or_staged,
-                norb_frozen=norb_frozen,
+                norb_frozen=norb_frozen if norb_frozen is not None else 0,
                 chol_cut=chol_cut,
                 cache=cache,
                 overwrite=overwrite,

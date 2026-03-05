@@ -7,9 +7,7 @@ import jax.numpy as jnp
 from jax import tree_util
 
 from ..ham.chol import HamChol
-from .chol_afqmc_ops import _mf_shifts, _build_exp_h1_half_from_h1
-from .chol_afqmc_ops import _get_h1_eff
-from ..core.system import System
+from .chol_afqmc_ops import _build_exp_h1_half_from_h1, _get_h1_eff, _mf_shifts
 
 
 @tree_util.register_pytree_node_class
@@ -21,8 +19,6 @@ class FpCholAfqmcCtx:
     mf_shifts: jax.Array  # (n_fields,)
     h0_prop: jax.Array  # scalar
     chol_flat: jax.Array  # (n_fields, n*n)
-    mf_shift_fp: jax.Array
-    h0_prop_fp: jax.Array
     norb: int
 
     def tree_flatten(self):
@@ -33,13 +29,11 @@ class FpCholAfqmcCtx:
             self.mf_shifts,
             self.h0_prop,
             self.chol_flat,
-            self.mf_shift_fp,
-            self.h0_prop_fp,
         ), (self.norb,)
 
     @classmethod
     def tree_unflatten(cls, aux, children):
-        dt, sqrt_dt, exp_h1_half, mf_shifts, h0_prop, chol_flat, mf_shift_fp, h0_prop_fp = children
+        dt, sqrt_dt, exp_h1_half, mf_shifts, h0_prop, chol_flat = children
         (norb,) = aux
 
         return cls(
@@ -49,46 +43,21 @@ class FpCholAfqmcCtx:
             mf_shifts=mf_shifts,
             h0_prop=h0_prop,
             chol_flat=chol_flat,
-            mf_shift_fp=mf_shift_fp,
-            h0_prop_fp=h0_prop_fp,
             norb=norb,
         )
 
 
 def _build_prop_ctx_fp(
     ham_data: HamChol,
-    sys: System,
     rdm1: jax.Array,
     dt: float,
-    ene0: jnp.dtype = jnp.float64,
+    ene0: float = 0.0,
     chol_flat_precision: jnp.dtype = jnp.float64,
 ) -> FpCholAfqmcCtx:
     dt_a = jnp.array(dt)
     sqrt_dt = jnp.sqrt(dt_a)
     mf = _mf_shifts(ham_data, rdm1)
-    h0_prop = -ham_data.h0 - 0.5 * jnp.sum(mf**2)
-
-    wk = sys.walker_kind.lower()
-    match wk:
-        case "unrestricted":
-            mf_fp = jnp.stack(
-                (
-                    0.5 * mf / sys.nelec[0],
-                    0.5 * mf / sys.nelec[1],
-                )
-            )
-            h0_prop_fp = jnp.stack(
-                (
-                    0.5 * (h0_prop + ene0) / sys.nelec[0],
-                    0.5 * (h0_prop + ene0) / sys.nelec[1],
-                )
-            )
-        case "restricted":
-            mf_fp = mf * 0.5 / sys.nelec[0]
-            h0_prop_fp = 0.5 * (h0_prop + ene0) / sys.nelec[0]
-
-        case _:
-            raise NotImplementedError(f"_build_prop_ctx_fp does not handle '{wk}' walkers.")
+    h0_prop = -ham_data.h0 - 0.5 * jnp.sum(mf**2) + ene0
 
     h1_eff = _get_h1_eff(ham_data, mf)
     exp_h1_half = _build_exp_h1_half_from_h1(h1_eff, dt_a)
@@ -101,7 +70,5 @@ def _build_prop_ctx_fp(
         mf_shifts=mf,
         h0_prop=h0_prop,
         chol_flat=chol_flat,
-        mf_shift_fp=mf_fp,
-        h0_prop_fp=h0_prop_fp,
         norb=norb,
     )
