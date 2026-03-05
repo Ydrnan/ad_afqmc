@@ -85,9 +85,7 @@ def make_prop_ops_fp(
             trotter_ops=trotter_ops,
         )
 
-    def build_prop_ctx_fp(
-        ham_data: Any, rdm1: jax.Array, params: QmcParams
-    ) -> FpCholAfqmcCtx:
+    def build_prop_ctx_fp(ham_data: Any, rdm1: jax.Array, params: QmcParams) -> FpCholAfqmcCtx:
         assert isinstance(params, QmcParamsFp)
         return _build_prop_ctx_fp(
             ham_data,
@@ -97,6 +95,4 @@ def make_prop_ops_fp(
             chol_flat_precision=jnp.float32 if mixed_precision else jnp.float64,
         )
 
-    return PropOps(
-        init_prop_state=init_prop_state, build_prop_ctx=build_prop_ctx_fp, step=step_fp
-    )
+    return PropOps(init_prop_state=init_prop_state, build_prop_ctx=build_prop_ctx_fp, step=step_fp)
