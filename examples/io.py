@@ -1,4 +1,8 @@
 from pyscf import gto, scf
+
+from ad_afqmc_prototype import config
+config.configure_once()
+
 from ad_afqmc_prototype.afqmc import AFQMC, from_staged
 
 mol = gto.M(
