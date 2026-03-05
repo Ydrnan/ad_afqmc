@@ -101,7 +101,6 @@ def afqmc_step(
 
     shift_term = jnp.sum(shifted_fields * prop_ctx.mf_shifts, axis=1)
     fb_term = jnp.sum(fields * field_shifts - 0.5 * field_shifts * field_shifts, axis=1)
-
     walkers_new = wk.vmap_chunked(
         trotter_ops.apply_trotter, n_chunks=params.n_chunks, in_axes=(0, 0, None, None)
     )(state.walkers, shifted_fields, prop_ctx, params.n_exp_terms)

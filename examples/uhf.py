@@ -19,4 +19,5 @@ mf = mf.run(dm1)
 mf.stability()
 
 afqmc = AFQMC(mf)
+afqmc.walker_kind = "unrestricted"
 mean, err = afqmc.kernel()

@@ -109,7 +109,6 @@ def vmap_chunked(
 
         if n_chunks == 1:
             return jax.vmap(g, in_axes=in_axes)(*args)
-
         if not isinstance(in_axes, tuple):
             in_axes_ = (in_axes,) * len(args)
         else:
@@ -180,23 +179,22 @@ def orthonormalize(w: walkers, walker_kind: str) -> walkers:
     return w_new
 
 
-def multiply_constants(w: walkers, constants: Any) -> walkers:
+def multiply_constants(w: walkers, constants: jax.Array, walker_kind: str) -> walkers:
     """
-    Multiply walkers by constants.
+    Distribute a per walker constant across walker columns.
     """
-    if is_unrestricted(w):
+    wk = walker_kind.lower()
+    constants = jnp.asarray(constants)
+    if wk == "unrestricted":
         wu, wd = w
-        if isinstance(constants, (tuple, list)) and len(constants) == 2:
-            cu, cd = constants
-            return (
-                wu * cu.reshape(-1, 1, 1),
-                wd * cd.reshape(-1, 1, 1),
-            )
-        c = jnp.asarray(constants).reshape(-1, 1, 1)
+        n_total = wu.shape[-1] + wd.shape[-1]
+        c = (constants ** (1.0 / n_total)).reshape(-1, 1, 1)
         return (wu * c, wd * c)
-
-    c = jnp.asarray(constants).reshape(-1, 1, 1)
-    return w * c
+    elif wk == "restricted":
+        n_total = 2 * w.shape[-1]
+        c = (constants ** (1.0 / n_total)).reshape(-1, 1, 1)
+        return w * c
+    raise ValueError(f"multiply_constants does not handle '{walker_kind}' walkers")
 
 
 def SrFn(Protocol):

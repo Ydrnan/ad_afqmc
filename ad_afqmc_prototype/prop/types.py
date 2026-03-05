@@ -36,6 +36,12 @@ class QmcParams:
     seed: int = 42
 
 
+@dataclass(frozen=True)
+class QmcParamsFp(QmcParams):
+    ene0: float = 0.0
+    n_traj: int = 10
+
+
 class StepKernel(Protocol):
 
     def __call__(

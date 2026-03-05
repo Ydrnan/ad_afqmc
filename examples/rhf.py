@@ -10,9 +10,5 @@ mol = gto.M(
 mf = scf.RHF(mol)
 mf.kernel()
 
-myafqmc = AFQMC(mf)
-myafqmc.norb_frozen = 1  # freeze O 1s core
-myafqmc.n_walkers = 200  # number of walkers
-myafqmc.n_eql_blocks = 10  # number of equilibration blocks
-myafqmc.n_blocks = 200  # number of sampling blocks
-mean, err = myafqmc.kernel()
+afqmc = AFQMC(mf)
+mean, err, block_e_all, block_w_all = afqmc.kernel()
