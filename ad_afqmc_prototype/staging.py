@@ -4,7 +4,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union, cast
+from typing import Any, Dict, Tuple, Union, cast
 
 import h5py
 import numpy as np
@@ -420,7 +420,7 @@ def stage(
     *,
     norb_frozen: int = 0,
     chol_cut: float = 1e-5,
-    cache: Optional[Union[str, Path]] = None,
+    cache: Union[str, Path] | None = None,
     overwrite: bool = False,
     verbose: bool = False,
 ) -> StagedInputs:

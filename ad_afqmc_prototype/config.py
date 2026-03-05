@@ -6,7 +6,6 @@ import socket
 import sys
 import warnings
 from dataclasses import dataclass
-from typing import Optional
 
 
 def is_jupyter_notebook() -> bool:
@@ -30,7 +29,7 @@ class AfqmcConfig:
       - False : force CPU
     """
 
-    use_gpu: Optional[bool] = None
+    use_gpu: bool | None = None
     single_precision: bool = False
     quiet: bool = True  # suppress prints
 
@@ -42,9 +41,9 @@ _configured_once = False
 
 def configure_once(
     *,
-    use_gpu: Optional[bool] = None,
-    single_precision: Optional[bool] = None,
-    quiet: Optional[bool] = None,
+    use_gpu: bool | None = None,
+    single_precision: bool | None = None,
+    quiet: bool | None = None,
 ) -> None:
     """
     Configure JAX once, subsequent calls do nothing.
@@ -53,6 +52,16 @@ def configure_once(
     global _configured_once
     if _configured_once:
         return
+
+    assert (
+        isinstance(use_gpu, bool) or use_gpu is None
+    ), f"Expect a bool | None for 'use_gpu', but got '{type(use_gpu)}'."
+    assert (
+        isinstance(single_precision, bool) or single_precision is None
+    ), f"Expect a bool | None for 'single_precision', but got '{type(single_precision)}'."
+    assert (
+        isinstance(quiet, bool) or quiet is None
+    ), f"Expect a bool | None for 'quiet', but got '{type(quiet)}'."
 
     if use_gpu is not None:
         afqmc_config.use_gpu = use_gpu
@@ -95,7 +104,7 @@ def _detect_gpu() -> bool:
     return False
 
 
-def setup_jax(*, use_gpu: Optional[bool], single_precision: bool, quiet: bool) -> None:
+def setup_jax(*, use_gpu: bool | None, single_precision: bool, quiet: bool) -> None:
     """
     Configure JAX runtime.
     """
