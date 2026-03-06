@@ -61,7 +61,7 @@ def params():
 @pytest.mark.parametrize(
     "mf, walker_kind, e_ref, err_ref",
     [
-        (mf, "unrestricted", -55.4067231213,  1.8318234e-02),
+        (mf, "unrestricted", -55.4067231213, 1.8318234e-02),
     ],
 )
 def test_io_fp(mf, tmp_path, params_fp, walker_kind, e_ref, err_ref):
@@ -88,6 +88,7 @@ def params_fp():
         n_traj=4,
         ene0=mf.e_tot,
     )
+
 
 if __name__ == "__main__":
     pytest.main([__file__])

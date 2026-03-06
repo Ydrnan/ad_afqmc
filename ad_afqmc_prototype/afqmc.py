@@ -121,7 +121,9 @@ class Afqmc:
         return self._job
 
     def _dump_params(self, params: QmcParams) -> None:
-        assert isinstance(params, QmcParams), f"Expected a QmcParams instance, but got {type(params)}"
+        assert isinstance(
+            params, QmcParams
+        ), f"Expected a QmcParams instance, but got {type(params)}"
         fields = dataclasses.fields(params)
         width = len(max(fields, key=lambda f: len(f.name)).name)
         print(" QmcParams:")
@@ -366,7 +368,9 @@ class AfqmcFp(Afqmc):
         self.ene0 = ene0
 
     def _dump_params(self, params: QmcParamsFp) -> None:
-        assert isinstance(params, QmcParamsFp), f"Expected a QmcParamsFp instance, but got {type(params)}"
+        assert isinstance(
+            params, QmcParamsFp
+        ), f"Expected a QmcParamsFp instance, but got {type(params)}"
         fields = dataclasses.fields(params)
         width = len(max(fields, key=lambda f: len(f.name)).name)
         print(" QmcParamsFp:")
