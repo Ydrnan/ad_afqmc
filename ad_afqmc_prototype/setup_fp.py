@@ -135,12 +135,12 @@ def setup_fp(
       - or a path to a staged .h5 cache file.
 
     Basic usage:
-        job = setup(mf)
+        job = setup_fp(mf)
         job.kernel()
 
     Advanced usage:
         staged = stage(cc, cache="afqmc.h5")
-        job = setup(staged, walker_kind="restricted", mixed_precision=False, params=myparams)
+        job = setup_fp(staged, walker_kind="restricted", mixed_precision=False, params=myparams)
         job.kernel()
     """
     staged: StagedInputs
