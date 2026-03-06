@@ -418,7 +418,7 @@ class StagedMfOrCc:
 def stage(
     obj: Any,
     *,
-    norb_frozen: int = 0,
+    norb_frozen: int | None = None,
     chol_cut: float = 1e-5,
     cache: Union[str, Path] | None = None,
     overwrite: bool = False,

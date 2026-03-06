@@ -157,7 +157,7 @@ def setup_fp(
         else:
             staged = stage(
                 obj_or_staged,
-                norb_frozen=norb_frozen if norb_frozen is not None else 0,
+                norb_frozen=norb_frozen if norb_frozen is not None else None,
                 chol_cut=chol_cut,
                 cache=cache,
                 overwrite=overwrite,

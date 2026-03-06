@@ -181,7 +181,7 @@ class Afqmc:
 
         staged = stage_inputs(
             self._obj,
-            norb_frozen=self.norb_frozen if self.norb_frozen is not None else 0,
+            norb_frozen=self.norb_frozen if self.norb_frozen is not None else None,
             chol_cut=self.chol_cut,
             cache=self.cache,
             overwrite=self.overwrite_cache if self.cache is not None else False,
