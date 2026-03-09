@@ -241,13 +241,8 @@ def setup(
 
     ham = staged.ham
 
-    match walker_kind, ham.basis, ham.nelec[0] == ham.nelec[1]:
-        case None, "restricted", True:
-            walker_kind = "restricted"
-        case None, "restricted", False:
-            walker_kind = "unrestricted"
-        case None, "generalized", _:
-            walker_kind = "generalized"
+    if walker_kind is None:
+        walker_kind = ham.basis
 
     sys = System(norb=int(ham.norb), nelec=ham.nelec, walker_kind=walker_kind)
 
