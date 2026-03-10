@@ -14,7 +14,7 @@ from jax.sharding import PartitionSpec as P
 from .core.ops import MeasOps, TrialOps
 from .core.system import System
 from .prop.blocks import BlockFn
-from .prop.types import PropOps, PropState, QmcParams, QmcParamsFp
+from .prop.types import PropOps, PropState, QmcParamsBase, QmcParams, QmcParamsFp
 from .stat_utils import blocking_analysis_ratio, jackknife_ratios, rebin_observable, reject_outliers
 from .walkers import stochastic_reconfiguration
 
@@ -43,7 +43,7 @@ def make_run_blocks(
     *,
     block_fn: BlockFn,
     sys: System,
-    params: QmcParams | QmcParamsFp,
+    params: QmcParamsBase,
     trial_ops: TrialOps,
     meas_ops: MeasOps,
     prop_ops: PropOps,

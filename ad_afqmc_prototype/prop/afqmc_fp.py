@@ -12,14 +12,14 @@ from ..ham.chol import HamChol
 from .afqmc import init_prop_state
 from .chol_afqmc_ops import TrotterOps, make_trotter_ops
 from .chol_afqmc_ops_fp import FpCholAfqmcCtx, _build_prop_ctx_fp
-from .types import PropOps, PropState, QmcParams, QmcParamsFp
+from .types import PropOps, PropState, QmcParamsFp
 
 
 def afqmc_step_fp(
     state: PropState,
     sys: System,
     *,
-    params: QmcParams,
+    params: QmcParamsFp,
     ham_data: HamChol,
     trial_data: Any,
     meas_ops: MeasOps,
@@ -65,7 +65,7 @@ def make_prop_ops_fp(
     def step_fp(
         state: PropState,
         *,
-        params: QmcParams,
+        params: QmcParamsFp,
         ham_data: Any,
         trial_data: Any,
         trial_ops: TrialOps,
@@ -85,7 +85,7 @@ def make_prop_ops_fp(
             trotter_ops=trotter_ops,
         )
 
-    def build_prop_ctx_fp(ham_data: Any, rdm1: jax.Array, params: QmcParams) -> FpCholAfqmcCtx:
+    def build_prop_ctx_fp(ham_data: Any, rdm1: jax.Array, params: QmcParamsFp) -> FpCholAfqmcCtx:
         assert isinstance(params, QmcParamsFp)
         return _build_prop_ctx_fp(
             ham_data,

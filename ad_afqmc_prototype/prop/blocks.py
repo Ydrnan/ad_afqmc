@@ -11,7 +11,7 @@ from ..core.levels import LevelPack
 from ..core.ops import MeasOps, TrialOps, k_energy
 from ..core.system import System
 from ..walkers import SrFn
-from .types import PropOps, PropState, QmcParams, QmcParamsFp
+from .types import PropOps, PropState, QmcParamsBase, QmcParams, QmcParamsFp
 
 
 class BlockFn(Protocol):
@@ -20,7 +20,7 @@ class BlockFn(Protocol):
         state: PropState,
         *,
         sys: System,
-        params: QmcParams,
+        params: QmcParamsBase,
         ham_data: Any,
         trial_data: Any,
         trial_ops: TrialOps,
