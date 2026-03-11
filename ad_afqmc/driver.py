@@ -1,5 +1,6 @@
 import pickle
 import time
+import types
 from functools import partial
 from typing import Any, List, Optional, Tuple, Union
 
@@ -1488,6 +1489,31 @@ def fp_afqmc(
     size = comm.Get_size()
     rank = comm.Get_rank()
     seed = options["seed"]
+
+
+    def custom_energy_r(
+        self, walker: jax.Array, ham_data: dict, wave_data: dict
+    ) -> complex:
+        return 0.0 + 0.0j
+
+    def custom_energy_u(
+        self,
+        walker_up: jax.Array,
+        walker_dn: jax.Array,
+        ham_data: dict,
+        wave_data: dict,
+    ) -> complex:
+        return 0.0 + 0.0j
+
+    def custom_energy_g(
+        self, walker: jax.Array, ham_data: dict, wave_data: dict
+    ) -> complex:
+        return 0.0 + 0.0j
+
+    if "no_energy_fp" in options and options["no_energy_fp"]:
+        trial_bra._calc_energy_restricted = types.MethodType(custom_energy_r, trial_bra)
+        trial_bra._calc_energy_unrestricted = types.MethodType(custom_energy_u, trial_bra)
+        trial_bra._calc_energy_generalized = types.MethodType(custom_energy_g, trial_bra)
 
     trial_rdm1 = trial_bra.get_rdm1(wave_data_bra)
     if "rdm1" not in wave_data_bra:

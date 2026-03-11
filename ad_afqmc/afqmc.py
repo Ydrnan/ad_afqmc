@@ -346,6 +346,7 @@ class AFQMC:
                     "mpi_prefix",
                     "nproc",
                     "tmpdir",
+                    "prep",
                 ]
                 and not attr.startswith("__")
                 and not callable(getattr(self, attr))
@@ -415,10 +416,10 @@ class Options:
     __slots__ = ("dt", "n_prop_steps", "n_ene_blocks",
     "n_walkers", "n_sr_blocks", "n_qr_blocks", "n_blocks", "n_ene_blocks_eql",
     "n_sr_blocks_eql", "n_eql", "seed", "ad_mode", "orbital_rotation", "trial", "trial_ket",
-    "do_sr", "walker_type", "symmetry_projector", "ngrid", "optimize_trial",
+    "do_sr", "walker_type", "symmetry_projector", "optimize_trial",
     "s2_projector_ngrid", "target_spin", "symmetry", "save_walkers", "dR", "free_projection",
     "ene0", "n_chunks", "vhs_mixed_precision", "trial_mixed_precision",
-    "memory_mode", "write_to_disk", "read_from_disk", "prjlo", "no_beta_0_fp"
+    "memory_mode", "write_to_disk", "read_from_disk", "prjlo", "no_beta_0_fp", "no_energy_fp"
     )
 
     def __init__(self, mode):
@@ -450,7 +451,6 @@ class Options:
 
         # this can be tr, s2 or sz for time-reversal, S^2, or S_z symmetry projection, respectively
         self.symmetry_projector = None
-        self.ngrid = 4 # Number of grid point for the quadrature
         self.s2_projector_ngrid = 4 # Number of grid point for the quadrature
         self.optimize_trial = False
         self.target_spin = 0  # 2S and is only used when symmetry_projector is s2
@@ -468,6 +468,7 @@ class Options:
         self.read_from_disk = False # Read FCIDUMP and ci/cc coeff from disk
         self.prjlo = None  # used in LNO, need to fix
         self.no_beta_0_fp = False # Avoid computing the energy at 0 imaginary time in fp
+        self.no_energy_fp = False # Avoid computing the energy in fp
 
     def to_dict(self):
         return {slot: getattr(self, slot) for slot in self.__slots__}
