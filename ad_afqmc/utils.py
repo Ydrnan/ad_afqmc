@@ -1625,7 +1625,7 @@ def set_symmetry_projector(wave_data, nelec_sp, options):
         w_beta = jnp.asarray(w_beta_np)
         wave_data["beta"] = (beta_vals, w_beta)
 
-    elif "s2" in options["symmetry_projector"]:
+    elif "s2" in options["symmetry_projector"] or "s2+pgs" in options["symmetry_projector"]:
         # Gauss-Legendre
         #
         # \int_0^\pi sin(\beta) f(\beta) \dd\beta
@@ -1664,6 +1664,12 @@ def set_symmetry_projector(wave_data, nelec_sp, options):
         # )
 
         wave_data["betas"] = (S, Sz, w_betas, betas)
+
+    if "pgs" in options["symmetry_projector"]:
+        with open("P_pgs.pkl", "rb") as f:
+            p_mo = pickle.load(f)
+
+        wave_data["P_pgs"] = p_mo
 
     return wave_data
 

@@ -118,6 +118,8 @@ class wave_function(ABC):
             return self._calc_overlap_s2(walker_up, walker_dn, wave_data)
         elif self.projector == "tr" and self.nelec[0] == self.nelec[1]:
             return self._calc_overlap_tr(walker_up, walker_dn, wave_data)
+        elif self.projector == "pgs" or self.projector == "s2+pgs":
+            return self._calc_overlap_pgs(walker_up, walker_dn, wave_data)
         else:
             return self._calc_overlap_unrestricted(walker_up, walker_dn, wave_data)
 
@@ -147,6 +149,25 @@ class wave_function(ABC):
         S2walkers = vmap(applyRotMat, (None, None, 0))(walker_up, walker_dn, RotMatrix)
         ovlp = vmap(self._calc_overlap_generalized, (0, None))(S2walkers, wave_data)
         totalOvlp = jnp.sum(ovlp * w_betas)
+        return totalOvlp
+
+    def _calc_overlap_pgs(
+        self, walker_up: jax.Array, walker_dn: jax.Array, wave_data: dict
+    ) -> jax.Array:
+
+        wi, pi = zip(*wave_data["P_pgs"])
+        w = jnp.array(wi)
+        p = jnp.stack(pi)
+        walker_a = jnp.array(p @ walker_up)
+        walker_b = jnp.array(p @ walker_dn)
+
+        if self.projector == "s2+pgs":
+            f_ovlp = self._calc_overlap_s2
+        else:
+            f_ovlp = self._calc_overlap_unrestricted
+
+        ovlp = vmap(f_ovlp, (0, 0, None))(walker_a, walker_b, wave_data)
+        totalOvlp = jnp.sum(ovlp)
         return totalOvlp
 
     def _calc_overlap_tr(
@@ -295,6 +316,8 @@ class wave_function(ABC):
             return self._calc_energy_s2(walker_up, walker_dn, ham_data, wave_data)
         elif self.projector == "tr" and self.nelec[0] == self.nelec[1]:
             return self._calc_energy_tr(walker_up, walker_dn, ham_data, wave_data)
+        elif self.projector == "pgs" or self.projector == "s2+pgs":
+            return self._calc_energy_pgs(walker_up, walker_dn, ham_data, wave_data)
         else:
             return self._calc_energy_unrestricted(
                 walker_up, walker_dn, ham_data, wave_data
@@ -350,6 +373,34 @@ class wave_function(ABC):
         )
         totalOvlp = jnp.sum(ovlp * w_betas)
         return jnp.sum(Eloc * ovlp * w_betas) / totalOvlp
+
+    def _calc_energy_pgs(
+        self,
+        walker_up: jax.Array,
+        walker_dn: jax.Array,
+        ham_data: dict,
+        wave_data: dict,
+    ) -> jax.Array:
+
+        wi, pi = zip(*wave_data["P_pgs"])
+        w = jnp.array(wi)
+        p = jnp.stack(pi)
+        walker_a = jnp.array(p @ walker_up)
+        walker_b = jnp.array(p @ walker_dn)
+
+        if self.projector == "s2+pgs":
+            f_ovlp = self._calc_overlap_s2
+            f_energy = self._calc_energy_s2
+        else:
+            f_ovlp = self._calc_overlap_unrestricted
+            f_energy = self._calc_energy_unrestricted
+
+        ovlp = vmap(f_ovlp, (0, 0, None))(walker_a, walker_b, wave_data)
+        Eloc = vmap(f_energy, (0, 0, None, None))(
+            walker_a, walker_b, ham_data, wave_data
+        )
+        totalOvlp = jnp.sum(ovlp * w)
+        return jnp.sum(Eloc * ovlp * w) / totalOvlp
 
     @calc_energy.register
     def _(self, walkers: RHFWalkers, ham_data: dict, wave_data: dict) -> jax.Array:
