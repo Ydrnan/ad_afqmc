@@ -5604,14 +5604,14 @@ class ucisd(wave_function):
         #    "gpr,gqs,iajb,ir,js,pa,qb->", chol, chol, ci2, green, green, greenp, greenp
         #)
 
-        B = jnp.einsum("igp,pa->iga", GC, greenp)
+        B = jnp.einsum("igp,pa->iga", GC, greenp).astype(self._mixed_complex_dtype_testing)
 
-        Caaaa = jnp.einsum("iga,iajb->gjb", B[:n_oa, :, :n_va], ci2AA)
-        Caabb = jnp.einsum("iga,iajb->gjb", B[:n_oa, :, :n_va], ci2AB)
-        Cbbaa = jnp.einsum("iga,iajb->gjb", B[n_oa:, :, n_va:], jnp.einsum("iajb->jbia", ci2AB))
-        Cabba = jnp.einsum("iga,iajb->gjb", B[:n_oa, :, n_va:], -jnp.einsum("iajb->ibja", ci2AB))
-        Cbaab = jnp.einsum("iga,iajb->gjb", B[n_oa:, :, :n_va], -jnp.einsum("iajb->jaib", ci2AB))
-        Cbbbb = jnp.einsum("iga,iajb->gjb", B[n_oa:, :, n_va:], ci2BB)
+        Caaaa = jnp.einsum("iga,iajb->gjb", B[:n_oa, :, :n_va], ci2AA.astype(self._mixed_complex_dtype_testing))
+        Caabb = jnp.einsum("iga,iajb->gjb", B[:n_oa, :, :n_va], ci2AB.astype(self._mixed_complex_dtype_testing))
+        Cbbaa = jnp.einsum("iga,iajb->gjb", B[n_oa:, :, n_va:], jnp.einsum("iajb->jbia", ci2AB.astype(self._mixed_complex_dtype_testing)))
+        Cabba = jnp.einsum("iga,iajb->gjb", B[:n_oa, :, n_va:], -jnp.einsum("iajb->ibja", ci2AB.astype(self._mixed_complex_dtype_testing)))
+        Cbaab = jnp.einsum("iga,iajb->gjb", B[n_oa:, :, :n_va], -jnp.einsum("iajb->jaib", ci2AB.astype(self._mixed_complex_dtype_testing)))
+        Cbbbb = jnp.einsum("iga,iajb->gjb", B[n_oa:, :, n_va:], ci2BB.astype(self._mixed_complex_dtype_testing))
 
         C = jnp.zeros((nchol, n_oa+n_ob, n_va+n_vb), dtype=Caaaa.dtype)
         C = lax.dynamic_update_slice(C, Caaaa+Cbbaa, (0, 0, 0))
