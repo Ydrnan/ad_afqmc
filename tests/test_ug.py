@@ -1,16 +1,16 @@
 import os
 import copy
-import numpy as np
-import scipy.linalg as la
-import jax.numpy as jnp
 from jax import config
+config.update("jax_enable_x64", True)
+import numpy as np
+import jax.scipy.linalg as la
+import jax.numpy as jnp
 from jax._src.typing import DTypeLike
 import pickle
 from pyscf import gto, scf, cc
 from ad_afqmc import utils, launch_script
 from ad_afqmc.prep import PrepAfqmc
 
-config.update("jax_enable_x64", True)
 
 np.set_printoptions(linewidth=1000, precision=6, suppress=True)
 jnp.set_printoptions(linewidth=1000)
