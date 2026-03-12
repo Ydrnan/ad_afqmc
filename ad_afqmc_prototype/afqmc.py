@@ -6,7 +6,7 @@ configure_once()
 
 import dataclasses
 from pathlib import Path
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Union
 
 import numpy as np
 
@@ -14,7 +14,8 @@ from .core.system import WalkerKind
 from .prop.types import QmcParams, QmcParamsFp
 from .setup import Job
 from .setup import setup as setup_job
-from .setup_fp import JobFp, setup_fp
+from .setup_fp import JobFp
+from .setup_fp import setup_fp as setup_job_fp
 from .staging import StagedInputs, _is_cc_like
 from .staging import dump as dump_staged
 from .staging import load as load_staged
@@ -37,7 +38,7 @@ def banner_afqmc() -> str:
 """
 
 
-class AFQMC:
+class Afqmc:
     """
     AFQMC driver object.
 
@@ -57,13 +58,13 @@ class AFQMC:
         Number of equilibration blocks if params is not provided, by default 20
     n_blocks : int, optional
         Number of production blocks if params is not provided, by default 200
-    seed : Optional[int], optional
+    seed : int | None, optional
         Random seed if params is not provided, by default None
-    dt : Optional[float], optional
+    dt : float | None, optional
         Time step if params is not provided, by default None
-    n_walkers : Optional[int], optional
+    n_walkers : int | None, optional
         Number of walkers if params is not provided, by default None
-    n_chunk : Optional[int], optional
+    n_chunk : int | None, optional
         Number of chunks if params is not provided, by default 1
     """
 
@@ -71,18 +72,18 @@ class AFQMC:
         self,
         mf_or_cc: Any,
         *,
-        norb_frozen: Optional[int] = None,
+        norb_frozen: int | None = None,
         chol_cut: float = 1e-5,
-        cache: Optional[Union[str, Path]] = None,
-        n_eql_blocks: Optional[int] = None,
-        n_blocks: Optional[int] = None,
-        seed: Optional[int] = None,
-        dt: Optional[float] = None,
-        n_walkers: Optional[int] = None,
-        n_chunks: Optional[int] = 1,
+        cache: Union[str, Path] | None = None,
+        n_eql_blocks: int | None = None,
+        n_blocks: int | None = None,
+        seed: int | None = None,
+        dt: float | None = None,
+        n_walkers: int | None = None,
+        n_chunks: int | None = None,
     ):
         self._obj = mf_or_cc
-        self._cc: Optional[Any] = None
+        self._cc: Any = None
         if _is_cc_like(mf_or_cc):
             self._cc = mf_or_cc
             self._scf = mf_or_cc._scf
@@ -97,21 +98,14 @@ class AFQMC:
         self.overwrite_cache = False
         self.verbose = False
 
-        self.walker_kind: Optional[WalkerKind] = None  # resolved in kernel
+        self.walker_kind: WalkerKind | None = None  # resolved in kernel
         self.mixed_precision = True
 
-        self.params: Optional[QmcParams] = None  # resolved in kernel
-        params = QmcParams()
-        self.dt = params.dt if dt is None else dt
-        self.n_walkers = params.n_walkers if n_walkers is None else n_walkers
-        self.n_blocks = params.n_blocks if n_blocks is None else n_blocks
-        self.n_eql_blocks = params.n_eql_blocks if n_eql_blocks is None else n_eql_blocks
-        self.seed = params.seed if seed is None else seed
-        self.n_chunks = params.n_chunks if n_chunks is None else n_chunks
+        self.params: QmcParams | None = None  # resolved in kernel
 
-        self._staged: Optional[StagedInputs] = None
+        self._staged: StagedInputs | None = None
         self._job: Any = None
-        self._cache_key: Optional[tuple] = None
+        self._cache_key: tuple | None = None
 
         self.e_tot: Any = None
         self.e_err: Any = None
@@ -119,14 +113,17 @@ class AFQMC:
         self.block_weights: Any = None
 
     @property
-    def staged(self) -> Optional[StagedInputs]:
+    def staged(self) -> StagedInputs | None:
         return self._staged
 
     @property
-    def job(self) -> Optional[Job]:
+    def job(self) -> Job | None:
         return self._job
 
-    def _dump_params(self, params: QmcParams):
+    def _dump_params(self, params: QmcParams) -> None:
+        assert isinstance(
+            params, QmcParams
+        ), f"Expected a QmcParams instance, but got {type(params)}"
         fields = dataclasses.fields(params)
         width = len(max(fields, key=lambda f: len(f.name)).name)
         print(" QmcParams:")
@@ -136,6 +133,9 @@ class AFQMC:
 
     def dump_flags(self, job) -> None:
         assert isinstance(job, Job), f"Expected a Job instance, but got {type(job)}"
+        self._dump_flags_helper(job)
+
+    def _dump_flags_helper(self, job) -> None:
         meta = job.staged.meta
         src = meta["source_kind"]
         chol_cut = meta["chol_cut"]
@@ -181,7 +181,7 @@ class AFQMC:
 
         staged = stage_inputs(
             self._obj,
-            norb_frozen=self.norb_frozen if self.norb_frozen is not None else 0,
+            norb_frozen=self.norb_frozen if self.norb_frozen is not None else None,
             chol_cut=self.chol_cut,
             cache=self.cache,
             overwrite=self.overwrite_cache if self.cache is not None else False,
@@ -205,7 +205,7 @@ class AFQMC:
     #    self._job = None
     #    return staged
 
-    def _make_params(self) -> Optional[QmcParams]:
+    def _make_params(self) -> QmcParams:
         """
         Create QmcParams if user didn't provide one.
         """
@@ -235,8 +235,8 @@ class AFQMC:
         trial_ops: Any = None,
         meas_ops: Any = None,
         prop_ops: Any = None,
-        block_fn: Optional[Callable[..., Any]] = None,
-        prop_kwargs: Optional[dict[str, Any]] = None,
+        block_fn: Callable[..., Any] | None = None,
+        prop_kwargs: dict[str, Any] | None = None,
     ) -> Job:
         """
         Assemble a runnable Job from current settings and staged inputs.
@@ -289,69 +289,68 @@ class AFQMC:
 
     run = kernel
 
+    def from_staged(
+        path: Union[str, Path],
+        *,
+        n_eql_blocks: int | None = None,
+        n_blocks: int | None = None,
+        seed: int | None = None,
+        dt: float | None = None,
+        n_walkers: int | None = None,
+        n_chunks: int = 1,
+    ) -> Afqmc:
+        """
+        Returns a new AFQMC object from a previously staged calculations
+        (using save_staged method). The number of frozen orbitals, norb_frozen,
+        and the choliesky decomposition threshold, chol_cut, cannot be changed.
+        Parameters
+        ----------
+        path: str, pathlib.Path
+        The other parameters are identical to the ones in the AFQMC class.
+        """
+        staged = load_staged(path)
+        meta = staged.meta
 
-def from_staged(
-    path: Union[str, Path],
-    *,
-    n_eql_blocks: Optional[int] = None,
-    n_blocks: Optional[int] = None,
-    seed: Optional[int] = None,
-    dt: Optional[float] = None,
-    n_walkers: Optional[int] = None,
-    n_chunks: Optional[int] = 1,
-):
-    """
-    Returns a new AFQMC object from a previously staged calculations
-    (using save_staged method). The number of frozen orbitals, norb_frozen,
-    and the choliesky decomposition threshold, chol_cut, cannot be changed.
-    Parameters
-    ----------
-    path: str, pathlib.Path
-    The other parameters are identical to the ones in the AFQMC class.
-    """
-    staged = load_staged(path)
-    meta = staged.meta
+        mf_or_cc = None
 
-    mf_or_cc = None
+        # Cannot be changed as the input has been staged
+        norb_frozen = meta["norb_frozen"]
+        chol_cut = meta["chol_cut"]
 
-    # Cannot be changed as the input has been staged
-    norb_frozen = meta["norb_frozen"]
-    chol_cut = meta["chol_cut"]
+        af = Afqmc(
+            mf_or_cc,
+            norb_frozen=norb_frozen,
+            chol_cut=chol_cut,
+            n_eql_blocks=n_eql_blocks,
+            n_blocks=n_blocks,
+            seed=seed,
+            dt=dt,
+            n_walkers=n_walkers,
+            n_chunks=n_chunks,
+        )
 
-    af = AFQMC(
-        mf_or_cc,
-        norb_frozen=norb_frozen,
-        chol_cut=chol_cut,
-        n_eql_blocks=n_eql_blocks,
-        n_blocks=n_blocks,
-        seed=seed,
-        dt=dt,
-        n_walkers=n_walkers,
-        n_chunks=n_chunks,
-    )
+        af._staged = staged
+        af.source_kind = meta["source_kind"]
+        af._cache_key = af._key()
 
-    af._staged = staged
-    af.source_kind = meta["source_kind"]
-    af._cache_key = af._key()
-
-    return af
+        return af
 
 
-class AFQMC_fp(AFQMC):
+class AfqmcFp(Afqmc):
     def __init__(
         self,
         mf_or_cc: Any,
         *,
-        norb_frozen: Optional[int] = None,
+        norb_frozen: int | None = None,
         chol_cut: float = 1e-5,
-        cache: Optional[Union[str, Path]] = None,
-        n_blocks: Optional[int] = None,
-        seed: Optional[int] = None,
-        dt: Optional[float] = None,
-        n_walkers: Optional[int] = None,
-        n_chunks: Optional[int] = 1,
-        ene0: Optional[float] = None,
-        n_traj: Optional[int] = None,
+        cache: Union[str, Path] | None = None,
+        n_blocks: int | None = None,
+        seed: int | None = None,
+        dt: float | None = None,
+        n_walkers: int | None = None,
+        n_chunks: int = 1,
+        ene0: float | None = None,
+        n_traj: int | None = None,
     ):
         super().__init__(
             mf_or_cc,
@@ -368,7 +367,10 @@ class AFQMC_fp(AFQMC):
         self.n_traj = n_traj
         self.ene0 = ene0
 
-    def _dump_params(self, params: QmcParamsFp):
+    def _dump_params(self, params: QmcParamsFp) -> None:
+        assert isinstance(
+            params, QmcParamsFp
+        ), f"Expected a QmcParamsFp instance, but got {type(params)}"
         fields = dataclasses.fields(params)
         width = len(max(fields, key=lambda f: len(f.name)).name)
         print(" QmcParamsFp:")
@@ -378,27 +380,9 @@ class AFQMC_fp(AFQMC):
 
     def dump_flags(self, job) -> None:
         assert isinstance(job, JobFp), f"Expected a JobFp instance, but got {type(job)}"
-        meta = job.staged.meta
-        src = meta["source_kind"]
-        chol_cut = meta["chol_cut"]
-        sys = job.sys
-        nchol = job.staged.ham.chol.shape[0]
-        params = job.params
-        trial = job.staged.trial
-        print("******** FP-AFQMC ********")
-        print(f" norb            = {sys.norb}")
-        print(f" nelec_up        = {sys.nelec[0]}")
-        print(f" nelec_dn        = {sys.nelec[1]}")
-        print(f" nchol           = {nchol}")
-        print(f" source_kind     = {src}")
-        print(f" trial_kind      = {trial.kind}")
-        print(f" chol_cut        = {chol_cut:g}")
-        print(f" cache           = {str(self.cache) if self.cache else None}")
-        print(f" walker_kind     = {sys.walker_kind}")
-        print(f" mixed_precision = {self.mixed_precision}\n")
-        self._dump_params(params)
+        self._dump_flags_helper(job)
 
-    def _make_params(self) -> Optional[QmcParamsFp]:
+    def _make_params(self) -> QmcParamsFp:
         """
         Create QmcParamsFp if user didn't provide one.
         """
@@ -418,6 +402,11 @@ class AFQMC_fp(AFQMC):
 
             params = QmcParamsFp(**kwargs)
 
+        if params.ene0 is None:
+            raise ValueError(
+                "The value of the parameter 'ene0' must be set, typically with SCF or CC energy."
+            )
+
         return params
 
     def build_job(
@@ -428,8 +417,8 @@ class AFQMC_fp(AFQMC):
         trial_ops: Any = None,
         meas_ops: Any = None,
         prop_ops: Any = None,
-        block_fn: Optional[Callable[..., Any]] = None,
-        prop_kwargs: Optional[dict[str, Any]] = None,
+        block_fn: Callable[..., Any] | None = None,
+        prop_kwargs: dict[str, Any] | None = None,
     ) -> JobFp:
         """
         Assemble a runnable Job from current settings and staged inputs.
@@ -441,7 +430,7 @@ class AFQMC_fp(AFQMC):
         qmc_params = self._make_params()
         self.params = qmc_params
 
-        job = setup_fp(
+        job = setup_job_fp(
             staged,
             walker_kind=self.walker_kind,
             mixed_precision=self.mixed_precision,
@@ -478,3 +467,47 @@ class AFQMC_fp(AFQMC):
         return e_tot, e_err
 
     run_fp = kernel
+
+    def from_staged(
+        path: Union[str, Path],
+        *,
+        n_blocks: int | None = None,
+        seed: int | None = None,
+        dt: float | None = None,
+        n_walkers: int | None = None,
+        n_chunks: int = 1,
+    ) -> AfqmcFp:
+        """
+        Returns a new AFQMC object from a previously staged calculations
+        (using save_staged method). The number of frozen orbitals, norb_frozen,
+        and the choliesky decomposition threshold, chol_cut, cannot be changed.
+        Parameters
+        ----------
+        path: str, pathlib.Path
+        The other parameters are identical to the ones in the AFQMC class.
+        """
+        staged = load_staged(path)
+        meta = staged.meta
+
+        mf_or_cc = None
+
+        # Cannot be changed as the input has been staged
+        norb_frozen = meta["norb_frozen"]
+        chol_cut = meta["chol_cut"]
+
+        af = AfqmcFp(
+            mf_or_cc,
+            norb_frozen=norb_frozen,
+            chol_cut=chol_cut,
+            n_blocks=n_blocks,
+            seed=seed,
+            dt=dt,
+            n_walkers=n_walkers,
+            n_chunks=n_chunks,
+        )
+
+        af._staged = staged
+        af.source_kind = meta["source_kind"]
+        af._cache_key = af._key()
+
+        return af

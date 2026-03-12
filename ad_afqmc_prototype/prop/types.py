@@ -21,24 +21,31 @@ class PropState(NamedTuple):
 
 
 @dataclass(frozen=True)
-class QmcParams:
+class QmcParamsBase:
     dt: float = 0.005
     n_chunks: int = 1
     n_exp_terms: int = 6
-    pop_control_damping: float = 0.1
-    weight_floor: float = 1.0e-3
-    weight_cap: float = 100.0
     n_prop_steps: int = 50
-    shift_ema: float = 0.1
-    n_eql_blocks: int = 20
     n_blocks: int = 200
     n_walkers: int = 200
     seed: int = 42
 
 
 @dataclass(frozen=True)
-class QmcParamsFp(QmcParams):
-    ene0: float = 0.0
+class QmcParams(QmcParamsBase):
+    pop_control_damping: float = 0.1
+    weight_floor: float = 1.0e-3
+    weight_cap: float = 100.0
+    shift_ema: float = 0.1
+    n_eql_blocks: int = 20
+
+
+@dataclass(frozen=True)
+class QmcParamsFp(QmcParamsBase):
+    dt: float = 0.05
+    n_prop_steps: int = 20
+    n_blocks: int = 5
+    ene0: float | None = None
     n_traj: int = 10
 
 
@@ -48,7 +55,7 @@ class StepKernel(Protocol):
         self,
         state: PropState,
         *,
-        params: QmcParams,
+        params: QmcParamsBase,
         ham_data: Any,
         trial_data: Any,
         trial_ops: TrialOps,
@@ -68,7 +75,7 @@ class InitPropState(Protocol):
         trial_ops: TrialOps,
         trial_data: Any,
         meas_ops: MeasOps,
-        params: QmcParams,
+        params: QmcParamsBase,
         initial_walkers: Any | None = None,
         initial_e_estimate: jax.Array | None = None,
         rdm1: jax.Array | None = None,
@@ -80,6 +87,6 @@ class InitPropState(Protocol):
 class PropOps:
     init_prop_state: InitPropState
     build_prop_ctx: Callable[
-        [Any, jax.Array, QmcParams], Any
+        [Any, jax.Array, QmcParamsBase], Any
     ]  # (ham_data, rdm1, params) -> prop_ctx
     step: StepKernel

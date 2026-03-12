@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Union
 
 import jax.numpy as jnp
 import numpy as np
@@ -31,12 +31,12 @@ def _filter_kwargs_for(callable_obj: Any, kwargs: dict[str, Any]) -> dict[str, A
 
 def _make_params(
     *,
-    params: Optional[QmcParams] = None,
-    n_eql_blocks: Optional[int] = None,
-    n_blocks: Optional[int] = None,
-    seed: Optional[int] = None,
-    dt: Optional[float] = None,
-    n_walkers: Optional[int] = None,
+    params: QmcParams | None = None,
+    n_eql_blocks: int | None = None,
+    n_blocks: int | None = None,
+    seed: int | None = None,
+    dt: float | None = None,
+    n_walkers: int | None = None,
     **params_kwargs: Any,
 ) -> QmcParams:
     base = params or QmcParams()
@@ -183,25 +183,25 @@ def setup(
     obj_or_staged: Union[Any, StagedInputs, str, Path],
     *,
     # staging options (used only if we need to stage)
-    norb_frozen: Optional[int] = None,
+    norb_frozen: int | None = None,
     chol_cut: float = 1e-5,
-    cache: Optional[Union[str, Path]] = None,
+    cache: Union[str, Path] | None = None,
     overwrite: bool = False,
     verbose: bool = False,
     # system/prop options
-    walker_kind: Optional[WalkerKind] = None,
+    walker_kind: WalkerKind | None = None,
     mixed_precision: bool = True,
     # params options
-    params: Optional[QmcParams] = None,
+    params: QmcParams | None = None,
     # overrides for customized runs
     trial_data: Any = None,
     trial_ops: Any = None,
     meas_ops: Any = None,
     prop_ops: Any = None,
-    block_fn: Optional[Callable[..., Any]] = None,
+    block_fn: Callable[..., Any] | None = None,
     # extra kwargs
-    params_kwargs: Optional[dict[str, Any]] = None,
-    prop_kwargs: Optional[dict[str, Any]] = None,
+    params_kwargs: dict[str, Any] | None = None,
+    prop_kwargs: dict[str, Any] | None = None,
 ) -> Job:
     """
     Assemble a runnable AFQMC Job from either:

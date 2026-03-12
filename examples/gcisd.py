@@ -1,6 +1,10 @@
 from pyscf import cc, gto, scf
 
-from ad_afqmc_prototype.afqmc import AFQMC
+from ad_afqmc_prototype import config
+
+config.configure_once()
+
+from ad_afqmc_prototype.afqmc import Afqmc
 
 mol = gto.M(
     atom="""
@@ -12,15 +16,20 @@ mol = gto.M(
     spin=1,
     verbose=3,
 )
-mf = scf.GHF(mol).newton()
+mf = scf.GHF(mol)
 mf.kernel()
+
+mo1 = mf.stability()
+dm1 = mf.make_rdm1(mo1, mf.mo_occ)
+mf = mf.run(dm1)
+mf.stability()
 
 mycc = cc.GCCSD(mf)
 mycc.kernel()
 et = mycc.ccsd_t()  # for comparison
 print(f"CCSD(T) total energy: {mycc.e_tot + et}")
 
-afqmc = AFQMC(mycc)
+afqmc = Afqmc(mycc)
 afqmc.n_walkers = 100  # number of walkers
 afqmc.n_eql_blocks = 10  # number of equilibration blocks
 afqmc.n_blocks = 100  # number of sampling blocks

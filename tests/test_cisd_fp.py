@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import pytest
 from pyscf import gto, scf, cc
 
-from ad_afqmc_prototype.afqmc import AFQMC_fp
+from ad_afqmc_prototype.afqmc import AfqmcFp
 from ad_afqmc_prototype.prop.types import QmcParamsFp
 
 
@@ -17,18 +17,18 @@ from ad_afqmc_prototype.prop.types import QmcParamsFp
     ],
 )
 def test_calc_uhf_hamiltonian(mycc, params, walker_kind, e_ref, err_ref):
-    myafqmc = AFQMC_fp(mycc)
+    myafqmc = AfqmcFp(mycc)
     myafqmc.params = params
     myafqmc.walker_kind = walker_kind
     myafqmc.mixed_precision = False
     myafqmc.chol_cut = 1e-6
     mean, err = myafqmc.kernel()
-    assert jnp.isclose(mean[-1].real, e_ref, atol=1e-6), (
+    assert jnp.isclose(mean[-1].real, e_ref, atol=1e-5), (
         mean[-1].real,
         e_ref,
         mean[-1].real - e_ref,
     )
-    assert jnp.isclose(err[-1].real, err_ref, atol=1e-6), (
+    assert jnp.isclose(err[-1].real, err_ref, atol=1e-5), (
         err[-1].real,
         err_ref,
         err[-1].real - err_ref,

@@ -8,7 +8,7 @@ import pytest
 from pyscf import gto, scf
 
 from ad_afqmc_prototype import driver
-from ad_afqmc_prototype.afqmc import AFQMC
+from ad_afqmc_prototype.afqmc import Afqmc
 from ad_afqmc_prototype.prop.types import QmcParams
 from ad_afqmc_prototype import testing
 
@@ -176,7 +176,7 @@ def run_calc(sys, meas_ops, ham_data, trial_ops, trial_data, params, block_fn, p
     ],
 )
 def test_calc_rhf_hamiltonian(mf, params, walker_kind, e_ref, err_ref):
-    myafqmc = AFQMC(mf)
+    myafqmc = Afqmc(mf)
     myafqmc.params = params
     myafqmc.walker_kind = walker_kind
     myafqmc.mixed_precision = False
