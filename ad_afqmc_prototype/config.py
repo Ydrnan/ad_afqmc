@@ -31,6 +31,7 @@ class AfqmcConfig:
 
     use_gpu: bool | None = None
     single_precision: bool = False
+    disable_tf32: bool = False # Disable TF32 on gpu if true
     quiet: bool = True  # suppress prints
 
 
@@ -43,6 +44,7 @@ def configure_once(
     *,
     use_gpu: bool | None = None,
     single_precision: bool | None = None,
+    disable_tf32: bool | None = None,
     quiet: bool | None = None,
 ) -> None:
     """
@@ -67,12 +69,15 @@ def configure_once(
         afqmc_config.use_gpu = use_gpu
     if single_precision is not None:
         afqmc_config.single_precision = single_precision
+    if disable_tf32 is not None:
+        afqmc_config.disable_tf32 = disable_tf32
     if quiet is not None:
         afqmc_config.quiet = quiet
 
     setup_jax(
         use_gpu=afqmc_config.use_gpu,
         single_precision=afqmc_config.single_precision,
+        disable_tf32=afqmc_config.disable_tf32,
         quiet=afqmc_config.quiet,
     )
     _configured_once = True
@@ -104,7 +109,7 @@ def _detect_gpu() -> bool:
     return False
 
 
-def setup_jax(*, use_gpu: bool | None, single_precision: bool, quiet: bool) -> None:
+def setup_jax(*, use_gpu: bool | None, single_precision: bool, disable_tf32: bool, quiet: bool) -> None:
     """
     Configure JAX runtime.
     """
@@ -127,6 +132,8 @@ def setup_jax(*, use_gpu: bool | None, single_precision: bool, quiet: bool) -> N
     if not jax_already_imported:
         if not single_precision:
             os.environ.setdefault("JAX_ENABLE_X64", "1")
+        if disable_tf32:
+            os.environ.setdefault("NVIDIA_TF32_OVERRIDE", "0")
         if use_gpu:
             os.environ.setdefault("JAX_PLATFORM_NAME", "gpu")
             os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
