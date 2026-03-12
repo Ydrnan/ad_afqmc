@@ -419,10 +419,6 @@ def run_qmc_fp(
     )
     chunk = print_every
     for i in range(params.n_traj):
-        block_e_s = []
-        block_w_s = []
-        block_ov_s = []
-        block_abs_ov_s = []
         print("Trajectory count", i + 1)
         if i > 0:
             params = dataclasses.replace(params, seed=params.seed + i)
@@ -435,24 +431,23 @@ def run_qmc_fp(
                 params=params,
             )
 
-        for j, start in enumerate(range(0, params.n_blocks + 1, chunk)):
-            n = min(chunk, params.n_blocks - start)
-            state, scalars_chunk, _obs = run_blocks(
-                state,
-                ham_data=ham_data,
-                trial_data=trial_data,
-                meas_ctx=meas_ctx,
-                prop_ctx=prop_ctx,
-                n_blocks=n,
-            )
-            block_e_s.extend(scalars_chunk["energy"].tolist())
-            block_w_s.extend(scalars_chunk["weight"].tolist())
-            block_ov_s.extend(scalars_chunk["overlap"].tolist())
-            block_abs_ov_s.extend(scalars_chunk["abs_overlap"].tolist())
+        n = params.n_blocks
+        state, scalars_chunk, _obs = run_blocks(
+            state,
+            ham_data=ham_data,
+            trial_data=trial_data,
+            meas_ctx=meas_ctx,
+            prop_ctx=prop_ctx,
+            n_blocks=n,
+        )
+        block_e_s = scalars_chunk["energy"]
+        block_w_s = scalars_chunk["weight"]
+        block_ov_s = scalars_chunk["overlap"]
+        block_abs_ov_s = scalars_chunk["abs_overlap"]
 
-        block_e_all = block_e_all.at[i, 1:].set(jnp.array(block_e_s))
-        block_w_all = block_w_all.at[i, 1:].set(jnp.array(block_w_s))
-        sign = jnp.array(block_ov_s) / jnp.array(block_abs_ov_s)
+        block_e_all = block_e_all.at[i, 1:].set(block_e_s)
+        block_w_all = block_w_all.at[i, 1:].set(block_w_s)
+        sign = block_ov_s / block_abs_ov_s
         total_sign = total_sign.at[i, 1:].set(sign)
         mean = jnp.sum(block_e_all[: i + 1] * block_w_all[: i + 1], axis=0) / jnp.sum(
             block_w_all[: i + 1], axis=0
