@@ -16,8 +16,13 @@ mol = gto.M(
     spin=1,
     verbose=3,
 )
-mf = scf.GHF(mol).newton()
+mf = scf.GHF(mol)
 mf.kernel()
+
+mo1 = mf.stability()
+dm1 = mf.make_rdm1(mo1, mf.mo_occ)
+mf = mf.run(dm1)
+mf.stability()
 
 mycc = cc.GCCSD(mf)
 mycc.kernel()

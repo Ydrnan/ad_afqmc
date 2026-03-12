@@ -8,12 +8,15 @@ from ad_afqmc_prototype.afqmc import Afqmc
 
 mol = gto.M(
     atom="""
-    N 2.5 0.0 0.0
-    N 0.0 0.0 0.0
+    N  -1.67119571   -1.44021737    0.00000000
+    H  -2.12619571   -0.65213425    0.00000000
+    H  -0.76119571   -1.44021737    0.00000000
     """,
+    spin=1,
     basis="6-31g",
     verbose=3,
 )
+
 mf = scf.UHF(mol)
 mf.kernel()
 

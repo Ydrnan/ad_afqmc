@@ -12,7 +12,7 @@ mol = gto.M(
     H        0.9562300000      0.0000000000      0.0000000000
     H       -0.2353791634      0.9268076728      0.0000000000
     """,
-    basis="6-31G",
+    basis="6-31g",
     verbose=3,
 )
 
@@ -24,8 +24,13 @@ mycc = cc.CCSD(mf)
 mycc.kernel()
 
 af = AfqmcFp(mycc)
-af.n_blocks = 30
+af.dt = 0.1
+af.n_prop_steps = 10
+af.n_blocks = 5
 af.ene0 = mycc.e_tot
 af.n_traj = 10
 af.seed = 6
+af.n_walkers = 200
+af.walker_kind = "restricted"
 mean, err = af.kernel()
+
