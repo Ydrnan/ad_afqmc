@@ -45,7 +45,7 @@ class QmcParamsFp(QmcParamsBase):
     dt: float = 0.05
     n_prop_steps: int = 20
     n_blocks: int = 5
-    ene0: float = 0.0
+    ene0: float | None = None
     n_traj: int = 10
 
 
