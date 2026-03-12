@@ -2,9 +2,9 @@ from pyscf import gto, scf
 
 from ad_afqmc_prototype import config
 
-config.configure_once()
+config.configure_once(use_gpu=False)
 
-from ad_afqmc_prototype.afqmc import Afqmc
+from ad_afqmc_prototype.afqmc import AfqmcFp
 
 mol = gto.M(
     atom="""
@@ -25,6 +25,13 @@ dm1 = mf.make_rdm1(mo1, mf.mo_occ)
 mf = mf.run(dm1)
 mf.stability()
 
-afqmc = Afqmc(mf)
-afqmc.walker_kind = "unrestricted"
-mean, err = afqmc.kernel()
+af = AfqmcFp(mf)
+af.dt = 0.1
+af.n_prop_steps = 100
+af.n_blocks = 5
+af.ene0 = mf.e_tot
+af.n_traj = 10
+af.seed = 6
+af.n_walkers = 200
+af.walker_kind = "unrestricted"
+mean, err = af.kernel()

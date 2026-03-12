@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Union
@@ -11,42 +10,30 @@ import numpy as np
 from . import driver
 from .core.system import System, WalkerKind
 from .ham.chol import HamChol
-from .prop.afqmc import make_prop_ops
-from .prop.blocks import block as default_block
-from .prop.types import QmcParams
+from .prop.afqmc_fp import make_prop_ops_fp
+from .prop.blocks import block_fp as default_block
+from .prop.types import QmcParamsFp
+from .setup import _filter_kwargs_for, _make_trial_bundle
 from .staging import StagedInputs, load, stage
 
 
-def _filter_kwargs_for(callable_obj: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
-    """
-    Filter kwargs to only those accepted by callable_obj's signature.
-    """
-    try:
-        sig = inspect.signature(callable_obj)
-    except (TypeError, ValueError):
-        return kwargs
-    params = sig.parameters
-    return {k: v for k, v in kwargs.items() if k in params}
-
-
-def _make_params(
+def _make_params_fp(
     *,
-    params: QmcParams | None = None,
-    n_eql_blocks: int | None = None,
+    params: QmcParamsFp | None = None,
+    n_traj: int | None = None,
+    ene0: float | None = None,
     n_blocks: int | None = None,
     seed: int | None = None,
     dt: float | None = None,
     n_walkers: int | None = None,
     **params_kwargs: Any,
-) -> QmcParams:
-    base = params or QmcParams()
+) -> QmcParamsFp:
+    base = params or QmcParamsFp()
 
     if seed is None and params is None:
         seed = int(np.random.randint(0, int(1e9)))
 
     explicit: dict[str, Any] = {}
-    if n_eql_blocks is not None:
-        explicit["n_eql_blocks"] = int(n_eql_blocks)
     if n_blocks is not None:
         explicit["n_blocks"] = int(n_blocks)
     if dt is not None:
@@ -55,105 +42,43 @@ def _make_params(
         explicit["n_walkers"] = int(n_walkers)
     if seed is not None:
         explicit["seed"] = int(seed)
+    if n_traj is not None:
+        explicit["n_traj"] = int(n_traj)
+    if ene0 is not None:
+        explicit["ene0"] = float(ene0)
 
     merged = dict(params_kwargs)
     merged.update(explicit)
 
-    merged = _filter_kwargs_for(QmcParams, merged)
+    merged = _filter_kwargs_for(QmcParamsFp, merged)
 
     return replace(base, **merged)
 
 
-def _make_prop(
+def _make_prop_fp(
     ham_data: HamChol,
     walker_kind: str,
+    sys: System,
     *,
     mixed_precision: bool,
 ) -> Any:
-    return make_prop_ops(
+    return make_prop_ops_fp(
         ham_data.basis,
         walker_kind,
+        sys,
         mixed_precision=mixed_precision,
     )
 
 
-def _make_trial_bundle(
-    sys: System, staged: StagedInputs, mixed_precision: bool
-) -> tuple[Any, Any, Any]:
-    """
-    Return (trial_data, trial_ops, meas_ops)
-    """
-    tr = staged.trial
-    data = tr.data
-
-    kind = tr.kind.lower()
-
-    if kind == "rhf":
-        from .meas.rhf import make_rhf_meas_ops
-        from .trial.rhf import make_rhf_trial_ops, make_rhf_trial_data
-
-        trial_data = make_rhf_trial_data(data, sys)
-        trial_ops = make_rhf_trial_ops(sys=sys)
-        meas_ops = make_rhf_meas_ops(sys=sys)
-        return trial_data, trial_ops, meas_ops
-
-    if kind == "uhf":
-        from .meas.uhf import make_uhf_meas_ops
-        from .trial.uhf import make_uhf_trial_ops, make_uhf_trial_data
-
-        trial_data = make_uhf_trial_data(data, sys)
-        trial_ops = make_uhf_trial_ops(sys=sys)
-        meas_ops = make_uhf_meas_ops(sys=sys)
-        return trial_data, trial_ops, meas_ops
-
-    if kind == "ghf":
-        from .meas.ghf import make_ghf_meas_ops_chol
-        from .trial.ghf import make_ghf_trial_ops, make_ghf_trial_data
-
-        trial_data = make_ghf_trial_data(data, sys=sys)
-        trial_ops = make_ghf_trial_ops(sys=sys)
-        meas_ops = make_ghf_meas_ops_chol(sys=sys)
-        return trial_data, trial_ops, meas_ops
-
-    if kind == "cisd":
-        from .meas.cisd import make_cisd_meas_ops
-        from .trial.cisd import make_cisd_trial_ops, make_cisd_trial_data
-
-        trial_data = make_cisd_trial_data(data, sys)
-        trial_ops = make_cisd_trial_ops(sys=sys)
-        meas_ops = make_cisd_meas_ops(sys=sys, mixed_precision=mixed_precision)
-        return trial_data, trial_ops, meas_ops
-
-    if kind == "ucisd":
-        from .meas.ucisd import make_ucisd_meas_ops
-        from .trial.ucisd import make_ucisd_trial_ops, make_ucisd_trial_data
-
-        trial_data = make_ucisd_trial_data(data, sys)
-        trial_ops = make_ucisd_trial_ops(sys=sys)
-        meas_ops = make_ucisd_meas_ops(sys=sys, mixed_precision=mixed_precision)
-        return trial_data, trial_ops, meas_ops
-
-    if kind == "gcisd":
-        from .meas.gcisd import make_gcisd_meas_ops
-        from .trial.gcisd import make_gcisd_trial_ops, make_gcisd_trial_data
-
-        trial_data = make_gcisd_trial_data(data, sys)
-        trial_ops = make_gcisd_trial_ops(sys=sys)
-        meas_ops = make_gcisd_meas_ops(sys=sys)
-        return trial_data, trial_ops, meas_ops
-
-    raise ValueError(f"Unsupported TrialInput.kind: {tr.kind!r}")
-
-
 @dataclass(frozen=True)
-class Job:
+class JobFp:
     """
-    A fully assembled AFQMC run bundle.
+    A fully assembled FP-AFQMC run bundle.
     """
 
     staged: StagedInputs
     sys: System
-    params: QmcParams
+    params: QmcParamsFp
     ham_data: Any
     trial_data: Any
     trial_ops: Any
@@ -163,10 +88,10 @@ class Job:
 
     def kernel(self, **driver_kwargs: Any):
         """
-        Run AFQMC energy driver.
-        Extra kwargs are forwarded to driver.run_qmc_energy (e.g. state=..., meas_ctx=...).
+        Run FP-AFQMC energy driver.
+        Extra kwargs are forwarded to driver.run_qmc_energy_fp (e.g. state=..., meas_ctx=...).
         """
-        return driver.run_qmc_energy(
+        return driver.run_qmc_energy_fp(
             sys=self.sys,
             params=self.params,
             ham_data=self.ham_data,
@@ -179,7 +104,7 @@ class Job:
         )
 
 
-def setup(
+def setup_fp(
     obj_or_staged: Union[Any, StagedInputs, str, Path],
     *,
     # staging options (used only if we need to stage)
@@ -192,7 +117,7 @@ def setup(
     walker_kind: WalkerKind | None = None,
     mixed_precision: bool = True,
     # params options
-    params: QmcParams | None = None,
+    params: QmcParamsFp | None = None,
     # overrides for customized runs
     trial_data: Any = None,
     trial_ops: Any = None,
@@ -202,7 +127,7 @@ def setup(
     # extra kwargs
     params_kwargs: dict[str, Any] | None = None,
     prop_kwargs: dict[str, Any] | None = None,
-) -> Job:
+) -> JobFp:
     """
     Assemble a runnable AFQMC Job from either:
       - a pyscf mf/cc object,
@@ -210,12 +135,12 @@ def setup(
       - or a path to a staged .h5 cache file.
 
     Basic usage:
-        job = setup(mf)
+        job = setup_fp(mf)
         job.kernel()
 
     Advanced usage:
         staged = stage(cc, cache="afqmc.h5")
-        job = setup(staged, walker_kind="restricted", mixed_precision=False, params=myparams)
+        job = setup_fp(staged, walker_kind="restricted", mixed_precision=False, params=myparams)
         job.kernel()
     """
     staged: StagedInputs
@@ -232,7 +157,7 @@ def setup(
         else:
             staged = stage(
                 obj_or_staged,
-                norb_frozen=norb_frozen if norb_frozen is not None else 0,
+                norb_frozen=norb_frozen if norb_frozen is not None else None,
                 chol_cut=chol_cut,
                 cache=cache,
                 overwrite=overwrite,
@@ -241,8 +166,13 @@ def setup(
 
     ham = staged.ham
 
-    if walker_kind is None:
-        walker_kind = ham.basis
+    match walker_kind, ham.basis, ham.nelec[0] == ham.nelec[1]:
+        case None, "restricted", True:
+            walker_kind = "restricted"
+        case None, "restricted", False:
+            walker_kind = "unrestricted"
+        case None, "generalized", _:
+            walker_kind = "generalized"
 
     sys = System(norb=int(ham.norb), nelec=ham.nelec, walker_kind=walker_kind)
 
@@ -252,7 +182,7 @@ def setup(
 
     if params_kwargs is None:
         params_kwargs = {}
-    qmc_params = _make_params(
+    qmc_params = _make_params_fp(
         params=params,
         **params_kwargs,
     )
@@ -266,9 +196,10 @@ def setup(
     if prop_ops is None:
         if prop_kwargs is None:
             prop_kwargs = {}
-        prop_ops = _make_prop(
+        prop_ops = _make_prop_fp(
             ham_data,
             sys.walker_kind,
+            sys=sys,
             mixed_precision=mixed_precision,
             **prop_kwargs,
         )
@@ -276,7 +207,7 @@ def setup(
     if block_fn is None:
         block_fn = default_block
 
-    return Job(
+    return JobFp(
         staged=staged,
         sys=sys,
         params=qmc_params,

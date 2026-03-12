@@ -6,7 +6,6 @@ import socket
 import sys
 import warnings
 from dataclasses import dataclass
-from typing import Optional
 
 
 def is_jupyter_notebook() -> bool:
@@ -30,8 +29,9 @@ class AfqmcConfig:
       - False : force CPU
     """
 
-    use_gpu: Optional[bool] = None
+    use_gpu: bool | None = None
     single_precision: bool = False
+    disable_tf32: bool = False  # Disable TF32 on gpu if true
     quiet: bool = True  # suppress prints
 
 
@@ -42,9 +42,10 @@ _configured_once = False
 
 def configure_once(
     *,
-    use_gpu: Optional[bool] = None,
-    single_precision: Optional[bool] = None,
-    quiet: Optional[bool] = None,
+    use_gpu: bool | None = None,
+    single_precision: bool | None = None,
+    disable_tf32: bool | None = None,
+    quiet: bool | None = None,
 ) -> None:
     """
     Configure JAX once, subsequent calls do nothing.
@@ -54,16 +55,29 @@ def configure_once(
     if _configured_once:
         return
 
+    assert (
+        isinstance(use_gpu, bool) or use_gpu is None
+    ), f"Expect a bool | None for 'use_gpu', but got '{type(use_gpu)}'."
+    assert (
+        isinstance(single_precision, bool) or single_precision is None
+    ), f"Expect a bool | None for 'single_precision', but got '{type(single_precision)}'."
+    assert (
+        isinstance(quiet, bool) or quiet is None
+    ), f"Expect a bool | None for 'quiet', but got '{type(quiet)}'."
+
     if use_gpu is not None:
         afqmc_config.use_gpu = use_gpu
     if single_precision is not None:
         afqmc_config.single_precision = single_precision
+    if disable_tf32 is not None:
+        afqmc_config.disable_tf32 = disable_tf32
     if quiet is not None:
         afqmc_config.quiet = quiet
 
     setup_jax(
         use_gpu=afqmc_config.use_gpu,
         single_precision=afqmc_config.single_precision,
+        disable_tf32=afqmc_config.disable_tf32,
         quiet=afqmc_config.quiet,
     )
     _configured_once = True
@@ -95,7 +109,9 @@ def _detect_gpu() -> bool:
     return False
 
 
-def setup_jax(*, use_gpu: Optional[bool], single_precision: bool, quiet: bool) -> None:
+def setup_jax(
+    *, use_gpu: bool | None, single_precision: bool, disable_tf32: bool, quiet: bool
+) -> None:
     """
     Configure JAX runtime.
     """
@@ -118,6 +134,8 @@ def setup_jax(*, use_gpu: Optional[bool], single_precision: bool, quiet: bool) -
     if not jax_already_imported:
         if not single_precision:
             os.environ.setdefault("JAX_ENABLE_X64", "1")
+        if disable_tf32:
+            os.environ.setdefault("NVIDIA_TF32_OVERRIDE", "0")
         if use_gpu:
             os.environ.setdefault("JAX_PLATFORM_NAME", "gpu")
             os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")

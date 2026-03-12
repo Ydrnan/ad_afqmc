@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import time
 from functools import partial
 from typing import Any, Callable, NamedTuple
@@ -13,7 +14,7 @@ from jax.sharding import PartitionSpec as P
 from .core.ops import MeasOps, TrialOps
 from .core.system import System
 from .prop.blocks import BlockFn
-from .prop.types import PropOps, PropState, QmcParams
+from .prop.types import PropOps, PropState, QmcParamsBase, QmcParams, QmcParamsFp
 from .stat_utils import blocking_analysis_ratio, jackknife_ratios, rebin_observable, reject_outliers
 from .walkers import stochastic_reconfiguration
 
@@ -42,7 +43,7 @@ def make_run_blocks(
     *,
     block_fn: BlockFn,
     sys: System,
-    params: QmcParams,
+    params: QmcParamsBase,
     trial_ops: TrialOps,
     meas_ops: MeasOps,
     prop_ops: PropOps,
@@ -79,10 +80,10 @@ def make_run_blocks(
                 observable_names=observable_names,
             )
             obs_tuple = tuple(obs.observables[name] for name in observable_names)
-            return state, (obs.scalars["energy"], obs.scalars["weight"], obs_tuple)
+            return state, (obs.scalars, obs_tuple)
 
-        stateN, (e, w, obs) = lax.scan(one_block, state0, xs=None, length=n_blocks)
-        return stateN, e, w, obs
+        stateN, (scalars, obs) = lax.scan(one_block, state0, xs=None, length=n_blocks)
+        return stateN, scalars, obs
 
     return run_blocks
 
@@ -173,7 +174,7 @@ def run_qmc(
     chunk = print_every if print_every > 0 else 1
     for start in range(0, params.n_eql_blocks, chunk):
         n = min(chunk, params.n_eql_blocks - start)
-        state, e_chunk, w_chunk, obs_chunk = run_blocks(
+        state, scalars_chunk, obs_chunk = run_blocks(
             state,
             ham_data=ham_data,
             trial_data=trial_data,
@@ -181,10 +182,12 @@ def run_qmc(
             prop_ctx=prop_ctx,
             n_blocks=n,
         )
-        block_e_eq.extend(e_chunk.tolist())
-        block_w_eq.extend(w_chunk.tolist())
+        block_e_eq.extend(scalars_chunk["energy"].tolist())
+        block_w_eq.extend(scalars_chunk["weight"].tolist())
         for i, name in enumerate(observable_names):
             block_obs_eq[name].append(obs_chunk[i])
+        e_chunk = scalars_chunk["energy"]
+        w_chunk = scalars_chunk["weight"]
         w_chunk_avg = jnp.mean(w_chunk)
         e_chunk_avg = jnp.mean(e_chunk * w_chunk) / w_chunk_avg
         elapsed = time.perf_counter() - t0
@@ -219,7 +222,7 @@ def run_qmc(
     chunk = print_every if print_every > 0 else 1
     for start in range(0, params.n_blocks, chunk):
         n = min(chunk, params.n_blocks - start)
-        state, e_chunk, w_chunk, obs_chunk = run_blocks(
+        state, scalars_chunk, obs_chunk = run_blocks(
             state,
             ham_data=ham_data,
             trial_data=trial_data,
@@ -227,6 +230,8 @@ def run_qmc(
             prop_ctx=prop_ctx,
             n_blocks=n,
         )
+        e_chunk = scalars_chunk["energy"]
+        w_chunk = scalars_chunk["weight"]
         block_e_s.extend(e_chunk.tolist())
         block_w_s.extend(w_chunk.tolist())
         for i, name in enumerate(observable_names):
@@ -351,5 +356,165 @@ def run_qmc_energy(
         target_error=target_error,
         mesh=mesh,
         observable_names=(),
+    )
+    return out.mean_energy, out.stderr_energy, out.block_energies, out.block_weights
+
+
+def run_qmc_fp(
+    *,
+    sys: System,
+    params: QmcParamsFp,
+    ham_data: Any,
+    trial_data: Any,
+    meas_ops: MeasOps,
+    trial_ops: TrialOps,
+    prop_ops: PropOps,
+    block_fn: BlockFn,
+    state: PropState | None = None,
+    meas_ctx: Any | None = None,
+    target_error: float | None = None,
+) -> QmcResult:
+    """
+    Returns:
+      (mean_energy, stderr, block_energies, block_weights)
+    """
+    # build ctx
+    prop_ctx = prop_ops.build_prop_ctx(ham_data, trial_ops.get_rdm1(trial_data), params)
+    if meas_ctx is None:
+        meas_ctx = meas_ops.build_meas_ctx(ham_data, trial_data)
+    if state is None:
+        state = prop_ops.init_prop_state(
+            sys=sys,
+            ham_data=ham_data,
+            trial_ops=trial_ops,
+            trial_data=trial_data,
+            meas_ops=meas_ops,
+            params=params,
+        )
+
+    block_fn_sr = block_fn
+
+    run_blocks = make_run_blocks(
+        block_fn=block_fn_sr,
+        sys=sys,
+        params=params,
+        trial_ops=trial_ops,
+        meas_ops=meas_ops,
+        prop_ops=prop_ops,
+    )
+
+    t0 = time.perf_counter()
+
+    # sampling
+    print("\nSampling:\n")
+    # print_every = params.n_blocks // 10 if params.n_blocks >= 10 else 1
+    print_every = 1
+    block_e_all = jnp.zeros((params.n_traj, params.n_blocks + 1)) + 0.0j
+    block_w_all = jnp.zeros((params.n_traj, params.n_blocks + 1)) + 0.0j
+    total_sign = jnp.ones((params.n_traj, params.n_blocks + 1)) + 0.0j
+    block_e_all = block_e_all.at[:, 0].set(jnp.array(state.e_estimate))
+    block_w_all = block_w_all.at[:, 0].set(jnp.sum(state.weights))
+    total_sign = total_sign.at[:, 0].set(
+        jnp.sum(state.overlaps) / (jnp.sum(jnp.abs(state.overlaps)))
+    )
+    chunk = print_every
+    for i in range(params.n_traj):
+        print("Trajectory count", i + 1)
+        if i > 0:
+            params = dataclasses.replace(params, seed=params.seed + i)
+            state = prop_ops.init_prop_state(
+                sys=sys,
+                ham_data=ham_data,
+                trial_ops=trial_ops,
+                trial_data=trial_data,
+                meas_ops=meas_ops,
+                params=params,
+            )
+
+        n = params.n_blocks
+        state, scalars_chunk, _obs = run_blocks(
+            state,
+            ham_data=ham_data,
+            trial_data=trial_data,
+            meas_ctx=meas_ctx,
+            prop_ctx=prop_ctx,
+            n_blocks=n,
+        )
+        block_e_s = scalars_chunk["energy"]
+        block_w_s = scalars_chunk["weight"]
+        block_ov_s = scalars_chunk["overlap"]
+        block_abs_ov_s = scalars_chunk["abs_overlap"]
+
+        block_e_all = block_e_all.at[i, 1:].set(block_e_s)
+        block_w_all = block_w_all.at[i, 1:].set(block_w_s)
+        sign = block_ov_s / block_abs_ov_s
+        total_sign = total_sign.at[i, 1:].set(sign)
+        mean = jnp.sum(block_e_all[: i + 1] * block_w_all[: i + 1], axis=0) / jnp.sum(
+            block_w_all[: i + 1], axis=0
+        )
+        sign = jnp.sum(total_sign[: i + 1] * block_w_all[: i + 1], axis=0) / jnp.sum(
+            block_w_all[: i + 1], axis=0
+        )
+        if i == 0:
+            err = jnp.zeros_like(mean)
+        else:
+            err = jnp.std(block_e_all[: i + 1], axis=0) / jnp.sqrt(i)
+
+        timer = params.dt * params.n_prop_steps * chunk * jnp.arange(params.n_blocks + 1)
+        for j in range(0, params.n_blocks + 1, chunk):
+            print(
+                f"{(timer[j]):14.4f} "
+                f"{(mean[j*chunk].real):14.10f}  "
+                f"{(err[j*chunk].real):10.7e}  "
+                f"{(sign[j*chunk].real):10.2f}"
+            )
+
+        # not implemented in free projection yet
+        block_obs_all: dict[str, jax.Array] = {}
+        obs_means: dict[str, jax.Array] = {}
+        obs_stderrs: dict[str, jax.Array] = {}
+
+        elapsed = time.perf_counter() - t0
+
+        print(f"Wall time :{elapsed:12.1f} s\n")
+
+    return QmcResult(
+        mean_energy=mean,
+        stderr_energy=err,
+        block_energies=block_e_all,
+        block_weights=block_w_all,
+        block_observables=block_obs_all,
+        observable_means=obs_means,
+        observable_stderrs=obs_stderrs,
+    )
+
+
+def run_qmc_energy_fp(
+    *,
+    sys: System,
+    params: QmcParamsFp,
+    ham_data: Any,
+    trial_data: Any,
+    meas_ops: MeasOps,
+    trial_ops: TrialOps,
+    prop_ops: PropOps,
+    block_fn: BlockFn,
+    state: PropState | None = None,
+    meas_ctx: Any | None = None,
+    target_error: float | None = None,
+    mesh: Mesh | None = None,
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+    out = run_qmc_fp(
+        sys=sys,
+        params=params,
+        ham_data=ham_data,
+        trial_data=trial_data,
+        meas_ops=meas_ops,
+        trial_ops=trial_ops,
+        prop_ops=prop_ops,
+        block_fn=block_fn,
+        state=state,
+        meas_ctx=meas_ctx,
+        target_error=target_error,
     )
     return out.mean_energy, out.stderr_energy, out.block_energies, out.block_weights

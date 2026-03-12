@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import partial
-from typing import Optional, Sequence
+from typing import Sequence
 
 import numpy as np
 from jax import jit, lax
@@ -31,9 +31,9 @@ class Lattice(ABC):
 @register_pytree_node_class
 class OneDimensionalChain(Lattice):
     n_sites: int
-    shape: Optional[tuple] = None
-    sites: Optional[Sequence] = None
-    bonds: Optional[Sequence] = None
+    shape: tuple | None = None
+    sites: Sequence | None = None
+    bonds: Sequence | None = None
     hop_signs: Sequence = (1.0, -1.0)
     coord_num: int = 2
 
@@ -194,12 +194,12 @@ class OneDimensionalChain(Lattice):
 class TwoDimensionalGrid(Lattice):
     l_x: int
     l_y: int
-    shape: Optional[tuple] = None
-    shell_distances: Optional[Sequence] = None
-    bond_shell_distances: Optional[Sequence] = None
-    sites: Optional[Sequence] = None
-    bonds: Optional[Sequence] = None
-    n_sites: Optional[int] = None
+    shape: tuple | None = None
+    shell_distances: Sequence | None = None
+    bond_shell_distances: Sequence | None = None
+    sites: Sequence | None = None
+    bonds: Sequence | None = None
+    n_sites: int | None = None
     hop_signs: Sequence = (-1.0, -1.0, 1.0, 1.0)
     coord_num: int = 4
     boundary: str = "pbc"
@@ -1608,11 +1608,11 @@ class ThreeDimensionalGrid(Lattice):
     l_x: int
     l_y: int
     l_z: int
-    shape: Optional[tuple] = None
-    shell_distances: Optional[Sequence] = None
-    sites: Optional[Sequence] = None
-    bonds: Optional[Sequence] = None
-    n_sites: Optional[int] = None
+    shape: tuple | None = None
+    shell_distances: Sequence | None = None
+    sites: Sequence | None = None
+    bonds: Sequence | None = None
+    n_sites: int | None = None
     coord_num: int = 6
 
     def __post_init__(self):

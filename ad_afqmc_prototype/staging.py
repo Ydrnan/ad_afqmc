@@ -4,7 +4,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union, cast
+from typing import Any, Dict, Tuple, Union, cast
 
 import h5py
 import numpy as np
@@ -115,7 +115,7 @@ def chunked_cholesky(mol, max_error=1e-6, verbose=False, cmax=10):
     nu = np.argmax(diag)
     delta_max = diag[nu]
     if verbose:
-        print("# Generating Cholesky decomposition of ERIs." % nchol_max)
+        print("# Generating Cholesky decomposition of ERIs.")
         print("# max number of cholesky vectors = %d" % nchol_max)
         print("# iteration %5d: delta_max = %f" % (0, delta_max))
     j = nu // nao
@@ -418,9 +418,9 @@ class StagedMfOrCc:
 def stage(
     obj: Any,
     *,
-    norb_frozen: int = 0,
+    norb_frozen: int | None = None,
     chol_cut: float = 1e-5,
-    cache: Optional[Union[str, Path]] = None,
+    cache: Union[str, Path] | None = None,
     overwrite: bool = False,
     verbose: bool = False,
 ) -> StagedInputs:
