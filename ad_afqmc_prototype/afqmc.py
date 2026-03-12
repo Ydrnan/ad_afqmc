@@ -403,7 +403,9 @@ class AfqmcFp(Afqmc):
             params = QmcParamsFp(**kwargs)
 
         if params.ene0 is None:
-            raise ValueError("The value of the parameter 'ene0' must be set, typically with SCF or CC energy.")
+            raise ValueError(
+                "The value of the parameter 'ene0' must be set, typically with SCF or CC energy."
+            )
 
         return params
 

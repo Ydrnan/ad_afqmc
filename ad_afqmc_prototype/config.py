@@ -31,7 +31,7 @@ class AfqmcConfig:
 
     use_gpu: bool | None = None
     single_precision: bool = False
-    disable_tf32: bool = False # Disable TF32 on gpu if true
+    disable_tf32: bool = False  # Disable TF32 on gpu if true
     quiet: bool = True  # suppress prints
 
 
@@ -109,7 +109,9 @@ def _detect_gpu() -> bool:
     return False
 
 
-def setup_jax(*, use_gpu: bool | None, single_precision: bool, disable_tf32: bool, quiet: bool) -> None:
+def setup_jax(
+    *, use_gpu: bool | None, single_precision: bool, disable_tf32: bool, quiet: bool
+) -> None:
     """
     Configure JAX runtime.
     """

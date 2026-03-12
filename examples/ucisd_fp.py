@@ -38,4 +38,3 @@ af.seed = 6
 af.n_walkers = 200
 af.walker_kind = "unrestricted"
 mean, err = af.kernel()
-

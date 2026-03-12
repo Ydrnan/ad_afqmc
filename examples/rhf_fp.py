@@ -6,7 +6,6 @@ config.configure_once(use_gpu=False)
 
 from ad_afqmc_prototype.afqmc import AfqmcFp
 
-
 mol = gto.M(
     atom="""
     O        0.0000000000      0.0000000000      0.0000000000
