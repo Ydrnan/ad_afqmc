@@ -19,7 +19,7 @@ from .hubbard_cpmc_ops import (
     _build_prop_ctx,
     make_hubbard_cpmc_ops,
 )
-from .types import PropOps, PropState, QmcParams
+from .types import PropOps, PropState, QmcParamsBase
 
 
 def init_prop_state(
@@ -29,7 +29,7 @@ def init_prop_state(
     trial_ops: TrialOps,
     trial_data: Any,
     meas_ops: MeasOps,
-    params: QmcParams,
+    params: QmcParamsBase,
     initial_walkers: Any | None = None,
     initial_e_estimate: jax.Array | None = None,
     rdm1: jax.Array | None = None,
@@ -88,7 +88,7 @@ def init_prop_state(
 def cpmc_step(
     state: PropState,
     *,
-    params: QmcParams,
+    params: QmcParamsBase,
     trial_ops: TrialOps,
     trial_data: Any,
     meas_ops: MeasOps,
@@ -270,7 +270,7 @@ def make_prop_ops(
     def step(
         state: PropState,
         *,
-        params: QmcParams,
+        params: QmcParamsBase,
         ham_data: Any,
         trial_data: Any,
         trial_ops: TrialOps,
@@ -291,7 +291,7 @@ def make_prop_ops(
     def build_prop_ctx(
         ham_data: HamHubbard,
         trial_data: Any,
-        params: QmcParams,
+        params: QmcParamsBase,
     ) -> HubbardCpmcCtx:
         return _build_prop_ctx(ham_data, params.dt)
 

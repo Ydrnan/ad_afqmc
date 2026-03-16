@@ -11,7 +11,7 @@ from typing import Any, Callable, Union
 import numpy as np
 
 from .core.system import WalkerKind
-from .prop.types import QmcParams, QmcParamsFp
+from .prop.types import QmcParams, QmcParamsBase, QmcParamsFp
 from .setup import Job
 from .setup import setup as setup_job
 from .setup_fp import JobFp
@@ -101,7 +101,7 @@ class Afqmc:
         self.walker_kind: WalkerKind | None = None  # resolved in kernel
         self.mixed_precision = True
 
-        self.params: QmcParams | None = None  # resolved in kernel
+        self.params: QmcParamsBase | None = None  # resolved in kernel
 
         self._staged: StagedInputs | None = None
         self._job: Any = None
@@ -289,7 +289,9 @@ class Afqmc:
 
     run = kernel
 
+    @classmethod
     def from_staged(
+        cls,
         path: Union[str, Path],
         *,
         n_eql_blocks: int | None = None,
@@ -468,7 +470,9 @@ class AfqmcFp(Afqmc):
 
     run_fp = kernel
 
+    @classmethod
     def from_staged(
+        cls,
         path: Union[str, Path],
         *,
         n_blocks: int | None = None,
@@ -511,3 +515,8 @@ class AfqmcFp(Afqmc):
         af._cache_key = af._key()
 
         return af
+
+
+# Backward-compatible aliases
+AFQMC = Afqmc
+AFQMCFp = AfqmcFp

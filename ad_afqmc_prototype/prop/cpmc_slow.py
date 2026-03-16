@@ -16,13 +16,13 @@ from .hubbard_cpmc_ops import (
     _build_prop_ctx,
     make_hubbard_cpmc_ops,
 )
-from .types import PropOps, PropState, QmcParams
+from .types import PropOps, PropState, QmcParamsBase
 
 
 def cpmc_step(
     state: PropState,
     *,
-    params: QmcParams,
+    params: QmcParamsBase,
     trial_data: Any,
     meas_ops: MeasOps,
     cpmc_ops: HubbardCpmcOps,
@@ -152,7 +152,7 @@ def make_prop_ops(ham_data: HamHubbard, walker_kind: str) -> PropOps:
     def step(
         state: PropState,
         *,
-        params: QmcParams,
+        params: QmcParamsBase,
         ham_data: Any,
         trial_data: Any,
         trial_ops: TrialOps,
@@ -172,7 +172,7 @@ def make_prop_ops(ham_data: HamHubbard, walker_kind: str) -> PropOps:
     def build_prop_ctx(
         ham_data: HamHubbard,
         trial_data: Any,
-        params: QmcParams,
+        params: QmcParamsBase,
     ) -> HubbardCpmcCtx:
         return _build_prop_ctx(ham_data, params.dt)
 

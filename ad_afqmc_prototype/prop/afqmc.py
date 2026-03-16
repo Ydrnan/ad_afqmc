@@ -13,7 +13,7 @@ from ..ham.chol import HamBasis, HamChol
 from ..sharding import shard_prop_state
 from ..walkers import init_walkers
 from .chol_afqmc_ops import CholAfqmcCtx, TrotterOps, _build_prop_ctx, make_trotter_ops
-from .types import PropOps, PropState, QmcParams
+from .types import PropOps, PropState, QmcParamsBase
 
 
 def init_prop_state(
@@ -23,7 +23,7 @@ def init_prop_state(
     trial_ops: TrialOps,
     trial_data: Any,
     meas_ops: MeasOps,
-    params: QmcParams,
+    params: QmcParamsBase,
     initial_walkers: Any | None = None,
     initial_e_estimate: jax.Array | None = None,
     rdm1: jax.Array | None = None,
@@ -79,7 +79,7 @@ def init_prop_state(
 def afqmc_step(
     state: PropState,
     *,
-    params: QmcParams,
+    params: QmcParamsBase,
     ham_data: HamChol,
     trial_data: Any,
     meas_ops: MeasOps,
@@ -150,7 +150,7 @@ def make_prop_ops(ham_basis: HamBasis, walker_kind: str, mixed_precision=False) 
     def step(
         state: PropState,
         *,
-        params: QmcParams,
+        params: QmcParamsBase,
         ham_data: Any,
         trial_data: Any,
         trial_ops: TrialOps,
@@ -169,7 +169,7 @@ def make_prop_ops(ham_basis: HamBasis, walker_kind: str, mixed_precision=False) 
             trotter_ops=trotter_ops,
         )
 
-    def build_prop_ctx(ham_data: Any, rdm1: jax.Array, params: QmcParams) -> CholAfqmcCtx:
+    def build_prop_ctx(ham_data: Any, rdm1: jax.Array, params: QmcParamsBase) -> CholAfqmcCtx:
         return _build_prop_ctx(
             ham_data,
             rdm1,
