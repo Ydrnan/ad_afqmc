@@ -102,6 +102,13 @@ class Afqmc:
         self.mixed_precision = True
 
         self.params: QmcParams | None = None  # resolved in kernel
+        params = QmcParams()
+        self.dt = params.dt if dt is None else dt
+        self.n_walkers = params.n_walkers if n_walkers is None else n_walkers
+        self.n_blocks = params.n_blocks if n_blocks is None else n_blocks
+        self.n_eql_blocks = params.n_eql_blocks if n_eql_blocks is None else n_eql_blocks
+        self.seed = params.seed if seed is None else seed
+        self.n_chunks = params.n_chunks if n_chunks is None else n_chunks
 
         self._staged: StagedInputs | None = None
         self._job: Any = None
