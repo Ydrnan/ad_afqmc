@@ -70,7 +70,7 @@ def _make_prop_fp(
     )
 
 
-@dataclass(frozen=True)
+@dataclass
 class JobFp:
     """
     A fully assembled FP-AFQMC run bundle.
