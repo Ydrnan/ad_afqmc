@@ -13,7 +13,7 @@ from .core.system import System, WalkerKind
 from .ham.chol import HamChol
 from .prop.afqmc import make_prop_ops
 from .prop.blocks import block as default_block
-from .prop.types import QmcParams
+from .prop.types import QmcParams, QmcParamsBase
 from .staging import StagedInputs, load, stage
 
 
@@ -153,7 +153,7 @@ class Job:
 
     staged: StagedInputs
     sys: System
-    params: QmcParams
+    params: QmcParamsBase
     ham_data: Any
     trial_data: Any
     trial_ops: Any
@@ -166,6 +166,7 @@ class Job:
         Run AFQMC energy driver.
         Extra kwargs are forwarded to driver.run_qmc_energy (e.g. state=..., meas_ctx=...).
         """
+        assert isinstance(self.params, QmcParams)
         return driver.run_qmc_energy(
             sys=self.sys,
             params=self.params,

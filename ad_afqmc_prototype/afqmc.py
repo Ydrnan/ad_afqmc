@@ -111,7 +111,7 @@ class Afqmc:
         self.n_chunks = _defaults.n_chunks if n_chunks is None else n_chunks
 
         self._staged: StagedInputs | None = None
-        self._job: Any = None
+        self._job: Job | None = None
         self._cache_key: tuple | None = None
 
         self.e_tot: Any = None
@@ -433,6 +433,7 @@ class AfqmcFp(Afqmc):
         Assemble a runnable Job from current settings and staged inputs.
         """
         if self._job is not None and not force:
+            assert isinstance(self._job, JobFp)
             return self._job
 
         staged = self.stage()
@@ -454,8 +455,7 @@ class AfqmcFp(Afqmc):
         self._job = job
         return job
 
-    def kernel(self, **driver_kwargs: Any):  # type: ignore[override]
-
+    def kernel(self, **driver_kwargs: Any):
         print(banner_afqmc())
         job = self.build_job()
         self.dump_flags(job)
