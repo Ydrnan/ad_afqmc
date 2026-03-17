@@ -107,7 +107,7 @@ def make_dummy_trial_ops():
         return trial_data["rdm1"]
 
     def overlap(walker, trial_data):
-        return jnp.asarray(1.0 + 0.0j)
+        return jnp.sum(walker) * 0.0 + (1.0 + 0.0j)
 
     return TrialOps(overlap=overlap, get_rdm1=get_rdm1)
 
