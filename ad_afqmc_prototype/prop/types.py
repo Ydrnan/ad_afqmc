@@ -6,6 +6,8 @@ from typing import Any, Callable, NamedTuple, Protocol
 import jax
 from jax.sharding import Mesh
 
+from numpy.typing import NDArray
+
 from ..core.ops import MeasOps, TrialOps
 from ..core.system import System
 
@@ -38,6 +40,11 @@ class QmcParams(QmcParamsBase):
     weight_cap: float = 100.0
     shift_ema: float = 0.1
     n_eql_blocks: int = 20
+
+
+@dataclass(frozen=True)
+class QmcParamsLno(QmcParams):
+    prjlo: NDArray | None = None
 
 
 @dataclass(frozen=True)

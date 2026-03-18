@@ -3,12 +3,13 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Callable, Union
+from typing import Any, Callable, Union, Tuple
 
 import jax.numpy as jnp
 import numpy as np
 
 from . import driver
+from .driver import QmcResult
 from .core.system import System, WalkerKind
 from .ham.chol import HamChol
 from .prop.afqmc import make_prop_ops
@@ -161,12 +162,17 @@ class Job:
     prop_ops: Any
     block_fn: Callable[..., Any]
 
-    def kernel(self, **driver_kwargs: Any):
+    def kernel(self, prop: bool = False, **driver_kwargs: Any) -> Tuple[float, float] | QmcResult:
         """
         Run AFQMC energy driver.
         Extra kwargs are forwarded to driver.run_qmc_energy (e.g. state=..., meas_ctx=...).
         """
-        return driver.run_qmc_energy(
+        if prop:
+            run_qmc = driver.run_qmc
+        else:
+            run_qmc = driver.run_qmc_energy
+
+        return run_qmc(
             sys=self.sys,
             params=self.params,
             ham_data=self.ham_data,

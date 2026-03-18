@@ -8,7 +8,7 @@ import numpy as np
 from pyscf import gto, scf, mp
 from pyscf.data.elements import chemcore
 from pyscf.lib import logger
-from ad_afqmc_prototype import lnoafqmc
+from ad_afqmc_prototype import afqmc_lno
 from ad_afqmc_prototype.wrapper import lno_wrapper
 
 log = logger.Logger(sys.stdout, 6)
@@ -43,7 +43,7 @@ efull_mp2 = mmp.e_corr
 lo_coeff, frag_lolist = lno_wrapper.prep_local_orbitals(mf, frozen=frozen)
 # frag_lolist=[[0]]  #One can run a particular fragment like this
 # LNO-AFQMC calculation: here we can scan over a list of thresholds
-mcc = lnoafqmc.LNOAFQMC(mf, lo_coeff, frag_lolist, frozen=frozen).set(verbose=5)
+mcc = afqmc_lno.AfqmcLno(mf, lo_coeff, frag_lolist, frozen=frozen).set(verbose=5)
 mcc.seed = 1234
 mcc.n_blocks = 100
 mcc.n_walkers = 200

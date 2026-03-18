@@ -45,7 +45,12 @@ class LnoRhf:  # Right now only works for RHF trial and walkers
         self.quiet = quiet
         self.use_gpu = use_gpu
         self.single_precision = single_precision
-        setup_jax(use_gpu=self.use_gpu, single_precision=self.single_precision, quiet=self.quiet)
+        setup_jax(
+            use_gpu=self.use_gpu,
+            single_precision=self.single_precision,
+            quiet=self.quiet,
+            disable_tf32=True,
+        )
 
         self.mf = mf
         self.mol = mf.mol
@@ -171,13 +176,14 @@ def run_afqmc_lno_mf(
     mc.frozen = norb_frozen
     nelec = mc.nelecas
     mc.mo_coeff = mo_coeff
+    import copy
+    lno_mo_coeff = copy.deepcopy(mo_coeff)
     h1e, enuc = mc.get_h1eff()
     nbasis = mo_coeff.shape[-1]
     # if norb_frozen == 0: norb_frozen = []
     act = [i for i in range(nbasis) if i not in norb_frozen]
     e = ao2mo.kernel(mf.mol, mo_coeff[:, act])  # , compact=False)
     chol = modified_cholesky(e, max_error=chol_cut)
-
     h1e = np.asarray(h1e)
     enuc = float(enuc)
     nbasis = h1e.shape[-1]
@@ -192,21 +198,42 @@ def run_afqmc_lno_mf(
     mo_coeff = trial_coeffs
     from ad_afqmc_prototype.wrapper.lno_wrapper import LnoRhf
 
-    myafqmc = LnoRhf(
-        mf,
+    #myafqmc = LnoRhf(
+    #    mf,
+    #    n_eql_blocks=n_eql,
+    #    n_blocks=nblocks,
+    #    seed=seed,
+    #    dt=dt,
+    #    n_walkers=n_walkers,
+    #    prjlo=prjlo,
+    #    target_error=target_error,
+    #    h0=enuc,
+    #    h1=h1e,
+    #    chol=chol,
+    #    mo_coeff=mo_coeff[0][:, : nelec[0]],
+    #)
+    #mean_ecorr, err_ecorr = myafqmc.kernel()
+    #stopp
+
+    from ..afqmc import AfqmcLnoFrag
+
+    mf2 = copy.deepcopy(mf)
+    mf2.mo_coeff = lno_mo_coeff
+
+    myafqmc = AfqmcLnoFrag(
+        mf2,
+        norb_frozen=norb_frozen,
+        chol_cut=chol_cut,
         n_eql_blocks=n_eql,
         n_blocks=nblocks,
         seed=seed,
         dt=dt,
         n_walkers=n_walkers,
         prjlo=prjlo,
-        target_error=target_error,
-        h0=enuc,
-        h1=h1e,
-        chol=chol,
-        mo_coeff=mo_coeff[0][:, : nelec[0]],
     )
-    mean_ecorr, err_ecorr = myafqmc.kernel()
+    mean_ecorr, err_ecorr = myafqmc.kernel(target_error=target_error)
+    stoop
+
     return mean_ecorr, err_ecorr
 
 

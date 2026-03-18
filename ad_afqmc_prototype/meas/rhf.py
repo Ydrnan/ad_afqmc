@@ -7,7 +7,8 @@ import jax
 import jax.numpy as jnp
 from jax import tree_util
 
-from ..core.ops import MeasOps, k_energy, k_force_bias, o_density_corr, o_rdm1
+from ..prop.types import QmcParamsLno
+from ..core.ops import MeasOps, k_energy, k_force_bias, o_density_corr, o_rdm1, o_orb_corr
 from ..core.system import System
 from ..ham.chol import HamChol
 from ..meas.uhf import _density_corr_from_greens
@@ -342,3 +343,28 @@ def make_build_lno_meas_ctx(prjlo):
         )
 
     return build_meas_ctx
+
+
+def make_lno_rhf_meas_ops(sys: System, params: QmcParamsLno) -> MeasOps:
+    wk = sys.walker_kind.lower()
+    if wk == "restricted":
+        overlap_fn = overlap_r
+        build_meas_ctx_fn = make_build_lno_meas_ctx(params.prjlo)
+        kernels = {
+            k_force_bias: force_bias_kernel_rw_rh,
+            k_energy: energy_kernel_rw_rh,
+        }
+        observables = {
+            o_orb_corr: lnoenergy_kernel_rw_rh,
+        }
+    elif wk == "unrestricted" or wk == "generalized":
+        raise NotImplementedError
+    else:
+        raise ValueError(f"unknown walker_kind: {sys.walker_kind}")
+
+    return MeasOps(
+        overlap=overlap_fn,
+        build_meas_ctx=build_meas_ctx_fn,
+        kernels=kernels,
+        observables=observables,
+    )

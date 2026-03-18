@@ -9,13 +9,16 @@ from pathlib import Path
 from typing import Any, Callable, Union
 
 import numpy as np
+from numpy.typing import NDArray
 
 from .core.system import WalkerKind
-from .prop.types import QmcParams, QmcParamsFp
+from .prop.types import QmcParams, QmcParamsFp, QmcParamsLno
+from .driver import QmcResult
 from .setup import Job
 from .setup import setup as setup_job
 from .setup_fp import JobFp
 from .setup_fp import setup_fp as setup_job_fp
+from .setup_lno import setup_lno as setup_job_lno
 from .staging import StagedInputs, _is_cc_like
 from .staging import dump as dump_staged
 from .staging import load as load_staged
@@ -102,6 +105,13 @@ class Afqmc:
         self.mixed_precision = True
 
         self.params: QmcParams | None = None  # resolved in kernel
+        params = QmcParams()
+        self.dt = params.dt if dt is None else dt
+        self.n_walkers = params.n_walkers if n_walkers is None else n_walkers
+        self.n_blocks = params.n_blocks if n_blocks is None else n_blocks
+        self.n_eql_blocks = params.n_eql_blocks if n_eql_blocks is None else n_eql_blocks
+        self.seed = params.seed if seed is None else seed
+        self.n_chunks = params.n_chunks if n_chunks is None else n_chunks
 
         self._staged: StagedInputs | None = None
         self._job: Any = None
@@ -511,3 +521,128 @@ class AfqmcFp(Afqmc):
         af._cache_key = af._key()
 
         return af
+
+
+class AfqmcLnoFrag(Afqmc):
+    def __init__(
+        self,
+        mf_or_cc: Any,
+        *,
+        norb_frozen: int | None = None,
+        chol_cut: float = 1e-5,
+        cache: Union[str, Path] | None = None,
+        n_eql_blocks: int | None = None,
+        n_blocks: int | None = None,
+        seed: int | None = None,
+        dt: float | None = None,
+        n_walkers: int | None = None,
+        n_chunks: int | None = None,
+        prjlo: NDArray | None = None,
+    ):
+        super().__init__(
+            mf_or_cc,
+            norb_frozen=norb_frozen,
+            chol_cut=chol_cut,
+            cache=cache,
+            n_eql_blocks=n_eql_blocks,
+            n_blocks=n_blocks,
+            seed=seed,
+            dt=dt,
+            n_walkers=n_walkers,
+            n_chunks=n_chunks,
+        )
+
+        self.mixed_precision = True
+        self.prjlo = prjlo
+
+    def build_job(
+        self,
+        *,
+        force: bool = False,
+        trial_data: Any = None,
+        trial_ops: Any = None,
+        meas_ops: Any = None,
+        prop_ops: Any = None,
+        block_fn: Callable[..., Any] | None = None,
+        prop_kwargs: dict[str, Any] | None = None,
+    ) -> Job:
+        """
+        Assemble a runnable Job from current settings and staged inputs.
+        """
+        if self._job is not None and not force:
+            return self._job
+
+        staged = self.stage()
+        qmc_params = self._make_params()
+        self.params = qmc_params
+
+        job = setup_job_lno(
+            staged,
+            walker_kind=self.walker_kind,
+            mixed_precision=self.mixed_precision,
+            params=qmc_params,
+            trial_data=trial_data,
+            trial_ops=trial_ops,
+            meas_ops=meas_ops,
+            prop_ops=prop_ops,
+            block_fn=block_fn,
+            prop_kwargs=prop_kwargs,
+        )
+        self._job = job
+        return job
+
+    def _make_params(self) -> QmcParamsLno:
+        """
+        Create QmcParams if user didn't provide one.
+        """
+        if self.params is not None and isinstance(self.params, QmcParamsLno):
+            params = self.params
+        elif self.params is not None and not isinstance(self.params, QmcParamsLno):
+            raise TypeError(
+                f"Expected type QmcParamsLno for self.params, but received '{type(self.params)}'"
+            )
+        else:
+            kwargs: dict[str, Any] = {}
+            for field in dataclasses.fields(QmcParamsLno):
+                if hasattr(self, field.name):
+                    val = getattr(self, field.name)
+                    if val is not None:
+                        kwargs[field.name] = val
+
+            params = QmcParamsLno(**kwargs)
+
+        return params
+
+    def _dump_params(self, params: QmcParamsLno) -> None:
+        assert isinstance(
+            params, QmcParamsLno
+        ), f"Expected a QmcParamsLno instance, but got {type(params)}"
+        fields = dataclasses.fields(params)
+        width = len(max(fields, key=lambda f: len(f.name)).name)
+        print(" QmcParamsLno:")
+        for field in fields:
+            print(f"  {field.name:<{width}} = {getattr(params, field.name)}")
+        print("")
+
+
+    def kernel(self, **driver_kwargs: Any) -> tuple[float, float]:
+        """
+        Runs AFQMC, returns (e_tot, e_err), and stores samples.
+        """
+        print(banner_afqmc())
+        job = self.build_job()
+        self.dump_flags(job)
+
+        obs = driver_kwargs.get("observable_names", ())
+        if "orb_corr" not in obs:
+            driver_kwargs["observable_names"] = obs + ("orb_corr",)
+
+        qmc_result = job.kernel(prop=True, **driver_kwargs)
+
+        if not isinstance(qmc_result, QmcResult):
+            raise TypeError(f"Unexpected return from Job.kernel(), expected QmcResult but received {type(qmc_result)}.")
+
+        orb_corr = qmc_result.observable_means["orb_corr"].real
+        orb_corr_stderr = qmc_result.observable_stderrs["orb_corr"]
+
+        return orb_corr, orb_corr_stderr

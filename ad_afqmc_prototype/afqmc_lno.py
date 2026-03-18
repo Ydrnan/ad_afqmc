@@ -165,7 +165,7 @@ def get_fragment_energy(oovv, t2, uocc_loc):
     return lib.tag_array(ess + eos, spin_comp=np.array((ess, eos)))
 
 
-class LNOAFQMC(LNO):
+class AfqmcLno(LNO):
     """Use the following _max_las_size arguments to avoid calculations that have no
     hope of finishing. This may ease scanning thresholds.
     """
@@ -196,7 +196,7 @@ class LNOAFQMC(LNO):
         self._vhf = None
 
         # AFQMC options
-        self._max_las_size_afqmc = LNOAFQMC._max_las_size_afqmc
+        self._max_las_size_afqmc = AfqmcLno._max_las_size_afqmc
         self.n_walkers = 20
         self.n_blocks = 200
         self.seed = np.random.randint(1, 1000000)
@@ -343,35 +343,3 @@ class LNOAFQMC(LNO):
 
     def e_tot_afqmc_pt2corrected(self, ept2):
         return self.e_tot_scf + self.e_corr_afqmc_pt2corrected(ept2)
-
-
-def fock_from_mo(mymf, s1e=None, force_exxdiv_none=True):
-    if s1e is None:
-        s1e = mymf.get_ovlp()
-    mo0 = np.dot(s1e, mymf.mo_coeff)
-    moe0 = mymf.mo_energy
-    nocc0 = np.count_nonzero(mymf.mo_occ)
-    if force_exxdiv_none:
-        if hasattr(mymf, "exxdiv") and mymf.exxdiv == "ewald":  # remove madelung
-            from pyscf.pbc.cc.ccsd import _adjust_occ
-            from pyscf.pbc import tools
-
-            madelung = tools.madelung(mymf.cell, mymf.kpt)
-            moe0 = _adjust_occ(moe0, nocc0, madelung)
-    fock = np.dot(mo0 * moe0, mo0.T.conj())
-    return fock
-
-
-def save_debug_data(filename, mo_coeff, norb_act, nelec_act, norb_frozen, h1e, enuc, act, e, chol):
-    np.savez(
-        filename,
-        mo_coeff=mo_coeff,
-        norb_act=np.array(norb_act),
-        nelec_act=np.array(nelec_act),
-        norb_frozen=np.array(norb_frozen),
-        h1e=h1e,
-        enuc=np.array(enuc),
-        act=np.array(act),
-        e=e,
-        chol=chol,
-    )
