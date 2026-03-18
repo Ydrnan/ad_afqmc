@@ -1,10 +1,11 @@
 import numpy as np
 from functools import reduce
 from pyscf.lib import logger
-from pyscf import lib
+from pyscf import lib, lo
 
-from ad_afqmc_prototype.wrapper.lno_wrapper import run_afqmc_lno_mf
 from pyscf.lno import LNO
+
+from setup_lno import run_afqmc
 
 _fdot = np.dot
 fdot = lambda *args: reduce(_fdot, args)
@@ -104,7 +105,7 @@ def impurity_solve(
             # Performing LNO-AFQMC
             prjlo = np.array([uocc_loc.flatten()])
 
-            elcorr_afqmc, err_afqmc = run_afqmc_lno_mf(
+            elcorr_afqmc, err_afqmc = run_afqmc(
                 mf,
                 mo_coeff=mo_coeff,
                 norb_act=(nactocc + nactvir),
@@ -343,3 +344,26 @@ class AfqmcLno(LNO):
 
     def e_tot_afqmc_pt2corrected(self, ept2):
         return self.e_tot_scf + self.e_corr_afqmc_pt2corrected(ept2)
+
+
+def prep_local_orbitals(mf, frozen=0, localization_method="pm"):
+    if localization_method not in ["pm"]:
+        raise ValueError(
+            f"Localization method '{localization_method}' is not supported. Make LOs by yourself."
+        )
+    orbocc = mf.mo_coeff[:, frozen : np.count_nonzero(mf.mo_occ)]
+    # lo_coeff = lo.PipekMezey(mf.mol, orbocc).kernel()
+    mlo = lo.PipekMezey(mf.mol, orbocc)
+    lo_coeff = mlo.kernel()
+    while True:  # always performing jacobi sweep to avoid trapping in local minimum/saddle point
+        lo_coeff1 = mlo.stability_jacobi()[1]
+        if lo_coeff1 is lo_coeff:
+            break
+        mlo = lo.PipekMezey(mf.mol, lo_coeff1).set(verbose=2)
+        mlo.init_guess = None
+        lo_coeff = mlo.kernel()
+
+    # # Fragment list: for PM, every orbital corresponds to a fragment
+    frag_lolist = [[i] for i in range(lo_coeff.shape[1])]
+
+    return lo_coeff, frag_lolist

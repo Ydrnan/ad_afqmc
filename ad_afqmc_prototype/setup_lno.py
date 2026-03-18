@@ -1,16 +1,18 @@
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import NDArray, ArrayLike
 import jax.numpy as jnp
 from pathlib import Path
 from typing import Any, Callable, Union
 from dataclasses import replace
+
+from pyscf import mcscf, ao2mo
 
 from .core.system import System, WalkerKind
 from .ham.chol import HamChol
 from .setup import Job, _filter_kwargs_for, _make_prop
 from .prop.types import QmcParamsLno
 from .prop.blocks import block as default_block
-from .staging import StagedInputs, load, stage
+from .staging import StagedInputs, load, stage, HamInput, StagedMfOrCc, modified_cholesky
 
 
 def _make_params(
@@ -187,3 +189,44 @@ def _make_trial_bundle(
         return trial_data, trial_ops, meas_ops
 
     raise ValueError(f"Unsupported TrialInput.kind: {tr.kind!r}")
+
+
+def build_ham(
+    obj: Any,
+    *,
+    norb_frozen: ArrayLike,
+    chol_cut: float,
+) -> HamInput:
+    obj = StagedMfOrCc(obj, norb_frozen)
+    mf = obj.mf.mf
+    mol = mf.mol
+
+    norb = obj.norb
+    norb_frozen = np.array(obj.norb_frozen)
+    basis_coeff = mf.mo_coeff
+
+    nelec_frozen = 2 * np.sum(norb_frozen < mol.nelec[0])
+    nact = basis_coeff.shape[1] - norb_frozen.size
+    nelec_act = mol.nelectron - nelec_frozen
+    mc = mcscf.CASSCF(mf, nact, nelec_act)
+    mc.frozen = norb_frozen
+    nelec = mc.nelecas
+    h1, h0 = mc.get_h1eff()
+    act = [i for i in range(norb) if i not in norb_frozen]
+    e = ao2mo.kernel(mf.mol, mf.mo_coeff[:, act])  # , compact=False)
+    chol = modified_cholesky(e, max_error=chol_cut)
+    chol = chol.reshape((-1, nact, nact))
+
+    ham = HamInput(
+        h0=float(h0),
+        h1=np.asarray(h1),
+        chol=np.asarray(chol),
+        nelec=nelec,
+        norb=norb,
+        chol_cut=float(chol_cut),
+        norb_frozen=norb_frozen,
+        source_kind=obj.source,
+        basis="restricted",
+    )
+
+    return ham

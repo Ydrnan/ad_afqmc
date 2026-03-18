@@ -22,6 +22,7 @@ from .setup import setup as setup_job
 from .setup_fp import JobFp
 from .setup_fp import setup_fp as setup_job_fp
 from .setup_lno import setup_lno as setup_job_lno
+from . import setup_lno
 from .staging import StagedInputs, _is_cc_like
 from .staging import dump as dump_staged
 from .staging import load as load_staged
@@ -559,8 +560,39 @@ class AfqmcLnoFrag(Afqmc):
             n_chunks=n_chunks,
         )
 
-        self.mixed_precision = True
+        self.mixed_precision = False
         self.prjlo = prjlo
+
+    def stage(self, *, force: bool = False) -> StagedInputs:
+        """
+        Compute or load HamInput/TrialInput.
+        If cache is set and exists, loads unless overwrite_cache=True.
+        """
+        key = self._key()
+        if self._staged is not None and self._cache_key == key and not force:
+            return self._staged
+
+        ham = setup_lno.build_ham(
+            self._obj,
+            norb_frozen=self.norb_frozen,
+            chol_cut=self.chol_cut,
+        )
+
+        staged = stage_inputs(
+            self._obj,
+            norb_frozen=self.norb_frozen if self.norb_frozen is not None else None,
+            chol_cut=self.chol_cut,
+            cache=self.cache,
+            overwrite=self.overwrite_cache if self.cache is not None else False,
+            verbose=self.verbose,
+            ham=ham,
+            trial=None,
+        )
+
+        self._staged = staged
+        self._cache_key = key
+        self._job = None
+        return staged
 
     def build_job(
         self,
@@ -631,6 +663,23 @@ class AfqmcLnoFrag(Afqmc):
             print(f"  {field.name:<{width}} = {getattr(params, field.name)}")
         print("")
 
+    def _dump_flags_helper(self, job) -> None:
+        meta = job.staged.meta
+        src = meta["source_kind"]
+        chol_cut = meta["chol_cut"]
+        sys = job.sys
+        nchol = job.staged.ham.chol.shape[0]
+        params = job.params
+        trial = job.staged.trial
+        print("******** AFQMC ********")
+        print(f" nchol           = {nchol}")
+        print(f" source_kind     = {src}")
+        print(f" trial_kind      = {trial.kind}")
+        print(f" chol_cut        = {chol_cut:g}")
+        print(f" cache           = {str(self.cache) if self.cache else None}")
+        print(f" walker_kind     = {sys.walker_kind}")
+        print(f" mixed_precision = {self.mixed_precision}\n")
+        self._dump_params(params)
 
     def kernel(self, **driver_kwargs: Any) -> tuple[float, float]:
         """
@@ -647,7 +696,9 @@ class AfqmcLnoFrag(Afqmc):
         qmc_result = job.kernel(prop=True, **driver_kwargs)
 
         if not isinstance(qmc_result, QmcResult):
-            raise TypeError(f"Unexpected return from Job.kernel(), expected QmcResult but received {type(qmc_result)}.")
+            raise TypeError(
+                f"Unexpected return from Job.kernel(), expected QmcResult but received {type(qmc_result)}."
+            )
 
         orb_corr = qmc_result.observable_means["orb_corr"].real
         orb_corr_stderr = qmc_result.observable_stderrs["orb_corr"]

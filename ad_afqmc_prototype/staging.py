@@ -235,9 +235,9 @@ class StagedCc:
         else:
             mf = cc._scf
 
-        #if not hasattr(cc, "mol"):
+        # if not hasattr(cc, "mol"):
         #    raise TypeError("CC-like object missing mol reference to underlying mol object.")
-        #else:
+        # else:
         #    mol = cc.mol
 
         if not hasattr(cc, "t1") or not hasattr(cc, "t2"):
@@ -304,9 +304,9 @@ class StagedMf:
         if not isinstance(mf, (RHF, ROHF, UHF, GHF)):
             raise TypeError(f"Unsupported object type: {type(mf)}")
 
-        #if not hasattr(mf, "mol"):
+        # if not hasattr(mf, "mol"):
         #    raise TypeError("SCF-like object missing mol reference to underlying mol object.")
-        #else:
+        # else:
         #    mol = mf.mol
 
         if not hasattr(mf, "mo_coeff"):
@@ -323,12 +323,15 @@ class StagedMf:
 
         # TODO: I will add error messages
         if norb_frozen is not None:
-            assert isinstance(norb_frozen, int) or isinstance(norb_frozen, ArrayLike)
-            if isinstance(norb_frozen, ArrayLike) and len(norb_frozen) > 0:
-                assert isinstance(norb_frozen[0], (int, np.int32, np.int64))
-                assert len(norb_frozen) < mf.mo_coeff.shape[-1]
-                assert min(norb_frozen) >= 0
-                assert max(norb_frozen) < mf.mo_coeff.shape[-1]
+            assert isinstance(norb_frozen, int) or isinstance(
+                norb_frozen, (list, tuple, np.ndarray)
+            )
+            if isinstance(norb_frozen, (list, tuple, np.ndarray)):
+                norb_frozen = np.array(norb_frozen, dtype=int)
+                if norb_frozen.size > 0:
+                    assert len(norb_frozen) < mf.mo_coeff.shape[-1]
+                    assert min(norb_frozen) >= 0
+                    assert max(norb_frozen) < mf.mo_coeff.shape[-1]
 
             if isinstance(norb_frozen, int):
                 assert norb_frozen >= 0
@@ -344,7 +347,7 @@ class StagedMf:
     def norb(self) -> int:
         return self.mf.mo_coeff.shape[-1]
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str):
         if name in StagedMf._delegate:
             return getattr(self.mf, name)
         elif hasattr(self.mf, name):
@@ -369,7 +372,7 @@ class StagedMfOrCc:
     mf: StagedMf
     norb_frozen: int | ArrayLike
 
-    def __init__(self, mf_or_cc, norb_frozen):
+    def __init__(self, mf_or_cc: Any, norb_frozen: int | ArrayLike | None):
         from pyscf.cc.ccsd import CCSD
         from pyscf.cc.gccsd import GCCSD
         from pyscf.cc.uccsd import UCCSD
@@ -395,7 +398,11 @@ class StagedMfOrCc:
         object.__setattr__(self, "kind", mf_or_cc.kind)
         object.__setattr__(self, "norb_frozen", mf_or_cc.norb_frozen)
 
-    def __getattr__(self, name):
+    @property
+    def norb(self) -> int:
+        return self.mf.mo_coeff.shape[-1]
+
+    def __getattr__(self, name: str):
         if name in StagedMfOrCc._delegate_cc:
             return getattr(self.mf_or_cc, name)
         elif name in StagedMfOrCc._delegate_mf:
@@ -592,7 +599,6 @@ def _stage_ham_input(obj: StagedMfOrCc, *, chol_cut: float, verbose: bool) -> Ha
             chol[i] = C.T.conj() @ bchol_i @ C
 
     # freeze core
-    #if ((isinstance(norb_frozen, int) and norb_frozen > 0) or (isinstance(norb_frozen, ArrayLike) and len(norb_frozen) > 0)) and scf_obj.kind != "ghf":
     if norb_frozen > 0 and scf_obj.kind != "ghf":
 
         if isinstance(norb_frozen, int):
@@ -602,14 +608,6 @@ def _stage_ham_input(obj: StagedMfOrCc, *, chol_cut: float, verbose: bool) -> Ha
             nelec_frozen = 2 * norb_frozen
             ncas = basis_coeff.shape[1] - norb_frozen
             nelecas = mol.nelectron - nelec_frozen
-
-        #if isinstance(norb_frozen, ArrayLike):
-        #    # Only for restricted reference
-        #    norb_frozen = np.array(norb_frozen)
-        #    nelec_frozen = 2 * np.sum(norb_frozen < mol.nelec[0])
-        #    ncas = basis_coeff.shape[1] - len(norb_frozen)
-        #    nelecas = mol.nelectron - nelec_frozen
-        #    raise NotImplementedError
 
         if nelecas <= 0 or ncas <= 0:
             raise ValueError("Frozen core left no active electrons/orbitals.")
@@ -626,7 +624,7 @@ def _stage_ham_input(obj: StagedMfOrCc, *, chol_cut: float, verbose: bool) -> Ha
         chol = chol[:, i0:i1, i0:i1]
         norb = int(ncas)
         nelec = tuple(int(x) for x in mc.nelecas)  # type: ignore
-    elif  and scf_obj.kind == "ghf":
+    elif norb_frozen > 0 and scf_obj.kind == "ghf":
         raise NotImplementedError(
             "Frozen core approximation not available for generalised integrals."
         )
@@ -706,9 +704,14 @@ def _mf_coeff_helper(
     q = q * sgn[None, :]
     if isinstance(norb_frozen, int):
         q = q[norb_frozen:, norb_frozen:]
-    else:
+    elif isinstance(norb_frozen, ArrayLike):
+        norb_frozen = np.asarray(norb_frozen, dtype=int)
         idx = np.delete(np.arange(len(q)), norb_frozen)
         q = q[np.ix_(idx, idx)]
+    else:
+        raise TypeError(
+            "norb_frozen must be an integer or an ArrayLike, but received '{type(norb_frozen)}'."
+        )
 
     return q
 
