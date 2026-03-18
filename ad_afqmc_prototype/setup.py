@@ -14,7 +14,7 @@ from .core.system import System, WalkerKind
 from .ham.chol import HamChol
 from .prop.afqmc import make_prop_ops
 from .prop.blocks import block as default_block
-from .prop.types import QmcParams
+from .prop.types import QmcParams, QmcParamsBase
 from .staging import StagedInputs, load, stage
 
 
@@ -91,7 +91,7 @@ def _make_trial_bundle(
 
     if kind == "rhf":
         from .meas.rhf import make_rhf_meas_ops
-        from .trial.rhf import make_rhf_trial_ops, make_rhf_trial_data
+        from .trial.rhf import make_rhf_trial_data, make_rhf_trial_ops
 
         trial_data = make_rhf_trial_data(data, sys)
         trial_ops = make_rhf_trial_ops(sys=sys)
@@ -100,7 +100,7 @@ def _make_trial_bundle(
 
     if kind == "uhf":
         from .meas.uhf import make_uhf_meas_ops
-        from .trial.uhf import make_uhf_trial_ops, make_uhf_trial_data
+        from .trial.uhf import make_uhf_trial_data, make_uhf_trial_ops
 
         trial_data = make_uhf_trial_data(data, sys)
         trial_ops = make_uhf_trial_ops(sys=sys)
@@ -109,7 +109,7 @@ def _make_trial_bundle(
 
     if kind == "ghf":
         from .meas.ghf import make_ghf_meas_ops_chol
-        from .trial.ghf import make_ghf_trial_ops, make_ghf_trial_data
+        from .trial.ghf import make_ghf_trial_data, make_ghf_trial_ops
 
         trial_data = make_ghf_trial_data(data, sys=sys)
         trial_ops = make_ghf_trial_ops(sys=sys)
@@ -118,7 +118,7 @@ def _make_trial_bundle(
 
     if kind == "cisd":
         from .meas.cisd import make_cisd_meas_ops
-        from .trial.cisd import make_cisd_trial_ops, make_cisd_trial_data
+        from .trial.cisd import make_cisd_trial_data, make_cisd_trial_ops
 
         trial_data = make_cisd_trial_data(data, sys)
         trial_ops = make_cisd_trial_ops(sys=sys)
@@ -127,7 +127,7 @@ def _make_trial_bundle(
 
     if kind == "ucisd":
         from .meas.ucisd import make_ucisd_meas_ops
-        from .trial.ucisd import make_ucisd_trial_ops, make_ucisd_trial_data
+        from .trial.ucisd import make_ucisd_trial_data, make_ucisd_trial_ops
 
         trial_data = make_ucisd_trial_data(data, sys)
         trial_ops = make_ucisd_trial_ops(sys=sys)
@@ -136,7 +136,7 @@ def _make_trial_bundle(
 
     if kind == "gcisd":
         from .meas.gcisd import make_gcisd_meas_ops
-        from .trial.gcisd import make_gcisd_trial_ops, make_gcisd_trial_data
+        from .trial.gcisd import make_gcisd_trial_data, make_gcisd_trial_ops
 
         trial_data = make_gcisd_trial_data(data, sys)
         trial_ops = make_gcisd_trial_ops(sys=sys)
@@ -146,7 +146,7 @@ def _make_trial_bundle(
     raise ValueError(f"Unsupported TrialInput.kind: {tr.kind!r}")
 
 
-@dataclass(frozen=True)
+@dataclass
 class Job:
     """
     A fully assembled AFQMC run bundle.
@@ -154,7 +154,7 @@ class Job:
 
     staged: StagedInputs
     sys: System
-    params: QmcParams
+    params: QmcParamsBase
     ham_data: Any
     trial_data: Any
     trial_ops: Any
@@ -171,6 +171,8 @@ class Job:
             run_qmc = driver.run_qmc
         else:
             run_qmc = driver.run_qmc_energy
+
+        assert isinstance(self.params, QmcParamsBase)
 
         return run_qmc(
             sys=self.sys,

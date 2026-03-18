@@ -5,14 +5,17 @@ from .config import configure_once
 configure_once()
 
 import dataclasses
+from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Union
 
 import numpy as np
 from numpy.typing import NDArray
 
+print = partial(print, flush=True)
+
 from .core.system import WalkerKind
-from .prop.types import QmcParams, QmcParamsFp, QmcParamsLno
+from .prop.types import QmcParamsBase, QmcParams, QmcParamsFp, QmcParamsLno
 from .driver import QmcResult
 from .setup import Job
 from .setup import setup as setup_job
@@ -104,17 +107,17 @@ class Afqmc:
         self.walker_kind: WalkerKind | None = None  # resolved in kernel
         self.mixed_precision = True
 
-        self.params: QmcParams | None = None  # resolved in kernel
-        params = QmcParams()
-        self.dt = params.dt if dt is None else dt
-        self.n_walkers = params.n_walkers if n_walkers is None else n_walkers
-        self.n_blocks = params.n_blocks if n_blocks is None else n_blocks
-        self.n_eql_blocks = params.n_eql_blocks if n_eql_blocks is None else n_eql_blocks
-        self.seed = params.seed if seed is None else seed
-        self.n_chunks = params.n_chunks if n_chunks is None else n_chunks
+        self.params: QmcParamsBase | None = None  # resolved in kernel
+        _defaults = QmcParams()
+        self.dt = _defaults.dt if dt is None else dt
+        self.n_walkers = _defaults.n_walkers if n_walkers is None else n_walkers
+        self.n_blocks = _defaults.n_blocks if n_blocks is None else n_blocks
+        self.n_eql_blocks = _defaults.n_eql_blocks if n_eql_blocks is None else n_eql_blocks
+        self.seed = _defaults.seed if seed is None else seed
+        self.n_chunks = _defaults.n_chunks if n_chunks is None else n_chunks
 
         self._staged: StagedInputs | None = None
-        self._job: Any = None
+        self._job: Job | None = None
         self._cache_key: tuple | None = None
 
         self.e_tot: Any = None
@@ -299,7 +302,9 @@ class Afqmc:
 
     run = kernel
 
+    @classmethod
     def from_staged(
+        cls,
         path: Union[str, Path],
         *,
         n_eql_blocks: int | None = None,
@@ -434,6 +439,7 @@ class AfqmcFp(Afqmc):
         Assemble a runnable Job from current settings and staged inputs.
         """
         if self._job is not None and not force:
+            assert isinstance(self._job, JobFp)
             return self._job
 
         staged = self.stage()
@@ -455,8 +461,7 @@ class AfqmcFp(Afqmc):
         self._job = job
         return job
 
-    def kernel(self, **driver_kwargs: Any):  # type: ignore[override]
-
+    def kernel(self, **driver_kwargs: Any):
         print(banner_afqmc())
         job = self.build_job()
         self.dump_flags(job)
@@ -478,7 +483,9 @@ class AfqmcFp(Afqmc):
 
     run_fp = kernel
 
+    @classmethod
     def from_staged(
+        cls,
         path: Union[str, Path],
         *,
         n_blocks: int | None = None,
@@ -646,3 +653,8 @@ class AfqmcLnoFrag(Afqmc):
         orb_corr_stderr = qmc_result.observable_stderrs["orb_corr"]
 
         return orb_corr, orb_corr_stderr
+
+
+# Backward-compatible aliases
+AFQMC = Afqmc
+AFQMCFp = AfqmcFp

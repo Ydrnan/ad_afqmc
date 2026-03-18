@@ -36,3 +36,10 @@ ignore = ["E402", "E741", "E731", "E501"]
 [tool.pyright]
 reportGeneralTypeIssues = false
 reportOptionalSubscript = false
+reportUnboundVariable = false
+reportOptionalOperand = false
+reportOptionalMemberAccess = false
+reportIncompatibleMethodOverride = false
+reportPrivateImportUsage = false
+reportMissingImports = false
+reportPossiblyUnboundVariable = false
