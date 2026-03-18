@@ -423,6 +423,8 @@ def stage(
     cache: Union[str, Path] | None = None,
     overwrite: bool = False,
     verbose: bool = False,
+    ham: HamInput | None = None,
+    trial: TrialInput | None = None,
 ) -> StagedInputs:
     """
     Stage inputs from a pyscf mf or cc object.
@@ -442,6 +444,10 @@ def stage(
             If True and cache is provided, recompute and overwrite cache.
         verbose:
             Print timing/info.
+        ham:
+            Optionally provide HamInput. If None, will be staged from obj.
+        trial:
+            Optionally provide TrialInput. If None, will be staged from obj.
 
     Returns:
         StagedInputs containing HamInput, TrialInput, and metadata.
@@ -455,20 +461,22 @@ def stage(
     obj = StagedMfOrCc(obj, norb_frozen)
     mol = obj.mol
 
-    ham = _stage_ham_input(
-        obj,
-        chol_cut=chol_cut,
-        verbose=verbose,
-    )
+    if ham is None:
+        ham = _stage_ham_input(
+            obj,
+            chol_cut=chol_cut,
+            verbose=verbose,
+        )
 
-    trial = _stage_trial_input(obj)
+    if trial is None:
+        trial = _stage_trial_input(obj)
 
     meta: Dict[str, Any] = {
         "format_version": STAGE_FORMAT_VERSION,
         "timestamp_unix": time.time(),
         "source_kind": obj.source,
         "norb_frozen": obj.norb_frozen,
-        "chol_cut": chol_cut,
+        "chol_cut": ham.chol_cut if ham is not None else chol_cut,
         "mol": {
             "nao": int(mol.nao),
             "nelectron": int(mol.nelectron),
