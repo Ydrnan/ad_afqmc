@@ -5,10 +5,13 @@ from .config import configure_once
 configure_once()
 
 import dataclasses
+from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Union
 
 import numpy as np
+
+print = partial(print, flush=True)
 
 from .core.system import WalkerKind
 from .prop.types import QmcParams, QmcParamsBase, QmcParamsFp

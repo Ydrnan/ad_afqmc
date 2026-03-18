@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Tuple, Union, cast
 
 import h5py
 import numpy as np
+
+print = partial(print, flush=True)
 
 from .ham.chol import HamBasis
 
