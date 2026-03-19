@@ -16,7 +16,7 @@ from .prop.blocks import block_fp as default_block
 from .prop.types import QmcParamsFp
 from .setup import Job, _filter_kwargs_for, _make_trial_bundle
 from .staging import StagedInputs, load, stage
-from .driver import QmcResults
+from .driver import QmcResult
 
 
 def _make_params_fp(
@@ -78,7 +78,7 @@ class JobFp(Job):
     A fully assembled FP-AFQMC run bundle.
     """
 
-    def kernel(self, **driver_kwargs: Any) -> QmcResults:
+    def kernel(self, **driver_kwargs: Any) -> QmcResult:
         """
         Run FP-AFQMC energy driver.
         Extra kwargs are forwarded to driver.run_qmc_energy_fp (e.g. state=..., meas_ctx=...).
@@ -86,7 +86,7 @@ class JobFp(Job):
         assert isinstance(self.params, QmcParamsFp)
         return driver.run_qmc(
             sys=self.sys,
-            params=self.params,
+            params=self.params, # type: ignore
             ham_data=self.ham_data,
             trial_ops=self.trial_ops,
             trial_data=self.trial_data,
