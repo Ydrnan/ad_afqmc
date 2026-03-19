@@ -86,7 +86,7 @@ class JobFp(Job):
         assert isinstance(self.params, QmcParamsFp)
         return driver.run_qmc(
             sys=self.sys,
-            params=self.params, # type: ignore
+            params=self.params,  # type: ignore
             ham_data=self.ham_data,
             trial_ops=self.trial_ops,
             trial_data=self.trial_data,
