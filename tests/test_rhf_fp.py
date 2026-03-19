@@ -1,6 +1,6 @@
 from ad_afqmc_prototype import config
 
-config.configure_once(use_gpu=False)
+config.configure_once()
 
 import jax.numpy as jnp
 import pytest
