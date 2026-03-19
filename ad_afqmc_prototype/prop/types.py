@@ -86,7 +86,5 @@ class InitPropState(Protocol):
 @dataclass(frozen=True)
 class PropOps:
     init_prop_state: InitPropState
-    build_prop_ctx: Callable[
-        [Any, jax.Array, Any], Any
-    ]  # (ham_data, rdm1, params) -> prop_ctx
+    build_prop_ctx: Callable[[Any, jax.Array, Any], Any]  # (ham_data, rdm1, params) -> prop_ctx
     step: StepKernel
