@@ -6,6 +6,7 @@ from typing import Any, Callable, Union
 
 import jax.numpy as jnp
 import numpy as np
+from numpy.typing import ArrayLike
 
 from . import driver
 from .core.system import System, WalkerKind
@@ -15,6 +16,7 @@ from .prop.blocks import block_fp as default_block
 from .prop.types import QmcParamsFp
 from .setup import Job, _filter_kwargs_for, _make_trial_bundle
 from .staging import StagedInputs, load, stage
+from .driver import QmcResults
 
 
 def _make_params_fp(
@@ -76,13 +78,13 @@ class JobFp(Job):
     A fully assembled FP-AFQMC run bundle.
     """
 
-    def kernel(self, **driver_kwargs: Any):
+    def kernel(self, **driver_kwargs: Any) -> QmcResults:
         """
         Run FP-AFQMC energy driver.
         Extra kwargs are forwarded to driver.run_qmc_energy_fp (e.g. state=..., meas_ctx=...).
         """
         assert isinstance(self.params, QmcParamsFp)
-        return driver.run_qmc_energy_fp(
+        return driver.run_qmc(
             sys=self.sys,
             params=self.params,
             ham_data=self.ham_data,
@@ -99,7 +101,7 @@ def setup_fp(
     obj_or_staged: Union[Any, StagedInputs, str, Path],
     *,
     # staging options (used only if we need to stage)
-    norb_frozen: int | None = None,
+    norb_frozen: int | ArrayLike | None = None,
     chol_cut: float = 1e-5,
     cache: Union[str, Path] | None = None,
     overwrite: bool = False,

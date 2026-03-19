@@ -3,10 +3,11 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Callable, Union, Tuple
+from typing import Any, Callable, Union
 
 import jax.numpy as jnp
 import numpy as np
+from numpy.typing import ArrayLike
 
 from . import driver
 from .driver import QmcResult
@@ -162,21 +163,16 @@ class Job:
     prop_ops: Any
     block_fn: Callable[..., Any]
 
-    def kernel(self, prop: bool = False, **driver_kwargs: Any) -> Tuple[float, float] | QmcResult:
+    def kernel(self, **driver_kwargs: Any) -> QmcResult:
         """
         Run AFQMC energy driver.
         Extra kwargs are forwarded to driver.run_qmc_energy (e.g. state=..., meas_ctx=...).
         """
-        if prop:
-            run_qmc = driver.run_qmc
-        else:
-            run_qmc = driver.run_qmc_energy
-
         assert isinstance(self.params, QmcParamsBase)
 
-        return run_qmc(
+        return driver.run_qmc(
             sys=self.sys,
-            params=self.params,
+            params=self.params,  # type: ignore
             ham_data=self.ham_data,
             trial_ops=self.trial_ops,
             trial_data=self.trial_data,
@@ -191,7 +187,7 @@ def setup(
     obj_or_staged: Union[Any, StagedInputs, str, Path],
     *,
     # staging options (used only if we need to stage)
-    norb_frozen: int | None = None,
+    norb_frozen: int | ArrayLike | None = None,
     chol_cut: float = 1e-5,
     cache: Union[str, Path] | None = None,
     overwrite: bool = False,

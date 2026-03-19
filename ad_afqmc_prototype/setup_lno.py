@@ -62,7 +62,7 @@ def setup_lno(
     obj_or_staged: Union[Any, StagedInputs, str, Path],
     *,
     # staging options (used only if we need to stage)
-    norb_frozen: int | None = None,
+    norb_frozen: int | ArrayLike | None = None,
     chol_cut: float = 1e-5,
     cache: Union[str, Path] | None = None,
     overwrite: bool = False,
@@ -209,11 +209,11 @@ def build_ham(
     nact = basis_coeff.shape[1] - norb_frozen.size
     nelec_act = mol.nelectron - nelec_frozen
     mc = mcscf.CASSCF(mf, nact, nelec_act)
-    mc.frozen = norb_frozen
-    nelec = mc.nelecas
-    h1, h0 = mc.get_h1eff()
+    mc.frozen = norb_frozen  # type: ignore
+    nelec = mc.nelecas  # type: ignore
+    h1, h0 = mc.get_h1eff()  # type: ignore
     act = [i for i in range(norb) if i not in norb_frozen]
-    e = ao2mo.kernel(mf.mol, mf.mo_coeff[:, act])  # , compact=False)
+    e = np.asarray(ao2mo.kernel(mf.mol, mf.mo_coeff[:, act]))  # , compact=False)
     chol = modified_cholesky(e, max_error=chol_cut)
     chol = chol.reshape((-1, nact, nact))
 

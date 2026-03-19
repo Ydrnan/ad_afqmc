@@ -10,7 +10,7 @@ def run_afqmc(
     norb_act=None,
     nelec_act=None,
     mo_coeff=None,
-    norb_frozen: ArrayLike = [],
+    norb_frozen: int | ArrayLike | None = [],
     chol_cut: float = 1e-5,
     seed: int | None = None,
     dt: float = 0.005,

@@ -27,7 +27,7 @@ def mf():
         basis="sto-6g",
     )
     mf = scf.RHF(mol).density_fit()
-    mf.kernel()
+    mf.kernel()  # type: ignore
     return mf
 
 

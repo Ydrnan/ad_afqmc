@@ -32,14 +32,14 @@ mol.verbose = 3
 frozen = chemcore(mol)
 
 mf = scf.RHF(mol).density_fit()
-mf.kernel()
+mf.kernel()  # type: ignore
 
 # canonical
 mmp = mp.MP2(mf, frozen=frozen)
 mmp.kernel()
 efull_mp2 = mmp.e_corr
 
-lo_coeff, frag_lolist = lno.prep_local_orbitals(mf, frozen=frozen)
+lo_coeff, frag_lolist = lno.prep_local_orbitals(mf, frozen=frozen)  # type: ignore
 # frag_lolist=[[0]]  #One can run a particular fragment like this
 # LNO-AFQMC calculation: here we can scan over a list of thresholds
 mcc = lno.AfqmcLno(mf, lo_coeff, frag_lolist, frozen=frozen).set(verbose=5)

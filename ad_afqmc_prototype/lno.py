@@ -1,11 +1,12 @@
 import numpy as np
+from numpy.typing import ArrayLike
 from functools import reduce
 from pyscf.lib import logger
 from pyscf import lib, lo
 
 from pyscf.lno import LNO
 
-from setup_lno import run_afqmc
+from lno_helper import run_afqmc
 
 _fdot = np.dot
 fdot = lambda *args: reduce(_fdot, args)
@@ -23,7 +24,7 @@ def impurity_solve(
     verbose_imp=None,
     max_las_size_afqmc=None,
     kwargs_imp=None,
-    frozen=None,
+    frozen: int | ArrayLike | None = None,
     n_blocks=50,
     n_walkers=10,
     seed=52,
@@ -100,7 +101,7 @@ def impurity_solve(
             # MP2 fragment energy
             t1, t2 = mcc.init_amps(eris=imp_eris)[1:]
             cput1 = log.timer_debug1("imp sol - mp2 amp", *cput1)
-            elcorr_pt2 = get_fragment_energy(oovv, t2, uocc_loc).real
+            elcorr_pt2 = get_fragment_energy(oovv, t2, uocc_loc).real  # type: ignore
 
             # Performing LNO-AFQMC
             prjlo = np.array([uocc_loc.flatten()])
@@ -159,8 +160,8 @@ def get_fragment_energy(oovv, t2, uocc_loc):
     # return einsum('ijab,kjab,ik->',t2,2*oovv-oovv.transpose(0,1,3,2),m)
     ed = einsum("ijab,kjab,ik->", t2, oovv, m) * 2
     ex = -einsum("ijab,kjba,ik->", t2, oovv, m)
-    ed = ed.real
-    ex = ex.real
+    ed = ed.real  # type: ignore
+    ex = ex.real  # type: ignore
     ess = ed * 0.5 + ex
     eos = ed * 0.5
     return lib.tag_array(ess + eos, spin_comp=np.array((ess, eos)))
@@ -313,12 +314,12 @@ class AfqmcLno(LNO):
 
     @property
     def e_corr_afqmc(self):
-        e_corr = np.sum(self.efrag_afqmc)
+        e_corr = np.sum(self.efrag_afqmc)  # type: ignore
         return e_corr
 
     @property
     def e_corr_pt2(self):
-        e_corr = np.sum(self.efrag_pt2)
+        e_corr = np.sum(self.efrag_pt2)  # type: ignore
         return e_corr
 
     @property
@@ -364,6 +365,6 @@ def prep_local_orbitals(mf, frozen=0, localization_method="pm"):
         lo_coeff = mlo.kernel()
 
     # # Fragment list: for PM, every orbital corresponds to a fragment
-    frag_lolist = [[i] for i in range(lo_coeff.shape[1])]
+    frag_lolist = [[i] for i in range(lo_coeff.shape[1])]  # type: ignore
 
     return lo_coeff, frag_lolist

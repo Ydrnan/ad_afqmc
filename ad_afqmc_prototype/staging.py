@@ -71,7 +71,7 @@ def modified_cholesky(
     return chol
 
 
-def chunked_cholesky(mol, max_error=1e-6, verbose=False, cmax=10):
+def chunked_cholesky(mol, max_error=1e-6, verbose=False, cmax=10) -> np.ndarray:
     """Modified cholesky decomposition from pyscf eris.
 
     See, e.g. [Motta17]_
@@ -190,7 +190,7 @@ class HamInput:
     nelec: Tuple[int, int]
     norb: int
     chol_cut: float
-    norb_frozen: int
+    norb_frozen: int | ArrayLike
     source_kind: str  # "mf" or "cc"
     basis: HamBasis  # "restricted" or "generalized"
 
@@ -201,7 +201,7 @@ class TrialInput:
 
     kind: str  # "slater", "cisd", "ucisd"
     data: Dict[str, Array]
-    norb_frozen: int
+    norb_frozen: int | ArrayLike
     source_kind: str  # "mf" or "cc"
 
 
@@ -257,7 +257,7 @@ class StagedCc:
             norb_frozen = 0
         elif norb_frozen is None:
             norb_frozen = cc.frozen
-        elif isinstance(cc.frozen, int) or isinstance(cc.frozen, ArrayLike):
+        elif isinstance(cc.frozen, int) or isinstance(cc.frozen, (tuple, list, np.ndarray)):
             assert cc.frozen == norb_frozen, "cc.frozen and staging frozen must be equal."
         else:
             raise ValueError(f"Unexpected type '{type(cc.frozen)}' for cc.frozen.")
@@ -579,6 +579,8 @@ def _stage_ham_input(obj: StagedMfOrCc, *, chol_cut: float, verbose: bool) -> Ha
     nelec: Tuple[int, int] = (int(mol.nelec[0]), int(mol.nelec[1]))
     norb_frozen = scf_obj.norb_frozen
 
+    assert isinstance(norb_frozen, int)
+
     # mo Cholesky
     nchol = int(chol_vec.shape[0])
     C = np.asarray(basis_coeff)
@@ -613,7 +615,6 @@ def _stage_ham_input(obj: StagedMfOrCc, *, chol_cut: float, verbose: bool) -> Ha
             raise ValueError("Frozen core left no active electrons/orbitals.")
 
         mc = mcscf.CASSCF(scf_obj.mf, ncas, nelecas)
-        mc.frozen = norb_frozen
         mc.mo_coeff = basis_coeff  # type: ignore
         h1_eff, ecore = mc.get_h1eff()  # type: ignore
         i0 = int(mc.ncore)  # type: ignore
@@ -704,7 +705,7 @@ def _mf_coeff_helper(
     q = q * sgn[None, :]
     if isinstance(norb_frozen, int):
         q = q[norb_frozen:, norb_frozen:]
-    elif isinstance(norb_frozen, ArrayLike):
+    elif isinstance(norb_frozen, (tuple, list, np.ndarray)):
         norb_frozen = np.asarray(norb_frozen, dtype=int)
         idx = np.delete(np.arange(len(q)), norb_frozen)
         q = q[np.ix_(idx, idx)]

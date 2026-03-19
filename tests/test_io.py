@@ -86,7 +86,7 @@ def params_fp():
         seed=1234,
         n_walkers=5,
         n_traj=4,
-        ene0=mf.e_tot,
+        ene0=mf.e_tot,  # type: ignore
     )
 
 

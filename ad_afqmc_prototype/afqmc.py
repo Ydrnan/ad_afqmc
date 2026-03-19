@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Callable, Union
 
 import numpy as np
-from numpy.typing import NDArray
+from numpy.typing import NDArray, ArrayLike
 
 print = partial(print, flush=True)
 
@@ -79,7 +79,7 @@ class Afqmc:
         self,
         mf_or_cc: Any,
         *,
-        norb_frozen: int | None = None,
+        norb_frozen: int | ArrayLike | None = None,
         chol_cut: float = 1e-5,
         cache: Union[str, Path] | None = None,
         n_eql_blocks: int | None = None,
@@ -285,20 +285,13 @@ class Afqmc:
         job = self.build_job()
         self.dump_flags(job)
 
-        out = job.kernel(**driver_kwargs)
+        qmc_result = job.kernel(**driver_kwargs)
 
-        if isinstance(out, tuple) and len(out) >= 2:
-            e_tot = float(out[0])
-            e_err = float(out[1])
-            block_e = out[2] if len(out) > 2 else None
-            block_w = out[3] if len(out) > 3 else None
-        else:
-            raise TypeError("Unexpected return from Job.kernel(), expected tuple output.")
+        e_tot = float(qmc_result.mean_energy)
+        e_err = float(qmc_result.stderr_energy)
 
-        self.e_tot = e_tot
-        self.e_err = e_err
-        self.block_energies = block_e
-        self.block_weights = block_w
+        self.qmc_result = qmc_result
+
         return e_tot, e_err
 
     run = kernel
@@ -357,7 +350,7 @@ class AfqmcFp(Afqmc):
         self,
         mf_or_cc: Any,
         *,
-        norb_frozen: int | None = None,
+        norb_frozen: int | ArrayLike | None = None,
         chol_cut: float = 1e-5,
         cache: Union[str, Path] | None = None,
         n_blocks: int | None = None,
@@ -381,6 +374,7 @@ class AfqmcFp(Afqmc):
             n_chunks=n_chunks,
         )
         self.n_traj = n_traj
+        self.n_prop_steps: int | None = None
         self.ene0 = ene0
 
     def _dump_params(self, params: QmcParamsFp) -> None:
@@ -462,24 +456,21 @@ class AfqmcFp(Afqmc):
         self._job = job
         return job
 
-    def kernel(self, **driver_kwargs: Any):
+    def kernel(self, **driver_kwargs: Any) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Runs AFQMC, returns (e_tot, e_err), and stores samples.
+        """
         print(banner_afqmc())
         job = self.build_job()
         self.dump_flags(job)
-        out = job.kernel(**driver_kwargs)
 
-        if isinstance(out, tuple) and len(out) >= 2:
-            e_tot = out[0]
-            e_err = out[1]
-            block_e = out[2] if len(out) > 2 else None
-            block_w = out[3] if len(out) > 3 else None
-        else:
-            raise TypeError("Unexpected return from Job.kernel(), expected tuple output.")
+        qmc_result = job.kernel(**driver_kwargs)
 
-        self.e_tot = e_tot
-        self.e_err = e_err
-        self.block_energies = block_e
-        self.block_weights = block_w
+        e_tot = np.asarray(qmc_result.mean_energy)
+        e_err = np.asarray(qmc_result.stderr_energy)
+
+        self.qmc_result = qmc_result
+
         return e_tot, e_err
 
     run_fp = kernel
@@ -536,7 +527,7 @@ class AfqmcLnoFrag(Afqmc):
         self,
         mf_or_cc: Any,
         *,
-        norb_frozen: int | None = None,
+        norb_frozen: int | ArrayLike | None = None,
         chol_cut: float = 1e-5,
         cache: Union[str, Path] | None = None,
         n_eql_blocks: int | None = None,
@@ -572,6 +563,7 @@ class AfqmcLnoFrag(Afqmc):
         if self._staged is not None and self._cache_key == key and not force:
             return self._staged
 
+        assert isinstance(self.norb_frozen, (tuple, list, np.ndarray))
         ham = setup_lno.build_ham(
             self._obj,
             norb_frozen=self.norb_frozen,
@@ -681,7 +673,7 @@ class AfqmcLnoFrag(Afqmc):
         print(f" mixed_precision = {self.mixed_precision}\n")
         self._dump_params(params)
 
-    def kernel(self, **driver_kwargs: Any) -> tuple[float, float]:
+    def kernel(self, **driver_kwargs: Any) -> tuple[NDArray, NDArray]:
         """
         Runs AFQMC, returns (e_tot, e_err), and stores samples.
         """
@@ -700,8 +692,10 @@ class AfqmcLnoFrag(Afqmc):
                 f"Unexpected return from Job.kernel(), expected QmcResult but received {type(qmc_result)}."
             )
 
-        orb_corr = qmc_result.observable_means["orb_corr"].real
-        orb_corr_stderr = qmc_result.observable_stderrs["orb_corr"]
+        orb_corr = np.array(qmc_result.observable_means["orb_corr"].real)
+        orb_corr_stderr = np.array(qmc_result.observable_stderrs["orb_corr"])
+
+        self.qmc_result = qmc_result
 
         return orb_corr, orb_corr_stderr
 
