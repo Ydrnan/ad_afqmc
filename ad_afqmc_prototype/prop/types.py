@@ -55,7 +55,7 @@ class StepKernel(Protocol):
         self,
         state: PropState,
         *,
-        params: QmcParamsBase,
+        params: Any,
         ham_data: Any,
         trial_data: Any,
         trial_ops: TrialOps,
@@ -75,7 +75,7 @@ class InitPropState(Protocol):
         trial_ops: TrialOps,
         trial_data: Any,
         meas_ops: MeasOps,
-        params: QmcParamsBase,
+        params: Any,
         initial_walkers: Any | None = None,
         initial_e_estimate: jax.Array | None = None,
         rdm1: jax.Array | None = None,
@@ -87,6 +87,6 @@ class InitPropState(Protocol):
 class PropOps:
     init_prop_state: InitPropState
     build_prop_ctx: Callable[
-        [Any, jax.Array, QmcParamsBase], Any
+        [Any, jax.Array, Any], Any
     ]  # (ham_data, rdm1, params) -> prop_ctx
     step: StepKernel
