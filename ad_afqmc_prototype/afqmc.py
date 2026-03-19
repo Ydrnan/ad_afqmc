@@ -374,7 +374,6 @@ class AfqmcFp(Afqmc):
             n_chunks=n_chunks,
         )
         self.n_traj = n_traj
-        self.n_prop_steps: int | None = None
         self.ene0 = ene0
 
     def _dump_params(self, params: QmcParamsFp) -> None:

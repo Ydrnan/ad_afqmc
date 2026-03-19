@@ -84,9 +84,9 @@ class JobFp(Job):
         Extra kwargs are forwarded to driver.run_qmc_energy_fp (e.g. state=..., meas_ctx=...).
         """
         assert isinstance(self.params, QmcParamsFp)
-        return driver.run_qmc(
+        return driver.run_qmc_fp(
             sys=self.sys,
-            params=self.params,  # type: ignore
+            params=self.params,
             ham_data=self.ham_data,
             trial_ops=self.trial_ops,
             trial_data=self.trial_data,
