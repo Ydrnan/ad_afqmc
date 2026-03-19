@@ -684,7 +684,7 @@ class AfqmcLnoFrag(Afqmc):
         if "orb_corr" not in obs:
             driver_kwargs["observable_names"] = obs + ("orb_corr",)
 
-        qmc_result = job.kernel(prop=True, **driver_kwargs)
+        qmc_result = job.kernel(**driver_kwargs)
 
         if not isinstance(qmc_result, QmcResult):
             raise TypeError(
