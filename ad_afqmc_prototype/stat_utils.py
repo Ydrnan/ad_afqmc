@@ -31,9 +31,13 @@ def _pick_plateau(
         window = SEs2[i : i + k + 1]
         if np.all(np.abs(np.diff(window)) <= flat_tol * window[:-1]):
             return int(Bs2[i]), float(SEs2[i]), int(Gs2[i])
-    jmax = int(np.argmax(SEs2))
+    finite = np.isfinite(SEs2)
+    if not np.any(finite):
+        return int(Bs[0]), float(SEs[0]), int(Gs[0])
+    jmax = int(np.where(finite, SEs2, -np.inf).argmax())
     thresh = 0.95 * SEs2[jmax]
-    j = int(np.where(SEs2 >= thresh)[0][0])
+    candidates = np.where(SEs2 >= thresh)[0]
+    j = int(candidates[0]) if candidates.size > 0 else jmax
     return int(Bs2[j]), float(SEs2[j]), int(Gs2[j])
 
 
