@@ -9,8 +9,6 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Union
 
-import numpy as np
-
 print = partial(print, flush=True)
 
 from .core.system import WalkerKind
@@ -23,10 +21,6 @@ from .staging import StagedInputs, _is_cc_like
 from .staging import dump as dump_staged
 from .staging import load as load_staged
 from .staging import stage as stage_inputs
-
-
-def _default_seed() -> int:
-    return int(np.random.randint(0, int(1e9)))
 
 
 def banner_afqmc() -> str:
