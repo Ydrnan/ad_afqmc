@@ -14,7 +14,7 @@ from jax.sharding import PartitionSpec as P
 from .core.ops import MeasOps, TrialOps
 from .core.system import System
 from .prop.blocks import BlockFn
-from .prop.types import PropOps, PropState, QmcParamsBase, QmcParams, QmcParamsFp
+from .prop.types import PropOps, PropState, QmcParams, QmcParamsBase, QmcParamsFp
 from .stat_utils import blocking_analysis_ratio, jackknife_ratios, rebin_observable, reject_outliers
 from .walkers import stochastic_reconfiguration
 
@@ -420,6 +420,7 @@ def run_qmc_fp(
     chunk = print_every
     for i in range(params.n_traj):
         print("Trajectory count", i + 1)
+        print(f"{'tau':^12s}    " f"{'E_avg':^14s}  " f"{'E_err':^13s}  " f"{'sign':>6s}")
         if i > 0:
             params = dataclasses.replace(params, seed=params.seed + i)
             state = prop_ops.init_prop_state(
@@ -460,13 +461,13 @@ def run_qmc_fp(
         else:
             err = jnp.std(block_e_all[: i + 1], axis=0) / jnp.sqrt(i)
 
-        timer = params.dt * params.n_prop_steps * chunk * jnp.arange(params.n_blocks + 1)
+        timer = params.dt * params.n_prop_steps * jnp.arange(params.n_blocks + 1)
         for j in range(0, params.n_blocks + 1, chunk):
             print(
-                f"{(timer[j]):14.4f} "
-                f"{(mean[j*chunk].real):14.10f}  "
-                f"{(err[j*chunk].real):10.7e}  "
-                f"{(sign[j*chunk].real):10.2f}"
+                f"{(timer[j]):12.4f}    "
+                f"{(mean[j].real):14.10f}  "
+                f"{(err[j].real):13.7e}  "
+                f"{(sign[j].real):6.2f}"
             )
 
         # not implemented in free projection yet
