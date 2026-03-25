@@ -179,6 +179,55 @@ def chunked_cholesky(mol, max_error=1e-6, verbose=False, cmax=10):
     return chol_vecs[:nchol]
 
 
+def _rotate_chol_to_mo(chol_vec: Array, basis_coeff: Array) -> Array:
+    """Rotate AO-space Cholesky into an MO basis."""
+    C = np.asarray(basis_coeff)
+    nao, norb = C.shape
+    nchol = int(chol_vec.shape[0])
+    out_dtype = np.result_type(chol_vec.dtype, C.dtype)
+
+    reuse_storage = nao == norb and out_dtype == chol_vec.dtype
+    if reuse_storage:
+        chol = chol_vec.reshape(nchol, nao, nao)
+    else:
+        chol = np.empty((nchol, norb, norb), dtype=out_dtype)
+
+    Cdag = np.asarray(C.conj().T)
+    tmp = np.empty((nao, norb), dtype=out_dtype)
+    for i in range(nchol):
+        chol_i_ao = chol_vec[i].reshape(nao, nao)
+        np.dot(chol_i_ao, C, out=tmp)
+        np.dot(Cdag, tmp, out=chol[i])
+
+    return chol
+
+
+def _rotate_chol_to_ghf_mo(chol_vec: Array, basis_coeff: Array) -> Array:
+    """Rotate spatial AO Cholesky factors into a generalized-spin MO basis."""
+    C = np.asarray(basis_coeff)
+    nao2, nmo = C.shape
+    if nao2 % 2 != 0:
+        raise ValueError(f"Expected even GHF AO dimension, got {nao2}")
+
+    nao = nao2 // 2
+    nchol = int(chol_vec.shape[0])
+    out_dtype = np.result_type(chol_vec.dtype, C.dtype)
+    chol = np.empty((nchol, nmo, nmo), dtype=out_dtype)
+
+    Cdag = np.asarray(C.conj().T)
+    chol_i_full = np.zeros((nao2, nao2), dtype=out_dtype)
+    tmp = np.empty((nao2, nmo), dtype=out_dtype)
+    for i in range(nchol):
+        chol_i = chol_vec[i].reshape(nao, nao)
+        chol_i_full.fill(0)
+        chol_i_full[:nao, :nao] = chol_i
+        chol_i_full[nao:, nao:] = chol_i
+        np.dot(chol_i_full, C, out=tmp)
+        np.dot(Cdag, tmp, out=chol[i])
+
+    return chol
+
+
 @dataclass(frozen=True, slots=True)
 class HamInput:
     """ham inputs in the chosen orthonormal one particle basis"""
@@ -576,23 +625,13 @@ def _stage_ham_input(obj: StagedMfOrCc, *, chol_cut: float, verbose: bool) -> Ha
     norb_frozen = scf_obj.norb_frozen
 
     # mo Cholesky
-    nchol = int(chol_vec.shape[0])
     C = np.asarray(basis_coeff)
     if scf_obj.kind != "ghf":
         norb = int(basis_coeff.shape[1])
-        Cdag = C.conj().T
-        chol_ao = chol_vec.reshape(nchol, mol.nao, mol.nao)
-        tmp = Cdag @ chol_ao
-        chol = tmp @ C
+        chol = _rotate_chol_to_mo(chol_vec, C)
     else:
-        import scipy.linalg as la
-
         norb = basis_coeff.shape[1] // 2
-        chol = np.zeros((nchol, 2 * norb, 2 * norb), dtype=C.dtype)
-        for i in range(nchol):
-            chol_i = chol_vec[i].reshape(norb, norb)
-            bchol_i = la.block_diag(chol_i, chol_i)
-            chol[i] = C.T.conj() @ bchol_i @ C
+        chol = _rotate_chol_to_ghf_mo(chol_vec, C)
 
     # freeze core
     if norb_frozen > 0 and scf_obj.kind != "ghf":
@@ -613,7 +652,7 @@ def _stage_ham_input(obj: StagedMfOrCc, *, chol_cut: float, verbose: bool) -> Ha
 
         h0 = float(ecore)
         h1 = np.asarray(h1_eff)
-        chol = chol[:, i0:i1, i0:i1]
+        chol = np.array(chol[:, i0:i1, i0:i1], copy=True)
         norb = int(ncas)
         nelec = tuple(int(x) for x in mc.nelecas)  # type: ignore
     elif norb_frozen > 0 and scf_obj.kind == "ghf":
