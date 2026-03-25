@@ -1,6 +1,10 @@
 from typing import TypeVar, cast
 
+from numpy.typing import NDArray
+
 import jax
+import jax.numpy as jnp
+import numpy as np
 from jax import tree_util
 from jax.experimental import mesh_utils
 from jax.sharding import Mesh, NamedSharding
@@ -15,6 +19,7 @@ from .trial.uhf import UhfTrial
 
 THam = TypeVar("THam")
 TTrial = TypeVar("TTrial")
+ArrayLike = jax.Array | NDArray[np.generic]
 
 
 def make_data_mesh() -> Mesh:
@@ -53,15 +58,41 @@ def has_model_axis(mesh: Mesh | None) -> bool:
     return mesh is not None and "model" in mesh.axis_names
 
 
-def shard_first_axis(x: jax.Array, mesh: Mesh) -> jax.Array:
+def _mesh_axis_size(mesh: Mesh, axis_name: str) -> int:
+    return dict(zip(mesh.axis_names, mesh.devices.shape, strict=True))[axis_name]
+
+
+def _pad_for_model_axis(chol: ArrayLike, mesh: Mesh) -> ArrayLike:
+    n_model = _mesh_axis_size(mesh, "model")
+    n_chol = int(chol.shape[0])
+    remainder = n_chol % n_model
+    if remainder == 0:
+        return chol
+
+    padded_n_chol = n_chol + (n_model - remainder)
+    pad = padded_n_chol - n_chol
+    print(
+        f"[shard] padding chol from {n_chol} to {padded_n_chol} "
+        f"to shard evenly over n_model={n_model}.",
+        flush=True,
+    )
+
+    pad_width = [(0, 0)] * chol.ndim
+    pad_width[0] = (0, pad)
+    if isinstance(chol, np.ndarray):
+        return cast(ArrayLike, np.pad(chol, pad_width, mode="constant"))
+    return cast(ArrayLike, jnp.pad(chol, pad_width, mode="constant"))
+
+
+def shard_first_axis(x: ArrayLike, mesh: Mesh) -> jax.Array:
     return jax.device_put(x, NamedSharding(mesh, P("data")))
 
 
-def shard_model_axis(x: jax.Array, mesh: Mesh) -> jax.Array:
+def shard_model_axis(x: ArrayLike, mesh: Mesh) -> jax.Array:
     return jax.device_put(x, NamedSharding(mesh, P("model")))
 
 
-def replicate(x: jax.Array, mesh: Mesh) -> jax.Array:
+def replicate(x: ArrayLike, mesh: Mesh) -> jax.Array:
     return jax.device_put(x, NamedSharding(mesh, P()))
 
 
@@ -75,12 +106,13 @@ def shard_ham_data(ham_data: THam, mesh: Mesh | None) -> THam:
         return ham_data
 
     if isinstance(ham_data, HamChol):
+        chol = _pad_for_model_axis(ham_data.chol, mesh)
         return cast(
             THam,
             HamChol(
                 h0=replicate(ham_data.h0, mesh),
                 h1=replicate(ham_data.h1, mesh),
-                chol=shard_model_axis(ham_data.chol, mesh),
+                chol=shard_model_axis(chol, mesh),
                 basis=ham_data.basis,
             ),
         )

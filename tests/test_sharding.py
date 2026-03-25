@@ -29,6 +29,7 @@ from ad_afqmc_prototype.setup import setup
 from ad_afqmc_prototype.sharding import (
     make_data_mesh,
     make_data_model_mesh,
+    shard_ham_data,
     shard_prop_state,
     shard_runtime_inputs,
 )
@@ -286,6 +287,31 @@ def test_hubbard_hamiltonian_rejects_model_axis_sharding():
 
     with pytest.raises(ValueError, match="Cannot shard Hubbard Hamiltonian"):
         shard_runtime_inputs(ham, trial_data=None, mesh=mesh)
+
+
+def test_shard_ham_data_pads_chol_to_model_divisible(capsys):
+    mesh = make_data_model_mesh(2, 2)
+    norb, n_chol = 4, 5
+    chol = np.arange(n_chol * norb * norb, dtype=np.float64).reshape(n_chol, norb, norb)
+    ham = HamChol(
+        h0=jnp.array(0.25, dtype=jnp.float64),
+        h1=jnp.eye(norb, dtype=jnp.float64),
+        chol=jnp.asarray(chol),
+        basis="restricted",
+    )
+
+    ham_s = shard_ham_data(ham, mesh)
+    out = capsys.readouterr().out
+
+    assert "padding chol from 5 to 6" in out
+    _assert_named_sharding_spec(ham_s.h0, P())
+    _assert_named_sharding_spec(ham_s.h1, P())
+    _assert_named_sharding_spec(ham_s.chol, P("model"))
+    assert ham_s.chol.shape == (6, norb, norb)
+
+    chol_s = np.asarray(jax.device_get(ham_s.chol))
+    np.testing.assert_allclose(chol_s[:n_chol], chol)
+    np.testing.assert_allclose(chol_s[n_chol], 0.0, atol=0.0)
 
 
 def test_setup_shards_h5_loaded_chol_from_host_memory(tmp_path):
