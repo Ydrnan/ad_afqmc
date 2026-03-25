@@ -11,6 +11,8 @@ from typing import Any, Callable, Union
 
 print = partial(print, flush=True)
 
+from jax.sharding import Mesh
+
 from .core.system import WalkerKind
 from .prop.types import QmcParams, QmcParamsBase, QmcParamsFp
 from .setup import Job
@@ -144,7 +146,7 @@ class Afqmc:
         src = meta["source_kind"]
         chol_cut = meta["chol_cut"]
         sys = job.sys
-        nchol = job.staged.ham.chol.shape[0]
+        nchol = job.ham_data.chol.shape[0]
         params = job.params
         trial = job.staged.trial
         print("******** AFQMC ********")
@@ -241,11 +243,12 @@ class Afqmc:
         prop_ops: Any = None,
         block_fn: Callable[..., Any] | None = None,
         prop_kwargs: dict[str, Any] | None = None,
+        mesh: Mesh | None = None,
     ) -> Job:
         """
         Assemble a runnable Job from current settings and staged inputs.
         """
-        if self._job is not None and not force:
+        if self._job is not None and not force and (mesh is None or self._job.mesh is mesh):
             return self._job
 
         staged = self.stage()
@@ -255,6 +258,7 @@ class Afqmc:
         job = setup_job(
             staged,
             walker_kind=self.walker_kind,
+            mesh=mesh,
             mixed_precision=self.mixed_precision,
             params=qmc_params,
             trial_data=trial_data,
@@ -272,7 +276,8 @@ class Afqmc:
         Runs AFQMC, returns (e_tot, e_err), and stores samples.
         """
         print(banner_afqmc())
-        job = self.build_job()
+        mesh = driver_kwargs.get("mesh")
+        job = self.build_job(mesh=mesh)
         self.dump_flags(job)
 
         out = job.kernel(**driver_kwargs)
@@ -425,11 +430,12 @@ class AfqmcFp(Afqmc):
         prop_ops: Any = None,
         block_fn: Callable[..., Any] | None = None,
         prop_kwargs: dict[str, Any] | None = None,
+        mesh: Mesh | None = None,
     ) -> JobFp:
         """
         Assemble a runnable Job from current settings and staged inputs.
         """
-        if self._job is not None and not force:
+        if self._job is not None and not force and (mesh is None or self._job.mesh is mesh):
             assert isinstance(self._job, JobFp)
             return self._job
 
@@ -440,6 +446,7 @@ class AfqmcFp(Afqmc):
         job = setup_job_fp(
             staged,
             walker_kind=self.walker_kind,
+            mesh=mesh,
             mixed_precision=self.mixed_precision,
             params=qmc_params,
             trial_data=trial_data,
@@ -454,7 +461,8 @@ class AfqmcFp(Afqmc):
 
     def kernel(self, **driver_kwargs: Any):
         print(banner_afqmc())
-        job = self.build_job()
+        mesh = driver_kwargs.get("mesh")
+        job = self.build_job(mesh=mesh)
         self.dump_flags(job)
         out = job.kernel(**driver_kwargs)
 

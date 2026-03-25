@@ -7,6 +7,7 @@ from typing import Any, Callable, Union
 
 import jax.numpy as jnp
 import numpy as np
+from jax.sharding import Mesh
 
 from . import driver
 from .core.system import System, WalkerKind
@@ -14,6 +15,7 @@ from .ham.chol import HamChol
 from .prop.afqmc import make_prop_ops
 from .prop.blocks import block as default_block
 from .prop.types import QmcParams, QmcParamsBase
+from .sharding import has_model_axis, shard_ham_data
 from .staging import StagedInputs, load, stage
 
 
@@ -75,6 +77,50 @@ def _make_prop(
         walker_kind,
         mixed_precision=mixed_precision,
     )
+
+
+def _make_ham_data(ham: Any, mesh: Mesh | None) -> HamChol:
+    if mesh is not None and mesh.size > 1 and has_model_axis(mesh):
+        ham_data = HamChol(ham.h0, ham.h1, ham.chol, basis=ham.basis)
+        return shard_ham_data(ham_data, mesh)
+
+    return HamChol(
+        jnp.asarray(ham.h0),
+        jnp.asarray(ham.h1),
+        jnp.asarray(ham.chol),
+        basis=ham.basis,
+    )
+
+
+def _resolve_staged_and_ham_data(
+    obj_or_staged: Union[Any, StagedInputs, str, Path],
+    *,
+    norb_frozen: int | None,
+    chol_cut: float,
+    cache: Union[str, Path] | None,
+    overwrite: bool,
+    verbose: bool,
+    mesh: Mesh | None,
+) -> tuple[StagedInputs, HamChol]:
+    staged: StagedInputs
+    if isinstance(obj_or_staged, StagedInputs):
+        staged = obj_or_staged
+        return staged, _make_ham_data(staged.ham, mesh)
+
+    p = Path(obj_or_staged).expanduser().resolve() if isinstance(obj_or_staged, (str, Path)) else None
+    if p is not None and p.exists():
+        staged = load(p)
+        return staged, _make_ham_data(staged.ham, mesh)
+
+    staged = stage(
+        obj_or_staged,
+        norb_frozen=norb_frozen if norb_frozen is not None else 0,
+        chol_cut=chol_cut,
+        cache=cache,
+        overwrite=overwrite,
+        verbose=verbose,
+    )
+    return staged, _make_ham_data(staged.ham, mesh)
 
 
 def _make_trial_bundle(
@@ -160,6 +206,7 @@ class Job:
     meas_ops: Any
     prop_ops: Any
     block_fn: Callable[..., Any]
+    mesh: Mesh | None = None
 
     def kernel(self, **driver_kwargs: Any):
         """
@@ -167,6 +214,7 @@ class Job:
         Extra kwargs are forwarded to driver.run_qmc_energy (e.g. state=..., meas_ctx=...).
         """
         assert isinstance(self.params, QmcParams)
+        driver_kwargs.setdefault("mesh", self.mesh)
         return driver.run_qmc_energy(
             sys=self.sys,
             params=self.params,
@@ -191,6 +239,7 @@ def setup(
     verbose: bool = False,
     # system/prop options
     walker_kind: WalkerKind | None = None,
+    mesh: Mesh | None = None,
     mixed_precision: bool = True,
     # params options
     params: QmcParams | None = None,
@@ -219,37 +268,21 @@ def setup(
         job = setup(staged, walker_kind="restricted", mixed_precision=False, params=myparams)
         job.kernel()
     """
-    staged: StagedInputs
-    if isinstance(obj_or_staged, StagedInputs):
-        staged = obj_or_staged
-    else:
-        p = (
-            Path(obj_or_staged).expanduser().resolve()
-            if isinstance(obj_or_staged, (str, Path))
-            else None
-        )
-        if p is not None and p.exists():
-            staged = load(p)
-        else:
-            staged = stage(
-                obj_or_staged,
-                norb_frozen=norb_frozen if norb_frozen is not None else 0,
-                chol_cut=chol_cut,
-                cache=cache,
-                overwrite=overwrite,
-                verbose=verbose,
-            )
-
+    staged, ham_data = _resolve_staged_and_ham_data(
+        obj_or_staged,
+        norb_frozen=norb_frozen,
+        chol_cut=chol_cut,
+        cache=cache,
+        overwrite=overwrite,
+        verbose=verbose,
+        mesh=mesh,
+    )
     ham = staged.ham
 
     if walker_kind is None:
         walker_kind = ham.basis
 
     sys = System(norb=int(ham.norb), nelec=ham.nelec, walker_kind=walker_kind)
-
-    ham_data = HamChol(
-        jnp.asarray(ham.h0), jnp.asarray(ham.h1), jnp.asarray(ham.chol), basis=ham.basis
-    )
 
     if params_kwargs is None:
         params_kwargs = {}
@@ -287,4 +320,5 @@ def setup(
         meas_ops=meas_ops,
         prop_ops=prop_ops,
         block_fn=block_fn,
+        mesh=mesh,
     )

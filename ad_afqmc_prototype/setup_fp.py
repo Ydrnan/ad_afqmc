@@ -4,8 +4,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Union
 
-import jax.numpy as jnp
 import numpy as np
+from jax.sharding import Mesh
 
 from . import driver
 from .core.system import System, WalkerKind
@@ -13,8 +13,8 @@ from .ham.chol import HamChol
 from .prop.afqmc_fp import make_prop_ops_fp
 from .prop.blocks import block_fp as default_block
 from .prop.types import QmcParamsFp
-from .setup import Job, _filter_kwargs_for, _make_trial_bundle
-from .staging import StagedInputs, load, stage
+from .setup import Job, _filter_kwargs_for, _make_trial_bundle, _resolve_staged_and_ham_data
+from .staging import StagedInputs
 
 
 def _make_params_fp(
@@ -106,6 +106,7 @@ def setup_fp(
     verbose: bool = False,
     # system/prop options
     walker_kind: WalkerKind | None = None,
+    mesh: Mesh | None = None,
     mixed_precision: bool = True,
     # params options
     params: QmcParamsFp | None = None,
@@ -134,27 +135,15 @@ def setup_fp(
         job = setup_fp(staged, walker_kind="restricted", mixed_precision=False, params=myparams)
         job.kernel()
     """
-    staged: StagedInputs
-    if isinstance(obj_or_staged, StagedInputs):
-        staged = obj_or_staged
-    else:
-        p = (
-            Path(obj_or_staged).expanduser().resolve()
-            if isinstance(obj_or_staged, (str, Path))
-            else None
-        )
-        if p is not None and p.exists():
-            staged = load(p)
-        else:
-            staged = stage(
-                obj_or_staged,
-                norb_frozen=norb_frozen if norb_frozen is not None else None,
-                chol_cut=chol_cut,
-                cache=cache,
-                overwrite=overwrite,
-                verbose=verbose,
-            )
-
+    staged, ham_data = _resolve_staged_and_ham_data(
+        obj_or_staged,
+        norb_frozen=norb_frozen,
+        chol_cut=chol_cut,
+        cache=cache,
+        overwrite=overwrite,
+        verbose=verbose,
+        mesh=mesh,
+    )
     ham = staged.ham
 
     match walker_kind, ham.basis, ham.nelec[0] == ham.nelec[1]:
@@ -166,10 +155,6 @@ def setup_fp(
             walker_kind = "generalized"
 
     sys = System(norb=int(ham.norb), nelec=ham.nelec, walker_kind=walker_kind)
-
-    ham_data = HamChol(
-        jnp.asarray(ham.h0), jnp.asarray(ham.h1), jnp.asarray(ham.chol), basis=ham.basis
-    )
 
     if params_kwargs is None:
         params_kwargs = {}
@@ -208,4 +193,5 @@ def setup_fp(
         meas_ops=meas_ops,
         prop_ops=prop_ops,
         block_fn=block_fn,
+        mesh=mesh,
     )
