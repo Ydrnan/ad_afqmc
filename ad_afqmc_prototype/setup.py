@@ -107,7 +107,11 @@ def _resolve_staged_and_ham_data(
         staged = obj_or_staged
         return staged, _make_ham_data(staged.ham, mesh)
 
-    p = Path(obj_or_staged).expanduser().resolve() if isinstance(obj_or_staged, (str, Path)) else None
+    p = (
+        Path(obj_or_staged).expanduser().resolve()
+        if isinstance(obj_or_staged, (str, Path))
+        else None
+    )
     if p is not None and p.exists():
         staged = load(p)
         return staged, _make_ham_data(staged.ham, mesh)

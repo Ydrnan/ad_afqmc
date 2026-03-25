@@ -117,6 +117,8 @@ def shard_ham_data(ham_data: THam, mesh: Mesh | None) -> THam:
         raise ValueError("Cannot shard Hubbard Hamiltonian, don't use model axis sharding.")
 
     return ham_data
+
+
 def shard_prop_state(state: PropState, mesh: Mesh | None) -> PropState:
     """
     Shard only (n_walkers,...) leaves, keep global scalars replicated.
