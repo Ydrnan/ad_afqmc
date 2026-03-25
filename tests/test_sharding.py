@@ -17,12 +17,29 @@ from jax.sharding import PartitionSpec as P
 import ad_afqmc_prototype.walkers as wk
 from ad_afqmc_prototype import testing
 from ad_afqmc_prototype.core.system import System
+from ad_afqmc_prototype.ham.chol import HamChol
+from ad_afqmc_prototype.ham.hubbard import HamHubbard
 from ad_afqmc_prototype.meas.auto import make_auto_meas_ops
+from ad_afqmc_prototype.meas.rhf import build_meas_ctx as build_rhf_meas_ctx
 from ad_afqmc_prototype.prop.afqmc import init_prop_state, make_prop_ops
 from ad_afqmc_prototype.prop.blocks import block
 from ad_afqmc_prototype.prop.chol_afqmc_ops import _build_prop_ctx
 from ad_afqmc_prototype.prop.types import QmcParams
-from ad_afqmc_prototype.sharding import make_data_mesh, shard_prop_state
+from ad_afqmc_prototype.setup import setup
+from ad_afqmc_prototype.sharding import (
+    make_data_mesh,
+    make_data_model_mesh,
+    shard_ham_data,
+    shard_prop_state,
+)
+from ad_afqmc_prototype.staging import HamInput, StagedInputs, TrialInput, dump
+from ad_afqmc_prototype.trial.rhf import RhfTrial, get_rdm1
+
+
+def _assert_named_sharding_spec(a: jax.Array, spec: P) -> None:
+    sharding = a.sharding
+    assert isinstance(sharding, NamedSharding)
+    assert sharding.spec == spec
 
 
 @pytest.mark.parametrize("n_per_dev", [4])
@@ -81,12 +98,10 @@ def test_block_runs_under_sharding(n_per_dev):
     state0_s = shard_prop_state(state0_u, mesh)
 
     def _assert_sharded_first_axis(a):
-        assert isinstance(a.sharding, NamedSharding)
-        assert a.sharding.spec == P("data")
+        _assert_named_sharding_spec(a, P("data"))
 
     def _assert_replicated(a):
-        assert isinstance(a.sharding, NamedSharding)
-        assert a.sharding.spec == P()
+        _assert_named_sharding_spec(a, P())
 
     for leaf in tree_util.tree_leaves(state0_s.walkers):
         _assert_sharded_first_axis(leaf)
@@ -205,10 +220,134 @@ def test_sr_sharded_matches_unsharded(n_per_dev):
     )
 
     # output should retain sharding
-    assert isinstance(w_s.sharding, NamedSharding)
-    assert w_s.sharding.spec == P("data")
-    assert isinstance(wt_s.sharding, NamedSharding)
-    assert wt_s.sharding.spec == P("data")
+    _assert_named_sharding_spec(w_s, P("data"))
+    _assert_named_sharding_spec(wt_s, P("data"))
+
+
+def test_hf_intermediates_infer_expected_data_model_sharding():
+    """Document current inferred layouts for HF-style intermediates on a 2D mesh."""
+
+    mesh = make_data_model_mesh(2, 2)
+
+    nwalk, norb, nocc, n_chol = 8, 6, 3, 12
+    key = jax.random.PRNGKey(123)
+    k_h1, k_chol, k_mo, k_w = jax.random.split(key, 4)
+
+    ham = HamChol(
+        h0=jnp.array(0.25, dtype=jnp.float64),
+        h1=jax.random.normal(k_h1, (norb, norb), dtype=jnp.float64),
+        chol=jax.random.normal(k_chol, (n_chol, norb, norb), dtype=jnp.float64),
+        basis="restricted",
+    )
+    trial = RhfTrial(mo_coeff=jax.random.normal(k_mo, (norb, nocc), dtype=jnp.float64))
+    walkers = jax.device_put(
+        jax.random.normal(k_w, (nwalk, norb, nocc), dtype=jnp.float64),
+        NamedSharding(mesh, P("data", None, None)),
+    )
+    key_s = jax.device_put(key, NamedSharding(mesh, P()))
+
+    ham = shard_ham_data(ham, mesh)
+
+    _assert_named_sharding_spec(ham.h0, P())
+    _assert_named_sharding_spec(ham.h1, P())
+    _assert_named_sharding_spec(ham.chol, P("model"))
+
+    prop_ctx = _build_prop_ctx(ham, get_rdm1(trial), dt=0.01)
+    meas_ctx = build_rhf_meas_ctx(ham, trial)
+
+    _assert_named_sharding_spec(prop_ctx.chol_flat, P("model"))
+    _assert_named_sharding_spec(prop_ctx.mf_shifts, P("model"))
+    _assert_named_sharding_spec(prop_ctx.exp_h1_half, P())
+    _assert_named_sharding_spec(prop_ctx.h0_prop, P())
+
+    _assert_named_sharding_spec(meas_ctx.rot_h1, P())
+    _assert_named_sharding_spec(meas_ctx.rot_chol, P("model"))
+    _assert_named_sharding_spec(meas_ctx.rot_chol_flat, P("model"))
+
+    @jax.jit
+    def probe(w, tr, rng_key):
+        cH = tr.mo_coeff.conj().T
+        fields = jax.random.normal(rng_key, (w.shape[0], n_chol))
+        ovlp_mat = jax.vmap(lambda walker: cH @ walker)(w)
+        return fields, ovlp_mat
+
+    fields, ovlp_mat = probe(walkers, trial, key_s)
+
+    # Random fields are currently inferred as replicated from a replicated key.
+    _assert_named_sharding_spec(fields, P())
+    # Walker/trial contractions keep the walker batch on the data axis.
+    _assert_named_sharding_spec(ovlp_mat, P("data", None, None))
+
+
+def test_hubbard_hamiltonian_rejects_model_axis_sharding():
+    mesh = make_data_model_mesh(2, 2)
+    ham = HamHubbard(h1=jnp.eye(4, dtype=jnp.float64), u=4.0)
+
+    with pytest.raises(ValueError, match="Cannot shard Hubbard Hamiltonian"):
+        shard_ham_data(ham, mesh)
+
+
+def test_shard_ham_data_pads_chol_to_model_divisible(capsys):
+    mesh = make_data_model_mesh(2, 2)
+    norb, n_chol = 4, 5
+    chol = np.arange(n_chol * norb * norb, dtype=np.float64).reshape(n_chol, norb, norb)
+    ham = HamChol(
+        h0=jnp.array(0.25, dtype=jnp.float64),
+        h1=jnp.eye(norb, dtype=jnp.float64),
+        chol=jnp.asarray(chol),
+        basis="restricted",
+    )
+
+    ham_s = shard_ham_data(ham, mesh)
+    out = capsys.readouterr().out
+
+    assert "padding chol from 5 to 6" in out
+    _assert_named_sharding_spec(ham_s.h0, P())
+    _assert_named_sharding_spec(ham_s.h1, P())
+    _assert_named_sharding_spec(ham_s.chol, P("model"))
+    assert ham_s.chol.shape == (6, norb, norb)
+
+    chol_s = np.asarray(jax.device_get(ham_s.chol))
+    np.testing.assert_allclose(chol_s[:n_chol], chol)
+    np.testing.assert_allclose(chol_s[n_chol], 0.0, atol=0.0)
+
+
+def test_setup_shards_h5_loaded_chol_from_host_memory(tmp_path):
+    mesh = make_data_model_mesh(2, 2)
+    norb, nocc, n_chol = 6, 3, 12
+    chol = np.arange(n_chol * norb * norb, dtype=np.float64).reshape(n_chol, norb, norb)
+    staged = StagedInputs(
+        ham=HamInput(
+            h0=0.25,
+            h1=np.eye(norb, dtype=np.float64),
+            chol=chol,
+            nelec=(nocc, nocc),
+            norb=norb,
+            chol_cut=1.0e-5,
+            norb_frozen=0,
+            source_kind="mf",
+            basis="restricted",
+        ),
+        trial=TrialInput(
+            kind="rhf",
+            data={"mo": np.eye(norb, dtype=np.float64)},
+            norb_frozen=0,
+            source_kind="mf",
+        ),
+        meta={"source_kind": "mf", "chol_cut": 1.0e-5},
+    )
+    path = tmp_path / "staged.h5"
+    dump(staged, path)
+
+    job = setup(path, mesh=mesh)
+
+    assert job.mesh is mesh
+    _assert_named_sharding_spec(job.ham_data.h0, P())
+    _assert_named_sharding_spec(job.ham_data.h1, P())
+    _assert_named_sharding_spec(job.ham_data.chol, P("model"))
+    assert job.ham_data.chol.shape == chol.shape
+    assert job.staged.ham.chol.shape == chol.shape
+    assert isinstance(job.staged.ham.chol, np.ndarray)
 
 
 if __name__ == "__main__":
