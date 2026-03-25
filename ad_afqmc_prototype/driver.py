@@ -15,7 +15,7 @@ from .core.ops import MeasOps, TrialOps
 from .core.system import System
 from .prop.blocks import BlockFn, MixedBlockFn
 from .prop.types import PropOps, PropState, QmcParamsBase, QmcParams, QmcParamsFp
-from .stat_utils import blocking_analysis_ratio, jackknife_ratios, rebin_observable, reject_outliers, pt2ccsd_blocking
+from .stat_utils import blocking_analysis_ratio, jackknife_ratios, rebin_observable, reject_outliers, pt2ccsd_blocking, clean_pt2ccsd
 from .walkers import stochastic_reconfiguration
 from .meas.pt2ccsd import get_init_pt2trial_energy
 
@@ -455,6 +455,7 @@ def run_mixed_qmc(
         trial_data     = trial_data,
         trial_meas_ops = trial_meas_ops, 
         trial_meas_ctx = trial_meas_ctx, 
+        params         = params,
         )
 
     if mesh is None or mesh.size == 1:
@@ -685,19 +686,32 @@ def run_mixed_qmc(
     # esmitate of pt2ccsd energy sample, biased 
     trial_block_e_sp = ham_data.h0 + trial_block_e0_sp \
         + trial_block_e1_sp - trial_block_t2_sp * trial_block_e0_sp
-    trial_data_clean, trial_keep_mask = reject_outliers(
-        jnp.column_stack((trial_block_e_sp, 
-                          trial_block_w_sp, 
-                          trial_block_t2_sp,
-                          trial_block_e0_sp,
-                          trial_block_e1_sp)),
-                          obs=0)
-    trial_block_e_sp = trial_data_clean[:, 0]
-    trial_block_w_sp = trial_data_clean[:, 1]
-    trial_block_t2_sp = trial_data_clean[:, 2]
-    trial_block_e0_sp = trial_data_clean[:, 3]
-    trial_block_e1_sp = trial_data_clean[:, 4]
-    print(f"\nRejected {trial_block_e_sp.shape[0] - guide_data_clean.shape[0]} trial outlier blocks.")
+    # trial_data_clean, trial_keep_mask = reject_outliers(
+    #     jnp.column_stack((trial_block_e_sp.real, 
+    #                       trial_block_w_sp, 
+    #                       trial_block_t2_sp,
+    #                       trial_block_e0_sp,
+    #                       trial_block_e1_sp)),
+    #                       obs=0)
+    # trial_block_e_sp = trial_data_clean[:, 0]
+    # trial_block_w_sp = trial_data_clean[:, 1]
+    # trial_block_t2_sp = trial_data_clean[:, 2]
+    # trial_block_e0_sp = trial_data_clean[:, 3]
+    # trial_block_e1_sp = trial_data_clean[:, 4]
+    print(f'Clean AFQMC/pt2CCSD Observation...')
+    (trial_block_w_sp_clean, 
+     trial_block_t2_sp_clean, 
+     trial_block_e0_sp_clean, 
+     trial_block_e1_sp_clean) = clean_pt2ccsd(
+                                        trial_block_e_sp.real, 
+                                        trial_block_w_sp, 
+                                        trial_block_t2_sp, 
+                                        trial_block_e0_sp, 
+                                        trial_block_e1_sp, 
+                                        zeta=20
+                                        )
+
+    print(f"\nRejected {len(trial_block_w_sp) - len(trial_block_w_sp_clean)} AFQMC/pt2CCSD outlier blocks.")
 
     print("\nFinal blocking analysis:")
     guide_stats = blocking_analysis_ratio(guide_block_e_sp, guide_block_w_sp, print_q=True)
@@ -705,11 +719,13 @@ def run_mixed_qmc(
 
     trial_e_mean, trial_e_err = pt2ccsd_blocking(
         ham_data.h0, 
-        trial_block_w_sp, 
-        trial_block_t2_sp,
-        trial_block_e0_sp, 
-        trial_block_e1_sp, 
+        trial_block_w_sp_clean, 
+        trial_block_t2_sp_clean,
+        trial_block_e0_sp_clean, 
+        trial_block_e1_sp_clean, 
         printQ=True)
+    
+    print(f'AFQMC/pt2CCSD energy = {trial_e_mean.real:.6f} +/- {trial_e_err.real:.6f} (1-sigma)')
 
     return MixedQmcResult(
         guide_mean_energy    = guide_e_mean,

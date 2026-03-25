@@ -964,8 +964,9 @@ def _stage_gcisd_input(obj: StagedMfOrCc) -> TrialInput:
     )
 
 def _stage_pt2ccsd_input(obj):
-    if obj.kind != "pt2ccsd":
-        raise ValueError(f"Unreachable: '{obj.kind}'.")
+    # TODO obj.kind is frozen... figure out how to assign more flexible trial
+    # if obj.kind != "pt2ccsd":
+    #     raise ValueError(f"Unreachable: '{obj.kind}'.")
     
     t1 = obj.t1
     t2 = obj.t2

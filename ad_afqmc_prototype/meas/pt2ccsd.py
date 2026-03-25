@@ -13,7 +13,7 @@ from ..ham.chol import HamChol #, slice_ham_level
 from ..trial.pt2ccsd import Pt2ccsdTrial
 from ..trial.pt2ccsd import overlap_r
 from .. import walkers as wk
-from ..prop.types import PropState
+from ..prop.types import PropState, QmcParams
 
 @dataclass(frozen=True)
 class Pt2ccsdMeasCfg:
@@ -161,7 +161,7 @@ def get_init_pt2trial_energy(
     trial_data: Pt2ccsdTrial, 
     trial_meas_ops: MeasOps, 
     trial_meas_ctx: Pt2ccsdMeasCtx,
-    params,
+    params: QmcParams,
     ):
 
     walker_0 = wk.take_walkers(init_state.walkers, jnp.array([0]))

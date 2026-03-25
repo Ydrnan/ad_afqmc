@@ -313,6 +313,25 @@ def rebin_observable(
     return num, denom
 
 
+def clean_pt2ccsd(ept_sp, wt_sp, t2_sp, e0_sp, e1_sp, zeta=20):
+    # print(f'Clean AFQMC/pt2CCSD Observation...')
+    d = jnp.abs(ept_sp-jnp.median(ept_sp))
+    d_med = jnp.median(d)
+    d_med = jnp.where(d_med == 0, 1e-10, d_med)
+    z = d/d_med
+    mask = z < zeta
+    print(f'the outliers block zeta {z[~mask]} | energy {ept_sp[~mask]} weight(real) {wt_sp.real[~mask]}')
+
+    wt_clean = wt_sp[mask]
+    t2_clean = t2_sp[mask]
+    e0_clean = e0_sp[mask]
+    e1_clean = e1_sp[mask]
+    # ept_clean = ept_sp[mask]
+
+    # print(f'remove outliers in AFQMC/pt2CCSD sampling  {len(wt_sp)-len(wt_clean)}')
+
+    return (wt_clean, t2_clean, e0_clean, e1_clean)
+
 def pt2ccsd_blocking(h0, weights, t2_sp, e0_sp, e1_sp, printQ=False):
     nsample = len(weights)
     max_size = nsample // 10
