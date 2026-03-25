@@ -85,7 +85,47 @@ def shard_first_axis(x: ArrayLike, mesh: Mesh) -> jax.Array:
 
 
 def shard_model_axis(x: ArrayLike, mesh: Mesh) -> jax.Array:
-    return jax.device_put(x, NamedSharding(mesh, P("model")))
+    sharding = NamedSharding(mesh, P("model"))
+
+    if isinstance(x, np.ndarray):
+        n_model = _mesh_axis_size(mesh, "model")
+        n_chol = int(x.shape[0])
+        remainder = n_chol % n_model
+        if remainder != 0:
+            padded_n_chol = n_chol + (n_model - remainder)
+            print(
+                f"[shard] padding chol from {n_chol} to {padded_n_chol} "
+                f"to shard evenly over n_model={n_model}.",
+                flush=True,
+            )
+
+            def _callback(index):
+                if index is None:
+                    raise ValueError("addressable shard index unexpectedly None")
+                head = index[0]
+                assert isinstance(head, slice)
+                start = 0 if head.start is None else int(head.start)
+                stop = int(head.stop)
+                if stop <= n_chol:
+                    return x[index]
+
+                shard = np.zeros((stop - start, *x.shape[1:]), dtype=x.dtype)
+                valid_stop = min(stop, n_chol)
+                if valid_stop > start:
+                    shard[: valid_stop - start] = x[start:valid_stop]
+                return shard
+
+            return jax.make_array_from_callback(
+                (padded_n_chol, *x.shape[1:]),
+                sharding,
+                _callback,
+                dtype=x.dtype,
+            )
+
+    n_model = _mesh_axis_size(mesh, "model")
+    if int(x.shape[0]) % n_model != 0:
+        x = _pad_for_model_axis(x, mesh)
+    return jax.device_put(x, sharding)
 
 
 def replicate(x: ArrayLike, mesh: Mesh) -> jax.Array:
@@ -102,13 +142,12 @@ def shard_ham_data(ham_data: THam, mesh: Mesh | None) -> THam:
         return ham_data
 
     if isinstance(ham_data, HamChol):
-        chol = _pad_for_model_axis(ham_data.chol, mesh)
         return cast(
             THam,
             HamChol(
                 h0=replicate(ham_data.h0, mesh),
                 h1=replicate(ham_data.h1, mesh),
-                chol=shard_model_axis(chol, mesh),
+                chol=shard_model_axis(ham_data.chol, mesh),
                 basis=ham_data.basis,
             ),
         )

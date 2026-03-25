@@ -312,6 +312,28 @@ def test_shard_ham_data_pads_chol_to_model_divisible(capsys):
     np.testing.assert_allclose(chol_s[n_chol], 0.0, atol=0.0)
 
 
+def test_shard_ham_data_pads_numpy_chol_without_mutating_source(capsys):
+    mesh = make_data_model_mesh(2, 2)
+    norb, n_chol = 4, 5
+    chol = np.arange(n_chol * norb * norb, dtype=np.float64).reshape(n_chol, norb, norb).copy()
+    ham = HamChol(
+        h0=jnp.array(0.25, dtype=jnp.float64),
+        h1=jnp.eye(norb, dtype=jnp.float64),
+        chol=chol,
+        basis="restricted",
+    )
+
+    ham_s = shard_ham_data(ham, mesh)
+    out = capsys.readouterr().out
+
+    assert "padding chol from 5 to 6" in out
+    assert chol.shape == (n_chol, norb, norb)
+    chol_s = np.asarray(jax.device_get(ham_s.chol))
+    assert ham_s.chol.shape == (6, norb, norb)
+    np.testing.assert_allclose(chol_s[:n_chol], chol)
+    np.testing.assert_allclose(chol_s[n_chol], 0.0, atol=0.0)
+
+
 def test_setup_shards_h5_loaded_chol_from_host_memory(tmp_path):
     mesh = make_data_model_mesh(2, 2)
     norb, nocc, n_chol = 6, 3, 12
