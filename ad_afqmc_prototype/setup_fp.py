@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Callable, Union
+from typing import Any, Callable, ClassVar, Union, cast
 
-import numpy as np
 from jax.sharding import Mesh
 
 from . import driver
@@ -12,8 +10,8 @@ from .core.system import System, WalkerKind
 from .ham.chol import HamChol
 from .prop.afqmc_fp import make_prop_ops_fp
 from .prop.blocks import block_fp as default_block
-from .prop.types import QmcParamsFp
-from .setup import Job, _filter_kwargs_for, _make_trial_bundle, _resolve_staged_and_ham_data
+from .prop.types import QmcParamsBase, QmcParamsFp
+from .setup import Job, _assemble_job, _make_dataclass_params
 from .staging import StagedInputs
 
 
@@ -28,11 +26,6 @@ def _make_params_fp(
     n_walkers: int | None = None,
     **params_kwargs: Any,
 ) -> QmcParamsFp:
-    base = params or QmcParamsFp()
-
-    if seed is None and params is None:
-        seed = int(np.random.randint(0, int(1e9)))
-
     explicit: dict[str, Any] = {}
     if n_blocks is not None:
         explicit["n_blocks"] = int(n_blocks)
@@ -40,19 +33,21 @@ def _make_params_fp(
         explicit["dt"] = float(dt)
     if n_walkers is not None:
         explicit["n_walkers"] = int(n_walkers)
-    if seed is not None:
-        explicit["seed"] = int(seed)
     if n_traj is not None:
         explicit["n_traj"] = int(n_traj)
     if ene0 is not None:
         explicit["ene0"] = float(ene0)
 
-    merged = dict(params_kwargs)
-    merged.update(explicit)
-
-    merged = _filter_kwargs_for(QmcParamsFp, merged)
-
-    return replace(base, **merged)
+    return cast(
+        QmcParamsFp,
+        _make_dataclass_params(
+            QmcParamsFp,
+            params=params,
+            seed=seed,
+            **params_kwargs,
+            **explicit,
+        ),
+    )
 
 
 def _make_prop_fp(
@@ -70,29 +65,28 @@ def _make_prop_fp(
     )
 
 
-@dataclass
+def _resolve_fp_walker_kind(ham: Any, walker_kind: WalkerKind | None) -> WalkerKind:
+    if walker_kind is not None:
+        return walker_kind
+
+    match ham.basis, ham.nelec[0] == ham.nelec[1]:
+        case "restricted", True:
+            return "restricted"
+        case "restricted", False:
+            return "unrestricted"
+        case "generalized", _:
+            return "generalized"
+
+    raise ValueError(f"Unsupported ham.basis: {ham.basis!r}")
+
+
 class JobFp(Job):
     """
     A fully assembled FP-AFQMC run bundle.
     """
 
-    def kernel(self, **driver_kwargs: Any):
-        """
-        Run FP-AFQMC energy driver.
-        Extra kwargs are forwarded to driver.run_qmc_energy_fp (e.g. state=..., meas_ctx=...).
-        """
-        assert isinstance(self.params, QmcParamsFp)
-        return driver.run_qmc_energy_fp(
-            sys=self.sys,
-            params=self.params,
-            ham_data=self.ham_data,
-            trial_ops=self.trial_ops,
-            trial_data=self.trial_data,
-            meas_ops=self.meas_ops,
-            prop_ops=self.prop_ops,
-            block_fn=self.block_fn,
-            **driver_kwargs,
-        )
+    params_cls: ClassVar[type[QmcParamsBase]] = QmcParamsFp
+    driver_fn: ClassVar[Callable[..., Any]] = staticmethod(driver.run_qmc_energy_fp)
 
 
 def setup_fp(
@@ -135,63 +129,30 @@ def setup_fp(
         job = setup_fp(staged, walker_kind="restricted", mixed_precision=False, params=myparams)
         job.kernel()
     """
-    staged, ham_data = _resolve_staged_and_ham_data(
-        obj_or_staged,
-        norb_frozen=norb_frozen,
-        chol_cut=chol_cut,
-        cache=cache,
-        overwrite=overwrite,
-        verbose=verbose,
-        mesh=mesh,
-    )
-    ham = staged.ham
-
-    match walker_kind, ham.basis, ham.nelec[0] == ham.nelec[1]:
-        case None, "restricted", True:
-            walker_kind = "restricted"
-        case None, "restricted", False:
-            walker_kind = "unrestricted"
-        case None, "generalized", _:
-            walker_kind = "generalized"
-
-    sys = System(norb=int(ham.norb), nelec=ham.nelec, walker_kind=walker_kind)
-
-    if params_kwargs is None:
-        params_kwargs = {}
-    qmc_params = _make_params_fp(
-        params=params,
-        **params_kwargs,
-    )
-
-    if trial_data is None or trial_ops is None or meas_ops is None:
-        td, to, mo = _make_trial_bundle(sys, staged, mixed_precision)
-        trial_data = td if trial_data is None else trial_data
-        trial_ops = to if trial_ops is None else trial_ops
-        meas_ops = mo if meas_ops is None else meas_ops
-
-    if prop_ops is None:
-        if prop_kwargs is None:
-            prop_kwargs = {}
-        prop_ops = _make_prop_fp(
-            ham_data,
-            sys.walker_kind,
-            sys=sys,
+    return cast(
+        JobFp,
+        _assemble_job(
+            obj_or_staged,
+            norb_frozen=norb_frozen,
+            chol_cut=chol_cut,
+            cache=cache,
+            overwrite=overwrite,
+            verbose=verbose,
+            walker_kind=walker_kind,
+            mesh=mesh,
             mixed_precision=mixed_precision,
-            **prop_kwargs,
-        )
-
-    if block_fn is None:
-        block_fn = default_block
-
-    return JobFp(
-        staged=staged,
-        sys=sys,
-        params=qmc_params,
-        ham_data=ham_data,
-        trial_data=trial_data,
-        trial_ops=trial_ops,
-        meas_ops=meas_ops,
-        prop_ops=prop_ops,
-        block_fn=block_fn,
-        mesh=mesh,
+            params=params,
+            trial_data=trial_data,
+            trial_ops=trial_ops,
+            meas_ops=meas_ops,
+            prop_ops=prop_ops,
+            block_fn=block_fn,
+            params_kwargs=params_kwargs,
+            prop_kwargs=prop_kwargs,
+            params_builder=_make_params_fp,
+            prop_builder=_make_prop_fp,
+            default_block_fn=default_block,
+            job_cls=JobFp,
+            walker_kind_resolver=_resolve_fp_walker_kind,
+        ),
     )

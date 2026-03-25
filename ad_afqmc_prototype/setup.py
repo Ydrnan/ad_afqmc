@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Callable, Union
+from typing import Any, Callable, ClassVar, Union, cast
 
 import jax.numpy as jnp
 import numpy as np
@@ -31,6 +31,27 @@ def _filter_kwargs_for(callable_obj: Any, kwargs: dict[str, Any]) -> dict[str, A
     return {k: v for k, v in kwargs.items() if k in params}
 
 
+def _make_dataclass_params(
+    params_type: type[QmcParamsBase],
+    *,
+    params: QmcParamsBase | None = None,
+    seed: int | None = None,
+    **params_kwargs: Any,
+) -> QmcParamsBase:
+    base = params or params_type()
+
+    if seed is None and params is None:
+        seed = int(np.random.randint(0, int(1e9)))
+
+    merged = dict(params_kwargs)
+    if seed is not None:
+        merged["seed"] = int(seed)
+
+    merged = _filter_kwargs_for(params_type, merged)
+
+    return replace(base, **merged)
+
+
 def _make_params(
     *,
     params: QmcParams | None = None,
@@ -41,11 +62,6 @@ def _make_params(
     n_walkers: int | None = None,
     **params_kwargs: Any,
 ) -> QmcParams:
-    base = params or QmcParams()
-
-    if seed is None and params is None:
-        seed = int(np.random.randint(0, int(1e9)))
-
     explicit: dict[str, Any] = {}
     if n_eql_blocks is not None:
         explicit["n_eql_blocks"] = int(n_eql_blocks)
@@ -55,20 +71,22 @@ def _make_params(
         explicit["dt"] = float(dt)
     if n_walkers is not None:
         explicit["n_walkers"] = int(n_walkers)
-    if seed is not None:
-        explicit["seed"] = int(seed)
-
-    merged = dict(params_kwargs)
-    merged.update(explicit)
-
-    merged = _filter_kwargs_for(QmcParams, merged)
-
-    return replace(base, **merged)
+    return cast(
+        QmcParams,
+        _make_dataclass_params(
+            QmcParams,
+            params=params,
+            seed=seed,
+            **params_kwargs,
+            **explicit,
+        ),
+    )
 
 
 def _make_prop(
     ham_data: HamChol,
     walker_kind: str,
+    sys: System | None = None,
     *,
     mixed_precision: bool,
 ) -> Any:
@@ -195,6 +213,12 @@ def _make_trial_bundle(
     raise ValueError(f"Unsupported TrialInput.kind: {tr.kind!r}")
 
 
+def _resolve_default_walker_kind(ham: Any, walker_kind: WalkerKind | None) -> WalkerKind:
+    if walker_kind is None:
+        return cast(WalkerKind, ham.basis)
+    return walker_kind
+
+
 @dataclass
 class Job:
     """
@@ -212,14 +236,17 @@ class Job:
     block_fn: Callable[..., Any]
     mesh: Mesh | None = None
 
+    params_cls: ClassVar[type[QmcParamsBase]] = QmcParams
+    driver_fn: ClassVar[Callable[..., Any]] = staticmethod(driver.run_qmc_energy)
+
     def kernel(self, **driver_kwargs: Any):
         """
         Run AFQMC energy driver.
         Extra kwargs are forwarded to driver.run_qmc_energy (e.g. state=..., meas_ctx=...).
         """
-        assert isinstance(self.params, QmcParams)
+        assert isinstance(self.params, self.params_cls)
         driver_kwargs.setdefault("mesh", self.mesh)
-        return driver.run_qmc_energy(
+        return self.driver_fn(
             sys=self.sys,
             params=self.params,
             ham_data=self.ham_data,
@@ -230,6 +257,79 @@ class Job:
             block_fn=self.block_fn,
             **driver_kwargs,
         )
+
+
+def _assemble_job(
+    obj_or_staged: Union[Any, StagedInputs, str, Path],
+    *,
+    norb_frozen: int | None = None,
+    chol_cut: float = 1e-5,
+    cache: Union[str, Path] | None = None,
+    overwrite: bool = False,
+    verbose: bool = False,
+    walker_kind: WalkerKind | None = None,
+    mesh: Mesh | None = None,
+    mixed_precision: bool = True,
+    params: QmcParamsBase | None = None,
+    trial_data: Any = None,
+    trial_ops: Any = None,
+    meas_ops: Any = None,
+    prop_ops: Any = None,
+    block_fn: Callable[..., Any] | None = None,
+    params_kwargs: dict[str, Any] | None = None,
+    prop_kwargs: dict[str, Any] | None = None,
+    params_builder: Callable[..., QmcParamsBase],
+    prop_builder: Callable[..., Any],
+    default_block_fn: Callable[..., Any],
+    job_cls: type[Job],
+    walker_kind_resolver: Callable[[Any, WalkerKind | None], WalkerKind],
+) -> Job:
+    staged, ham_data = _resolve_staged_and_ham_data(
+        obj_or_staged,
+        norb_frozen=norb_frozen,
+        chol_cut=chol_cut,
+        cache=cache,
+        overwrite=overwrite,
+        verbose=verbose,
+        mesh=mesh,
+    )
+    ham = staged.ham
+
+    resolved_walker_kind = walker_kind_resolver(ham, walker_kind)
+    sys = System(norb=int(ham.norb), nelec=ham.nelec, walker_kind=resolved_walker_kind)
+
+    qmc_params = params_builder(params=params, **(params_kwargs or {}))
+
+    if trial_data is None or trial_ops is None or meas_ops is None:
+        td, to, mo = _make_trial_bundle(sys, staged, mixed_precision)
+        trial_data = td if trial_data is None else trial_data
+        trial_ops = to if trial_ops is None else trial_ops
+        meas_ops = mo if meas_ops is None else meas_ops
+
+    if prop_ops is None:
+        prop_ops = prop_builder(
+            ham_data,
+            sys.walker_kind,
+            sys=sys,
+            mixed_precision=mixed_precision,
+            **(prop_kwargs or {}),
+        )
+
+    if block_fn is None:
+        block_fn = default_block_fn
+
+    return job_cls(
+        staged=staged,
+        sys=sys,
+        params=qmc_params,
+        ham_data=ham_data,
+        trial_data=trial_data,
+        trial_ops=trial_ops,
+        meas_ops=meas_ops,
+        prop_ops=prop_ops,
+        block_fn=block_fn,
+        mesh=mesh,
+    )
 
 
 def setup(
@@ -272,57 +372,27 @@ def setup(
         job = setup(staged, walker_kind="restricted", mixed_precision=False, params=myparams)
         job.kernel()
     """
-    staged, ham_data = _resolve_staged_and_ham_data(
+    return _assemble_job(
         obj_or_staged,
         norb_frozen=norb_frozen,
         chol_cut=chol_cut,
         cache=cache,
         overwrite=overwrite,
         verbose=verbose,
+        walker_kind=walker_kind,
         mesh=mesh,
-    )
-    ham = staged.ham
-
-    if walker_kind is None:
-        walker_kind = ham.basis
-
-    sys = System(norb=int(ham.norb), nelec=ham.nelec, walker_kind=walker_kind)
-
-    if params_kwargs is None:
-        params_kwargs = {}
-    qmc_params = _make_params(
+        mixed_precision=mixed_precision,
         params=params,
-        **params_kwargs,
-    )
-
-    if trial_data is None or trial_ops is None or meas_ops is None:
-        td, to, mo = _make_trial_bundle(sys, staged, mixed_precision)
-        trial_data = td if trial_data is None else trial_data
-        trial_ops = to if trial_ops is None else trial_ops
-        meas_ops = mo if meas_ops is None else meas_ops
-
-    if prop_ops is None:
-        if prop_kwargs is None:
-            prop_kwargs = {}
-        prop_ops = _make_prop(
-            ham_data,
-            sys.walker_kind,
-            mixed_precision=mixed_precision,
-            **prop_kwargs,
-        )
-
-    if block_fn is None:
-        block_fn = default_block
-
-    return Job(
-        staged=staged,
-        sys=sys,
-        params=qmc_params,
-        ham_data=ham_data,
         trial_data=trial_data,
         trial_ops=trial_ops,
         meas_ops=meas_ops,
         prop_ops=prop_ops,
         block_fn=block_fn,
-        mesh=mesh,
+        params_kwargs=params_kwargs,
+        prop_kwargs=prop_kwargs,
+        params_builder=_make_params,
+        prop_builder=_make_prop,
+        default_block_fn=default_block,
+        job_cls=Job,
+        walker_kind_resolver=_resolve_default_walker_kind,
     )

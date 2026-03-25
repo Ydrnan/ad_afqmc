@@ -7,7 +7,7 @@ configure_once()
 import dataclasses
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Union
+from typing import Any, Callable, Union, cast
 
 print = partial(print, flush=True)
 
@@ -67,6 +67,10 @@ class Afqmc:
         Number of chunks if params is not provided, by default 1
     """
 
+    params_cls = QmcParams
+    job_cls = Job
+    setup_fn = staticmethod(setup_job)
+
     def __init__(
         self,
         mf_or_cc: Any,
@@ -101,13 +105,14 @@ class Afqmc:
         self.mixed_precision = True
 
         self.params: QmcParamsBase | None = None  # resolved in kernel
-        _defaults = QmcParams()
-        self.dt = _defaults.dt if dt is None else dt
-        self.n_walkers = _defaults.n_walkers if n_walkers is None else n_walkers
-        self.n_blocks = _defaults.n_blocks if n_blocks is None else n_blocks
-        self.n_eql_blocks = _defaults.n_eql_blocks if n_eql_blocks is None else n_eql_blocks
-        self.seed = _defaults.seed if seed is None else seed
-        self.n_chunks = _defaults.n_chunks if n_chunks is None else n_chunks
+        defaults = self.params_cls()
+        self.dt = defaults.dt if dt is None else dt
+        self.n_walkers = defaults.n_walkers if n_walkers is None else n_walkers
+        self.n_blocks = defaults.n_blocks if n_blocks is None else n_blocks
+        self.seed = defaults.seed if seed is None else seed
+        self.n_chunks = defaults.n_chunks if n_chunks is None else n_chunks
+        if hasattr(defaults, "n_eql_blocks"):
+            self.n_eql_blocks = defaults.n_eql_blocks if n_eql_blocks is None else n_eql_blocks
 
         self._staged: StagedInputs | None = None
         self._job: Job | None = None
@@ -126,19 +131,15 @@ class Afqmc:
     def job(self) -> Job | None:
         return self._job
 
-    def _dump_params(self, params: QmcParams) -> None:
-        assert isinstance(
-            params, QmcParams
-        ), f"Expected a QmcParams instance, but got {type(params)}"
+    def _dump_params(self, params: QmcParamsBase) -> None:
         fields = dataclasses.fields(params)
         width = len(max(fields, key=lambda f: len(f.name)).name)
-        print(" QmcParams:")
+        print(f" {type(params).__name__}:")
         for field in fields:
             print(f"  {field.name:<{width}} = {getattr(params, field.name)}")
         print("")
 
     def dump_flags(self, job) -> None:
-        assert isinstance(job, Job), f"Expected a Job instance, but got {type(job)}"
         self._dump_flags_helper(job)
 
     def _dump_flags_helper(self, job) -> None:
@@ -211,27 +212,32 @@ class Afqmc:
     #    self._job = None
     #    return staged
 
-    def _make_params(self) -> QmcParams:
+    def _validate_params(self, params: QmcParamsBase) -> QmcParamsBase:
+        return params
+
+    def _make_params(self) -> QmcParamsBase:
         """
         Create QmcParams if user didn't provide one.
         """
-        if self.params is not None and isinstance(self.params, QmcParams):
+        params_cls = self.params_cls
+
+        if self.params is not None and isinstance(self.params, params_cls):
             params = self.params
-        elif self.params is not None and not isinstance(self.params, QmcParams):
+        elif self.params is not None and not isinstance(self.params, params_cls):
             raise TypeError(
-                f"Expected type QmcParams for self.params, but received '{type(self.params)}'"
+                f"Expected type {params_cls.__name__} for self.params, but received '{type(self.params)}'"
             )
         else:
             kwargs: dict[str, Any] = {}
-            for field in dataclasses.fields(QmcParams):
+            for field in dataclasses.fields(params_cls):
                 if hasattr(self, field.name):
                     val = getattr(self, field.name)
                     if val is not None:
                         kwargs[field.name] = val
 
-            params = QmcParams(**kwargs)
+            params = params_cls(**kwargs)
 
-        return params
+        return self._validate_params(params)
 
     def build_job(
         self,
@@ -255,12 +261,12 @@ class Afqmc:
         qmc_params = self._make_params()
         self.params = qmc_params
 
-        job = setup_job(
+        job = self.setup_fn(
             staged,
             walker_kind=self.walker_kind,
             mesh=mesh,
             mixed_precision=self.mixed_precision,
-            params=qmc_params,
+            params=cast(Any, qmc_params),
             trial_data=trial_data,
             trial_ops=trial_ops,
             meas_ops=meas_ops,
@@ -271,7 +277,10 @@ class Afqmc:
         self._job = job
         return job
 
-    def kernel(self, **driver_kwargs: Any) -> tuple[float, float]:
+    def _coerce_result(self, value: Any) -> Any:
+        return float(value)
+
+    def kernel(self, **driver_kwargs: Any) -> tuple[Any, Any]:
         """
         Runs AFQMC, returns (e_tot, e_err), and stores samples.
         """
@@ -283,8 +292,8 @@ class Afqmc:
         out = job.kernel(**driver_kwargs)
 
         if isinstance(out, tuple) and len(out) >= 2:
-            e_tot = float(out[0])
-            e_err = float(out[1])
+            e_tot = self._coerce_result(out[0])
+            e_err = self._coerce_result(out[1])
             block_e = out[2] if len(out) > 2 else None
             block_w = out[3] if len(out) > 3 else None
         else:
@@ -297,6 +306,22 @@ class Afqmc:
         return e_tot, e_err
 
     run = kernel
+
+    @classmethod
+    def _from_staged_common(cls, path: Union[str, Path], **kwargs: Any):
+        staged = load_staged(path)
+        meta = staged.meta
+
+        af = cls(
+            None,
+            norb_frozen=meta["norb_frozen"],
+            chol_cut=meta["chol_cut"],
+            **kwargs,
+        )
+        af._staged = staged
+        af.source_kind = meta["source_kind"]
+        af._cache_key = af._key()
+        return af
 
     @classmethod
     def from_staged(
@@ -319,19 +344,8 @@ class Afqmc:
         path: str, pathlib.Path
         The other parameters are identical to the ones in the AFQMC class.
         """
-        staged = load_staged(path)
-        meta = staged.meta
-
-        mf_or_cc = None
-
-        # Cannot be changed as the input has been staged
-        norb_frozen = meta["norb_frozen"]
-        chol_cut = meta["chol_cut"]
-
-        af = Afqmc(
-            mf_or_cc,
-            norb_frozen=norb_frozen,
-            chol_cut=chol_cut,
+        return cls._from_staged_common(
+            path,
             n_eql_blocks=n_eql_blocks,
             n_blocks=n_blocks,
             seed=seed,
@@ -340,14 +354,12 @@ class Afqmc:
             n_chunks=n_chunks,
         )
 
-        af._staged = staged
-        af.source_kind = meta["source_kind"]
-        af._cache_key = af._key()
-
-        return af
-
 
 class AfqmcFp(Afqmc):
+    params_cls = QmcParamsFp
+    job_cls = JobFp
+    setup_fn = staticmethod(setup_job_fp)
+
     def __init__(
         self,
         mf_or_cc: Any,
@@ -376,113 +388,23 @@ class AfqmcFp(Afqmc):
             n_walkers=n_walkers,
             n_chunks=n_chunks,
         )
-        self.n_prop_steps = n_prop_steps
-        self.n_traj = n_traj
+        defaults = self.params_cls()
+        self.n_prop_steps = defaults.n_prop_steps if n_prop_steps is None else n_prop_steps
+        self.n_traj = defaults.n_traj if n_traj is None else n_traj
         self.ene0 = ene0
 
-    def _dump_params(self, params: QmcParamsFp) -> None:
-        assert isinstance(
-            params, QmcParamsFp
-        ), f"Expected a QmcParamsFp instance, but got {type(params)}"
-        fields = dataclasses.fields(params)
-        width = len(max(fields, key=lambda f: len(f.name)).name)
-        print(" QmcParamsFp:")
-        for field in fields:
-            print(f"  {field.name:<{width}} = {getattr(params, field.name)}")
-        print("")
-
-    def dump_flags(self, job) -> None:
-        assert isinstance(job, JobFp), f"Expected a JobFp instance, but got {type(job)}"
-        self._dump_flags_helper(job)
-
-    def _make_params(self) -> QmcParamsFp:
-        """
-        Create QmcParamsFp if user didn't provide one.
-        """
-        if self.params is not None and isinstance(self.params, QmcParamsFp):
-            params = self.params
-        elif self.params is not None and not isinstance(self.params, QmcParamsFp):
-            raise TypeError(
-                f"Expected type QmcParamsFp for self.params, but received '{type(self.params)}'"
-            )
-        else:
-            kwargs: dict[str, Any] = {}
-            for field in dataclasses.fields(QmcParamsFp):
-                if hasattr(self, field.name):
-                    val = getattr(self, field.name)
-                    if val is not None:
-                        kwargs[field.name] = val
-
-            params = QmcParamsFp(**kwargs)
-
+    def _validate_params(self, params: QmcParamsBase) -> QmcParamsBase:
+        assert isinstance(params, QmcParamsFp)
         if params.ene0 is None:
             raise ValueError(
                 "The value of the parameter 'ene0' must be set, typically with SCF or CC energy."
             )
-
         return params
 
-    def build_job(
-        self,
-        *,
-        force: bool = False,
-        trial_data: Any = None,
-        trial_ops: Any = None,
-        meas_ops: Any = None,
-        prop_ops: Any = None,
-        block_fn: Callable[..., Any] | None = None,
-        prop_kwargs: dict[str, Any] | None = None,
-        mesh: Mesh | None = None,
-    ) -> JobFp:
-        """
-        Assemble a runnable Job from current settings and staged inputs.
-        """
-        if self._job is not None and not force and (mesh is None or self._job.mesh is mesh):
-            assert isinstance(self._job, JobFp)
-            return self._job
+    def _coerce_result(self, value: Any) -> Any:
+        return value
 
-        staged = self.stage()
-        qmc_params = self._make_params()
-        self.params = qmc_params
-
-        job = setup_job_fp(
-            staged,
-            walker_kind=self.walker_kind,
-            mesh=mesh,
-            mixed_precision=self.mixed_precision,
-            params=qmc_params,
-            trial_data=trial_data,
-            trial_ops=trial_ops,
-            meas_ops=meas_ops,
-            prop_ops=prop_ops,
-            block_fn=block_fn,
-            prop_kwargs=prop_kwargs,
-        )
-        self._job = job
-        return job
-
-    def kernel(self, **driver_kwargs: Any):
-        print(banner_afqmc())
-        mesh = driver_kwargs.get("mesh")
-        job = self.build_job(mesh=mesh)
-        self.dump_flags(job)
-        out = job.kernel(**driver_kwargs)
-
-        if isinstance(out, tuple) and len(out) >= 2:
-            e_tot = out[0]
-            e_err = out[1]
-            block_e = out[2] if len(out) > 2 else None
-            block_w = out[3] if len(out) > 3 else None
-        else:
-            raise TypeError("Unexpected return from Job.kernel(), expected tuple output.")
-
-        self.e_tot = e_tot
-        self.e_err = e_err
-        self.block_energies = block_e
-        self.block_weights = block_w
-        return e_tot, e_err
-
-    run_fp = kernel
+    run_fp = Afqmc.kernel
 
     @classmethod
     def from_staged(
@@ -505,19 +427,8 @@ class AfqmcFp(Afqmc):
         path: str, pathlib.Path
         The other parameters are identical to the ones in the AFQMC class.
         """
-        staged = load_staged(path)
-        meta = staged.meta
-
-        mf_or_cc = None
-
-        # Cannot be changed as the input has been staged
-        norb_frozen = meta["norb_frozen"]
-        chol_cut = meta["chol_cut"]
-
-        af = AfqmcFp(
-            mf_or_cc,
-            norb_frozen=norb_frozen,
-            chol_cut=chol_cut,
+        return cls._from_staged_common(
+            path,
             n_blocks=n_blocks,
             seed=seed,
             dt=dt,
@@ -525,12 +436,6 @@ class AfqmcFp(Afqmc):
             n_walkers=n_walkers,
             n_chunks=n_chunks,
         )
-
-        af._staged = staged
-        af.source_kind = meta["source_kind"]
-        af._cache_key = af._key()
-
-        return af
 
 
 # Backward-compatible aliases

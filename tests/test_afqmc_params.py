@@ -1,7 +1,7 @@
 import pytest
 
-from ad_afqmc_prototype.afqmc import Afqmc
-from ad_afqmc_prototype.prop.types import QmcParams
+from ad_afqmc_prototype.afqmc import Afqmc, AfqmcFp
+from ad_afqmc_prototype.prop.types import QmcParams, QmcParamsFp
 
 
 class _DummyMF:
@@ -77,4 +77,23 @@ def test_afqmc_make_params_rejects_wrong_type():
     af = Afqmc(DUMMY_MF)
     af.params = "not a params"  # type: ignore
     with pytest.raises(TypeError, match="Expected type QmcParams"):
+        af._make_params()
+
+
+def test_afqmcfp_defaults_match_qmc_params_fp():
+    af = AfqmcFp(DUMMY_MF)
+    defaults = QmcParamsFp()
+    assert af.dt == defaults.dt
+    assert af.n_walkers == defaults.n_walkers
+    assert af.n_blocks == defaults.n_blocks
+    assert af.n_prop_steps == defaults.n_prop_steps
+    assert isinstance(af.seed, int)
+    assert af.n_chunks == defaults.n_chunks
+    assert af.n_traj == defaults.n_traj
+    assert af.ene0 is None
+
+
+def test_afqmcfp_make_params_requires_ene0():
+    af = AfqmcFp(DUMMY_MF)
+    with pytest.raises(ValueError, match="ene0"):
         af._make_params()
