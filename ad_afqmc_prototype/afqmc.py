@@ -358,6 +358,7 @@ class AfqmcFp(Afqmc):
         n_blocks: int | None = None,
         seed: int | None = None,
         dt: float | None = None,
+        n_prop_steps: int | None = None,
         n_walkers: int | None = None,
         n_chunks: int = 1,
         ene0: float | None = None,
@@ -375,6 +376,7 @@ class AfqmcFp(Afqmc):
             n_walkers=n_walkers,
             n_chunks=n_chunks,
         )
+        self.n_prop_steps = n_prop_steps
         self.n_traj = n_traj
         self.ene0 = ene0
 
@@ -490,6 +492,7 @@ class AfqmcFp(Afqmc):
         n_blocks: int | None = None,
         seed: int | None = None,
         dt: float | None = None,
+        n_prop_steps: int | None = None,
         n_walkers: int | None = None,
         n_chunks: int = 1,
     ) -> AfqmcFp:
@@ -518,6 +521,7 @@ class AfqmcFp(Afqmc):
             n_blocks=n_blocks,
             seed=seed,
             dt=dt,
+            n_prop_steps=n_prop_steps,
             n_walkers=n_walkers,
             n_chunks=n_chunks,
         )
