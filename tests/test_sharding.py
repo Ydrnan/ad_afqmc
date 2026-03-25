@@ -31,7 +31,6 @@ from ad_afqmc_prototype.sharding import (
     make_data_model_mesh,
     shard_ham_data,
     shard_prop_state,
-    shard_runtime_inputs,
 )
 from ad_afqmc_prototype.staging import HamInput, StagedInputs, TrialInput, dump
 from ad_afqmc_prototype.trial.rhf import RhfTrial, get_rdm1
@@ -247,12 +246,11 @@ def test_hf_intermediates_infer_expected_data_model_sharding():
     )
     key_s = jax.device_put(key, NamedSharding(mesh, P()))
 
-    ham, trial = shard_runtime_inputs(ham, trial, mesh)
+    ham = shard_ham_data(ham, mesh)
 
     _assert_named_sharding_spec(ham.h0, P())
     _assert_named_sharding_spec(ham.h1, P())
     _assert_named_sharding_spec(ham.chol, P("model"))
-    _assert_named_sharding_spec(trial.mo_coeff, P())
 
     prop_ctx = _build_prop_ctx(ham, get_rdm1(trial), dt=0.01)
     meas_ctx = build_rhf_meas_ctx(ham, trial)
@@ -286,7 +284,7 @@ def test_hubbard_hamiltonian_rejects_model_axis_sharding():
     ham = HamHubbard(h1=jnp.eye(4, dtype=jnp.float64), u=4.0)
 
     with pytest.raises(ValueError, match="Cannot shard Hubbard Hamiltonian"):
-        shard_runtime_inputs(ham, trial_data=None, mesh=mesh)
+        shard_ham_data(ham, mesh)
 
 
 def test_shard_ham_data_pads_chol_to_model_divisible(capsys):

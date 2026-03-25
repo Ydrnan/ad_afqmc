@@ -13,12 +13,8 @@ from jax.sharding import PartitionSpec as P
 from .ham.chol import HamChol
 from .ham.hubbard import HamHubbard
 from .prop.types import PropState
-from .trial.ghf import GhfTrial
-from .trial.rhf import RhfTrial
-from .trial.uhf import UhfTrial
 
 THam = TypeVar("THam")
-TTrial = TypeVar("TTrial")
 ArrayLike = jax.Array | NDArray[np.generic]
 
 
@@ -121,41 +117,6 @@ def shard_ham_data(ham_data: THam, mesh: Mesh | None) -> THam:
         raise ValueError("Cannot shard Hubbard Hamiltonian, don't use model axis sharding.")
 
     return ham_data
-
-
-def shard_hf_trial_data(trial_data: TTrial, mesh: Mesh | None) -> TTrial:
-    """
-    For HF like trial objects we keep MO coefficients replicated.
-
-    Unsupported trial data is left unchanged for now.
-    """
-    if mesh is None or mesh.size == 1 or not has_model_axis(mesh):
-        return trial_data
-
-    if isinstance(trial_data, RhfTrial):
-        return cast(TTrial, RhfTrial(mo_coeff=replicate(trial_data.mo_coeff, mesh)))
-
-    if isinstance(trial_data, UhfTrial):
-        return cast(
-            TTrial,
-            UhfTrial(
-                mo_coeff_a=replicate(trial_data.mo_coeff_a, mesh),
-                mo_coeff_b=replicate(trial_data.mo_coeff_b, mesh),
-            ),
-        )
-
-    if isinstance(trial_data, GhfTrial):
-        return cast(TTrial, GhfTrial(mo_coeff=replicate(trial_data.mo_coeff, mesh)))
-
-    return trial_data
-
-
-def shard_runtime_inputs(
-    ham_data: THam, trial_data: TTrial, mesh: Mesh | None
-) -> tuple[THam, TTrial]:
-    return shard_ham_data(ham_data, mesh), shard_hf_trial_data(trial_data, mesh)
-
-
 def shard_prop_state(state: PropState, mesh: Mesh | None) -> PropState:
     """
     Shard only (n_walkers,...) leaves, keep global scalars replicated.
