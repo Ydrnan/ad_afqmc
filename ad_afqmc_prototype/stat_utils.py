@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Dict, Iterable, cast
 
 import numpy as np
+import jax.numpy as jnp
 
 if TYPE_CHECKING:
     import jax
@@ -310,3 +311,64 @@ def rebin_observable(
     denom = w.sum(axis=1)  # (n_groups,)
     num = (w.reshape(w_shape) * o).sum(axis=1)  # (n_groups, *obs_shape)
     return num, denom
+
+
+def pt2ccsd_blocking(h0, weights, t2_sp, e0_sp, e1_sp, printQ=False):
+    nsample = len(weights)
+    max_size = nsample // 10
+    block_errs = [] # jnp.zeros(max_size)
+    if printQ:
+        print('Performing Blocking Analysis for AFQMC/pt2CCSD energy...')
+        print('blk_SZ  Nblk  Nsmp  Energy  Error')
+    for i, block_size in enumerate(range(1,max_size+1)):
+        n_blocks = nsample // block_size
+
+        wt_truncated = weights[:n_blocks * block_size]
+        # t1_truncated = t1_clean[:n_blocks * block_size]
+        t2_truncated = t2_sp[:n_blocks * block_size]
+        e0_truncated = e0_sp[:n_blocks * block_size]
+        e1_truncated = e1_sp[:n_blocks * block_size]
+
+        # wt_t1 = wt_truncated * t1_truncated
+        wt_t2 = wt_truncated * t2_truncated
+        wt_e0 = wt_truncated * e0_truncated
+        wt_e1 = wt_truncated * e1_truncated
+
+        wt = wt_truncated.reshape(n_blocks, block_size)
+        # wt_t1 = wt_t1.reshape(n_blocks, block_size)
+        wt_t2 = wt_t2.reshape(n_blocks, block_size)
+        wt_e0 = wt_e0.reshape(n_blocks, block_size)
+        wt_e1 = wt_e1.reshape(n_blocks, block_size)
+
+        block_wt = jnp.sum(wt, axis=1)
+        # block_t1 = np.sum(wt_t1, axis=1)# / block_wt
+        block_t2 = jnp.sum(wt_t2, axis=1) / block_wt
+        block_e0 = jnp.sum(wt_e0, axis=1) / block_wt
+        block_e1 = jnp.sum(wt_e1, axis=1) / block_wt
+
+        # the block energy is to see that the blocking gets rid of bias but don't use it
+        block_energy = (h0 + block_e0 + block_e1 - block_t2*block_e0).real
+        block_mean = jnp.mean(block_energy)
+        block_error = jnp.std(block_energy, ddof=1) / np.sqrt(n_blocks)
+        if printQ:
+            print(f' {block_size:3d}  {n_blocks:3d}  {block_size*n_blocks:4d}  {block_mean:.6f}  {block_error:.6f}')
+        # block_size[i] = b
+        # energy[i] = block_mean
+        block_errs.append(block_error)
+    
+    wt_avg = jnp.mean(weights)
+    t2_avg = jnp.mean(weights * t2_sp) / wt_avg
+    e0_avg = jnp.mean(weights * e0_sp) / wt_avg
+    e1_avg = jnp.mean(weights * e1_sp) / wt_avg
+    energy_avg = h0 + e0_avg + e1_avg - t2_avg*e0_avg
+
+    find_err = False
+    for i, err in enumerate(block_errs):
+        if jnp.abs((err - block_errs[i-1]) / err) < 0.04:
+            find_err = True
+            break
+
+    if not find_err:
+        err = jnp.array(block_errs).max()
+
+    return energy_avg.real, err.real
