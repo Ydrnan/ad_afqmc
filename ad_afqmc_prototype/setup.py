@@ -15,7 +15,7 @@ from .ham.chol import HamChol
 from .prop.afqmc import make_prop_ops
 from .prop.blocks import block as default_block
 from .prop.types import QmcParams, QmcParamsBase
-from .sharding import has_model_axis, shard_ham_data
+from .sharding import has_model_axis, replicate, shard_model_axis
 from .staging import StagedInputs, load, stage
 
 
@@ -99,8 +99,12 @@ def _make_prop(
 
 def _make_ham_data(ham: Any, mesh: Mesh | None) -> HamChol:
     if mesh is not None and mesh.size > 1 and has_model_axis(mesh):
-        ham_data = HamChol(ham.h0, ham.h1, ham.chol, basis=ham.basis)
-        return shard_ham_data(ham_data, mesh)
+        return HamChol(
+            replicate(jnp.asarray(ham.h0), mesh),
+            replicate(ham.h1, mesh),
+            shard_model_axis(ham.chol, mesh),
+            basis=ham.basis,
+        )
 
     return HamChol(
         jnp.asarray(ham.h0),
