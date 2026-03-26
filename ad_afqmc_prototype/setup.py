@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import inspect
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Union, cast
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from jax.sharding import Mesh
@@ -223,6 +224,33 @@ def _resolve_default_walker_kind(ham: Any, walker_kind: WalkerKind | None) -> Wa
     return walker_kind
 
 
+def _compact_ham_data_for_runtime(ham_data: Any, meas_ctx: Any) -> Any:
+    if not isinstance(ham_data, HamChol):
+        return ham_data
+
+    from .meas.ghf import GhfCholMeasCtx
+    from .meas.rhf import RhfMeasCtx
+    from .meas.uhf import UhfMeasCtx
+
+    if isinstance(meas_ctx, (RhfMeasCtx, UhfMeasCtx, GhfCholMeasCtx)):
+        chol = ham_data.chol
+        if isinstance(chol, jax.Array):
+            compact_chol = jax.device_put(
+                jnp.zeros((chol.shape[0], 0, 0), dtype=chol.dtype),
+                chol.sharding,
+            )
+        else:
+            compact_chol = chol[:, :0, :0]
+        return HamChol(
+            h0=ham_data.h0,
+            h1=ham_data.h1,
+            chol=compact_chol,
+            basis=ham_data.basis,
+        )
+
+    return ham_data
+
+
 @dataclass
 class Job:
     """
@@ -239,9 +267,60 @@ class Job:
     prop_ops: Any
     block_fn: Callable[..., Any]
     mesh: Mesh | None = None
+    _runtime_prop_ctx: Any = field(default=None, init=False, repr=False)
+    _runtime_meas_ctx: Any = field(default=None, init=False, repr=False)
+    _runtime_state: Any = field(default=None, init=False, repr=False)
 
     params_cls: ClassVar[type[QmcParamsBase]] = QmcParams
     driver_fn: ClassVar[Callable[..., Any]] = staticmethod(driver.run_qmc_energy)
+
+    def _prepare_runtime(
+        self,
+        *,
+        state: Any = None,
+        meas_ctx: Any = None,
+        prop_ctx: Any = None,
+    ) -> tuple[Any, Any, Any]:
+        if prop_ctx is None:
+            prop_ctx = self._runtime_prop_ctx
+        if meas_ctx is None:
+            meas_ctx = self._runtime_meas_ctx
+        if state is None:
+            state = self._runtime_state
+
+        if prop_ctx is not None and meas_ctx is not None and state is not None:
+            return state, meas_ctx, prop_ctx
+
+        ham_data_full = self.ham_data
+
+        if prop_ctx is None:
+            prop_ctx = self.prop_ops.build_prop_ctx(
+                ham_data_full,
+                self.trial_ops.get_rdm1(self.trial_data),
+                self.params,
+            )
+        if meas_ctx is None:
+            meas_ctx = self.meas_ops.build_meas_ctx(ham_data_full, self.trial_data)
+        if state is None:
+            state = self.prop_ops.init_prop_state(
+                sys=self.sys,
+                ham_data=ham_data_full,
+                trial_ops=self.trial_ops,
+                trial_data=self.trial_data,
+                meas_ops=self.meas_ops,
+                params=self.params,
+                mesh=self.mesh,
+            )
+
+        if self.params_cls is QmcParams:
+            ham_data_runtime = _compact_ham_data_for_runtime(ham_data_full, meas_ctx)
+            if ham_data_runtime is not ham_data_full:
+                self.ham_data = ham_data_runtime
+
+        self._runtime_prop_ctx = prop_ctx
+        self._runtime_meas_ctx = meas_ctx
+        self._runtime_state = state
+        return state, meas_ctx, prop_ctx
 
     def kernel(self, **driver_kwargs: Any):
         """
@@ -249,6 +328,14 @@ class Job:
         Extra kwargs are forwarded to driver.run_qmc_energy (e.g. state=..., meas_ctx=...).
         """
         assert isinstance(self.params, self.params_cls)
+        state, meas_ctx, prop_ctx = self._prepare_runtime(
+            state=driver_kwargs.get("state"),
+            meas_ctx=driver_kwargs.get("meas_ctx"),
+            prop_ctx=driver_kwargs.get("prop_ctx"),
+        )
+        driver_kwargs["state"] = state
+        driver_kwargs["meas_ctx"] = meas_ctx
+        driver_kwargs["prop_ctx"] = prop_ctx
         driver_kwargs.setdefault("mesh", self.mesh)
         return self.driver_fn(
             sys=self.sys,

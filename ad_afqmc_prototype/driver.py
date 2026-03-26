@@ -100,6 +100,7 @@ def run_qmc(
     block_fn: BlockFn,
     state: PropState | None = None,
     meas_ctx: Any | None = None,
+    prop_ctx: Any | None = None,
     target_error: float | None = None,
     mesh: Mesh | None = None,
     observable_names: tuple[str, ...] = (),
@@ -114,7 +115,8 @@ def run_qmc(
         meas_ops.require_observable(name)
 
     # build ctx
-    prop_ctx = prop_ops.build_prop_ctx(ham_data, trial_ops.get_rdm1(trial_data), params)
+    if prop_ctx is None:
+        prop_ctx = prop_ops.build_prop_ctx(ham_data, trial_ops.get_rdm1(trial_data), params)
     if meas_ctx is None:
         meas_ctx = meas_ops.build_meas_ctx(ham_data, trial_data)
     if state is None:
@@ -339,6 +341,7 @@ def run_qmc_energy(
     block_fn: BlockFn,
     state: PropState | None = None,
     meas_ctx: Any | None = None,
+    prop_ctx: Any | None = None,
     target_error: float | None = None,
     mesh: Mesh | None = None,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
@@ -353,6 +356,7 @@ def run_qmc_energy(
         block_fn=block_fn,
         state=state,
         meas_ctx=meas_ctx,
+        prop_ctx=prop_ctx,
         target_error=target_error,
         mesh=mesh,
         observable_names=(),
@@ -372,6 +376,7 @@ def run_qmc_fp(
     block_fn: BlockFn,
     state: PropState | None = None,
     meas_ctx: Any | None = None,
+    prop_ctx: Any | None = None,
     target_error: float | None = None,
 ) -> QmcResult:
     """
@@ -379,7 +384,8 @@ def run_qmc_fp(
       (mean_energy, stderr, block_energies, block_weights)
     """
     # build ctx
-    prop_ctx = prop_ops.build_prop_ctx(ham_data, trial_ops.get_rdm1(trial_data), params)
+    if prop_ctx is None:
+        prop_ctx = prop_ops.build_prop_ctx(ham_data, trial_ops.get_rdm1(trial_data), params)
     if meas_ctx is None:
         meas_ctx = meas_ops.build_meas_ctx(ham_data, trial_data)
     if state is None:
@@ -502,6 +508,7 @@ def run_qmc_energy_fp(
     block_fn: BlockFn,
     state: PropState | None = None,
     meas_ctx: Any | None = None,
+    prop_ctx: Any | None = None,
     target_error: float | None = None,
     mesh: Mesh | None = None,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
@@ -516,6 +523,7 @@ def run_qmc_energy_fp(
         block_fn=block_fn,
         state=state,
         meas_ctx=meas_ctx,
+        prop_ctx=prop_ctx,
         target_error=target_error,
     )
     return out.mean_energy, out.stderr_energy, out.block_energies, out.block_weights

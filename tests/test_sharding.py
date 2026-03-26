@@ -367,6 +367,49 @@ def test_setup_shards_h5_loaded_chol_from_host_memory(tmp_path):
     assert isinstance(job.staged.ham.chol, np.ndarray)
 
 
+def test_job_prepare_runtime_compacts_hf_chol_and_reuses_cached_ctx(tmp_path):
+    mesh = make_data_model_mesh(2, 2)
+    norb, nocc, n_chol = 6, 3, 8
+    chol = np.arange(n_chol * norb * norb, dtype=np.float64).reshape(n_chol, norb, norb)
+    staged = StagedInputs(
+        ham=HamInput(
+            h0=0.25,
+            h1=np.eye(norb, dtype=np.float64),
+            chol=chol,
+            nelec=(nocc, nocc),
+            norb=norb,
+            chol_cut=1.0e-5,
+            norb_frozen=0,
+            source_kind="mf",
+            basis="restricted",
+        ),
+        trial=TrialInput(
+            kind="rhf",
+            data={"mo": np.eye(norb, dtype=np.float64)},
+            norb_frozen=0,
+            source_kind="mf",
+        ),
+        meta={"source_kind": "mf", "chol_cut": 1.0e-5},
+    )
+    path = tmp_path / "runtime_compact.h5"
+    dump(staged, path)
+
+    job = setup(path, mesh=mesh)
+    assert job.ham_data.chol.shape == chol.shape
+
+    state0, meas_ctx0, prop_ctx0 = job._prepare_runtime()
+
+    _assert_named_sharding_spec(job.ham_data.chol, P("model"))
+    assert job.ham_data.chol.shape == (n_chol, 0, 0)
+    assert prop_ctx0.chol_flat.shape[0] == n_chol
+    assert meas_ctx0.rot_chol.shape[0] == n_chol
+
+    state1, meas_ctx1, prop_ctx1 = job._prepare_runtime()
+    assert state1 is state0
+    assert meas_ctx1 is meas_ctx0
+    assert prop_ctx1 is prop_ctx0
+
+
 if __name__ == "__main__":
     test_sr_sharded_matches_unsharded(n_per_dev=4)
     # test_block_runs_under_sharding(n_per_dev=4)

@@ -90,7 +90,7 @@ def afqmc_step(
 
     key, subkey = jax.random.split(state.rng_key)
     nw = wk.n_walkers(state.walkers)
-    fields = jax.random.normal(subkey, (nw, ham_data.chol.shape[0]))
+    fields = jax.random.normal(subkey, (nw, prop_ctx.chol_flat.shape[0]))
 
     fb_kernel = meas_ops.require_kernel(k_force_bias)
     force_bias = wk.vmap_chunked(
