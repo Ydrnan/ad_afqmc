@@ -11,7 +11,7 @@ from jax.sharding import Mesh
 from .core.ops import MeasOps, TrialOps, k_energy
 from .core.system import System
 from .ham.chol import HamChol
-from .meas.rhf import RhfMeasCtx
+from .meas.rhf import RhfMeasCfg, RhfMeasCtx, get_rhf_meas_cfg
 from .prop.chol_afqmc_ops import CholAfqmcCtx
 from .prop.types import PropOps, PropState, QmcParams, QmcParamsBase
 from .sharding import has_model_axis, replicate, shard_model_axis
@@ -185,6 +185,7 @@ def _build_rhf_meas_ctx_from_host(
     staged: StagedInputs,
     trial_data: RhfTrial,
     *,
+    cfg: RhfMeasCfg,
     mesh: Mesh | None,
 ) -> RhfMeasCtx:
     from .meas.rhf import RhfMeasCtx
@@ -224,6 +225,7 @@ def _build_rhf_meas_ctx_from_host(
         rot_h1=rot_h1_a,
         rot_chol=rot_chol_a,
         rot_chol_flat=rot_chol_flat_a,
+        cfg=cfg,
     )
 
 
@@ -304,6 +306,7 @@ class DefaultRuntimeLayout:
 @dataclass(frozen=True)
 class RhfHostRuntimeLayout:
     mixed_precision: bool = True
+    rhf_meas_cfg: RhfMeasCfg = RhfMeasCfg()
 
     def make_initial_ham_data(self, ham: HamInput | HamChol, mesh: Mesh | None) -> HamChol:
         return _make_ham_data(ham, mesh, compact_chol=True)
@@ -336,6 +339,7 @@ class RhfHostRuntimeLayout:
             meas_ctx = _build_rhf_meas_ctx_from_host(
                 job.staged,
                 trial_data,
+                cfg=self.rhf_meas_cfg,
                 mesh=job.mesh,
             )
 
@@ -385,15 +389,21 @@ def make_runtime_layout(
     prop_ops_override: Any,
     mixed_precision: bool,
 ) -> RuntimeLayout:
+    rhf_meas_cfg = None
+    if isinstance(meas_ops_override, MeasOps):
+        rhf_meas_cfg = get_rhf_meas_cfg(meas_ops_override)
     use_host_rhf = (
         allow_host_rhf
         and staged.trial.kind.lower() == "rhf"
         and staged.ham.basis == "restricted"
         and trial_data_override is None
         and trial_ops_override is None
-        and meas_ops_override is None
+        and (meas_ops_override is None or rhf_meas_cfg is not None)
         and prop_ops_override is None
     )
     if use_host_rhf:
-        return RhfHostRuntimeLayout(mixed_precision=mixed_precision)
+        return RhfHostRuntimeLayout(
+            mixed_precision=mixed_precision,
+            rhf_meas_cfg=rhf_meas_cfg or RhfMeasCfg(),
+        )
     return DefaultRuntimeLayout()

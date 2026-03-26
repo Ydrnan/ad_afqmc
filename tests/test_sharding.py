@@ -21,7 +21,8 @@ from ad_afqmc_prototype.core.system import System
 from ad_afqmc_prototype.ham.chol import HamChol
 from ad_afqmc_prototype.ham.hubbard import HamHubbard
 from ad_afqmc_prototype.meas.auto import make_auto_meas_ops
-from ad_afqmc_prototype.meas.rhf import RhfMeasCtx, build_meas_ctx as build_rhf_meas_ctx
+from ad_afqmc_prototype.meas.rhf import RhfMeasCfg, RhfMeasCtx, RhfMeasMemoryMode, make_rhf_meas_ops
+from ad_afqmc_prototype.meas.rhf import build_meas_ctx as build_rhf_meas_ctx
 from ad_afqmc_prototype.prop.afqmc import init_prop_state, make_prop_ops
 from ad_afqmc_prototype.prop.blocks import block
 from ad_afqmc_prototype.prop.chol_afqmc_ops import CholAfqmcCtx, _build_prop_ctx
@@ -275,7 +276,10 @@ def test_shard_model_axis_pads_numpy_chol_without_mutating_source(capsys):
     np.testing.assert_allclose(np.asarray(jax.device_get(chol_s[n_chol])), 0.0, atol=0.0)
 
 
-def test_job_prepare_runtime_compacts_hf_chol_and_reuses_cached_ctx(tmp_path):
+@pytest.mark.parametrize("memory_mode", ["high", "low"])
+def test_job_prepare_runtime_compacts_hf_chol_and_reuses_cached_ctx(
+    tmp_path, memory_mode: RhfMeasMemoryMode
+):
     mesh = make_data_model_mesh(2, 2)
     norb, nocc, n_chol = 6, 3, 5
     padded_n_chol = 6
@@ -303,7 +307,9 @@ def test_job_prepare_runtime_compacts_hf_chol_and_reuses_cached_ctx(tmp_path):
     path = tmp_path / "runtime_compact.h5"
     dump(staged, path)
 
-    job = setup(path, mesh=mesh)
+    sys_override = System(norb=norb, nelec=(nocc, nocc), walker_kind="restricted")
+    meas_ops_override = make_rhf_meas_ops(sys_override, memory_mode=memory_mode)
+    job = setup(path, mesh=mesh, meas_ops=meas_ops_override)
     assert job.mesh is mesh
     _assert_named_sharding_spec(job.ham_data.h0, P())
     _assert_named_sharding_spec(job.ham_data.h1, P())
@@ -324,7 +330,7 @@ def test_job_prepare_runtime_compacts_hf_chol_and_reuses_cached_ctx(tmp_path):
     )
     trial_ref = RhfTrial(mo_coeff=jnp.eye(norb, dtype=jnp.float64)[:, :nocc])
     prop_ctx_ref = _build_prop_ctx(ham_ref, get_rdm1(trial_ref), dt=job.params.dt)
-    meas_ctx_ref = build_rhf_meas_ctx(ham_ref, trial_ref)
+    meas_ctx_ref = build_rhf_meas_ctx(ham_ref, trial_ref, cfg=RhfMeasCfg(memory_mode=memory_mode))
     state_ref = init_prop_state(
         sys=job.sys,
         ham_data=ham_ref,
@@ -346,6 +352,7 @@ def test_job_prepare_runtime_compacts_hf_chol_and_reuses_cached_ctx(tmp_path):
     _assert_named_sharding_spec(meas_ctx0.rot_chol, P("model"))
     assert prop_ctx0.chol_flat.shape[0] == padded_n_chol
     assert meas_ctx0.rot_chol.shape[0] == padded_n_chol
+    assert meas_ctx0.cfg.memory_mode == memory_mode
     np.testing.assert_allclose(
         np.asarray(jax.device_get(prop_ctx0.mf_shifts)),
         np.asarray(jax.device_get(prop_ctx_ref.mf_shifts)),
