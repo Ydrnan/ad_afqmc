@@ -21,6 +21,11 @@ def _half_green_from_overlap_matrix(w: jax.Array, ovlp_mat: jax.Array) -> jax.Ar
     return jnp.linalg.solve(ovlp_mat.T, w.T)
 
 
+def _trace_last2(x: jax.Array) -> jax.Array:
+    """Trace over the last two axes without materializing a full mask."""
+    return jnp.sum(jnp.diagonal(x, axis1=-2, axis2=-1), axis=-1)
+
+
 def force_bias_kernel_rw_rh(
     walker: jax.Array, ham_data: Any, meas_ctx: RhfMeasCtx, trial_data: RhfTrial
 ) -> jax.Array:
@@ -40,7 +45,7 @@ def energy_kernel_rw_rh(
     e1 = 2.0 * jnp.sum(g_half * meas_ctx.rot_h1)
 
     f = jnp.einsum("gij,jk->gik", meas_ctx.rot_chol, g_half.T, optimize="optimal")
-    c = jax.vmap(jnp.trace)(f)
+    c = _trace_last2(f)
     exc = jnp.sum(jax.vmap(lambda x: x * x.T)(f))
     e2 = 2.0 * jnp.sum(c * c) - exc
 
@@ -79,8 +84,8 @@ def energy_kernel_uw_rh(
 
     f_up = jnp.einsum("gij,jk->gik", meas_ctx.rot_chol, gu.T, optimize="optimal")
     f_dn = jnp.einsum("gij,jk->gik", meas_ctx.rot_chol, gd.T, optimize="optimal")
-    c_up = jax.vmap(jnp.trace)(f_up)
-    c_dn = jax.vmap(jnp.trace)(f_dn)
+    c_up = _trace_last2(f_up)
+    c_dn = _trace_last2(f_dn)
     exc_up = jnp.sum(jax.vmap(lambda x: x * x.T)(f_up))
     exc_dn = jnp.sum(jax.vmap(lambda x: x * x.T)(f_dn))
 
