@@ -15,6 +15,7 @@ from jax.sharding import Mesh
 
 from .core.system import WalkerKind
 from .prop.types import QmcParams, QmcParamsBase, QmcParamsFp
+from .runtime_provenance import print_runtime_provenance
 from .setup import Job
 from .setup import setup as setup_job
 from .setup_fp import JobFp
@@ -285,6 +286,7 @@ class Afqmc:
         Runs AFQMC, returns (e_tot, e_err), and stores samples.
         """
         print(banner_afqmc())
+        print_runtime_provenance()
         mesh = driver_kwargs.get("mesh")
         job = self.build_job(mesh=mesh)
         self.dump_flags(job)
