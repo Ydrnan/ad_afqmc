@@ -5,18 +5,17 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Union, cast
 
-import jax
-import jax.numpy as jnp
 import numpy as np
 from jax.sharding import Mesh
 
 from . import driver
+from .core.ops import MeasOps, TrialOps
 from .core.system import System, WalkerKind
 from .ham.chol import HamChol
 from .prop.afqmc import make_prop_ops
 from .prop.blocks import block as default_block
-from .prop.types import QmcParams, QmcParamsBase
-from .sharding import has_model_axis, replicate, shard_model_axis
+from .prop.types import PropOps, PropState, QmcParams, QmcParamsBase
+from .runtime_layout import RuntimeLayout, make_runtime_layout
 from .staging import StagedInputs, load, stage
 
 
@@ -98,24 +97,7 @@ def _make_prop(
     )
 
 
-def _make_ham_data(ham: Any, mesh: Mesh | None) -> HamChol:
-    if mesh is not None and mesh.size > 1 and has_model_axis(mesh):
-        return HamChol(
-            replicate(jnp.asarray(ham.h0), mesh),
-            replicate(ham.h1, mesh),
-            shard_model_axis(ham.chol, mesh),
-            basis=ham.basis,
-        )
-
-    return HamChol(
-        jnp.asarray(ham.h0),
-        jnp.asarray(ham.h1),
-        jnp.asarray(ham.chol),
-        basis=ham.basis,
-    )
-
-
-def _resolve_staged_and_ham_data(
+def _resolve_staged(
     obj_or_staged: Union[Any, StagedInputs, str, Path],
     *,
     norb_frozen: int | None,
@@ -123,12 +105,11 @@ def _resolve_staged_and_ham_data(
     cache: Union[str, Path] | None,
     overwrite: bool,
     verbose: bool,
-    mesh: Mesh | None,
-) -> tuple[StagedInputs, HamChol]:
+) -> StagedInputs:
     staged: StagedInputs
     if isinstance(obj_or_staged, StagedInputs):
         staged = obj_or_staged
-        return staged, _make_ham_data(staged.ham, mesh)
+        return staged
 
     p = (
         Path(obj_or_staged).expanduser().resolve()
@@ -137,7 +118,7 @@ def _resolve_staged_and_ham_data(
     )
     if p is not None and p.exists():
         staged = load(p)
-        return staged, _make_ham_data(staged.ham, mesh)
+        return staged
 
     staged = stage(
         obj_or_staged,
@@ -147,7 +128,7 @@ def _resolve_staged_and_ham_data(
         overwrite=overwrite,
         verbose=verbose,
     )
-    return staged, _make_ham_data(staged.ham, mesh)
+    return staged
 
 
 def _make_trial_bundle(
@@ -224,33 +205,6 @@ def _resolve_default_walker_kind(ham: Any, walker_kind: WalkerKind | None) -> Wa
     return walker_kind
 
 
-def _compact_ham_data_for_runtime(ham_data: Any, meas_ctx: Any) -> Any:
-    if not isinstance(ham_data, HamChol):
-        return ham_data
-
-    from .meas.ghf import GhfCholMeasCtx
-    from .meas.rhf import RhfMeasCtx
-    from .meas.uhf import UhfMeasCtx
-
-    if isinstance(meas_ctx, (RhfMeasCtx, UhfMeasCtx, GhfCholMeasCtx)):
-        chol = ham_data.chol
-        if isinstance(chol, jax.Array):
-            compact_chol = jax.device_put(
-                jnp.zeros((chol.shape[0], 0, 0), dtype=chol.dtype),
-                chol.sharding,
-            )
-        else:
-            compact_chol = chol[:, :0, :0]
-        return HamChol(
-            h0=ham_data.h0,
-            h1=ham_data.h1,
-            chol=compact_chol,
-            basis=ham_data.basis,
-        )
-
-    return ham_data
-
-
 @dataclass
 class Job:
     """
@@ -260,16 +214,17 @@ class Job:
     staged: StagedInputs
     sys: System
     params: QmcParamsBase
-    ham_data: Any
-    trial_data: Any
-    trial_ops: Any
-    meas_ops: Any
-    prop_ops: Any
+    ham_data: HamChol
+    trial_data: object
+    trial_ops: TrialOps
+    meas_ops: MeasOps
+    prop_ops: PropOps
     block_fn: Callable[..., Any]
+    runtime_layout: RuntimeLayout
     mesh: Mesh | None = None
-    _runtime_prop_ctx: Any = field(default=None, init=False, repr=False)
-    _runtime_meas_ctx: Any = field(default=None, init=False, repr=False)
-    _runtime_state: Any = field(default=None, init=False, repr=False)
+    _runtime_prop_ctx: object | None = field(default=None, init=False, repr=False)
+    _runtime_meas_ctx: object | None = field(default=None, init=False, repr=False)
+    _runtime_state: PropState | None = field(default=None, init=False, repr=False)
 
     params_cls: ClassVar[type[QmcParamsBase]] = QmcParams
     driver_fn: ClassVar[Callable[..., Any]] = staticmethod(driver.run_qmc_energy)
@@ -277,10 +232,10 @@ class Job:
     def _prepare_runtime(
         self,
         *,
-        state: Any = None,
-        meas_ctx: Any = None,
-        prop_ctx: Any = None,
-    ) -> tuple[Any, Any, Any]:
+        state: PropState | None = None,
+        meas_ctx: object | None = None,
+        prop_ctx: object | None = None,
+    ) -> tuple[PropState, object, object]:
         if prop_ctx is None:
             prop_ctx = self._runtime_prop_ctx
         if meas_ctx is None:
@@ -291,36 +246,18 @@ class Job:
         if prop_ctx is not None and meas_ctx is not None and state is not None:
             return state, meas_ctx, prop_ctx
 
-        ham_data_full = self.ham_data
+        prepared = self.runtime_layout.prepare(
+            self,
+            state=state,
+            meas_ctx=meas_ctx,
+            prop_ctx=prop_ctx,
+        )
+        self.ham_data = prepared.ham_data
 
-        if prop_ctx is None:
-            prop_ctx = self.prop_ops.build_prop_ctx(
-                ham_data_full,
-                self.trial_ops.get_rdm1(self.trial_data),
-                self.params,
-            )
-        if meas_ctx is None:
-            meas_ctx = self.meas_ops.build_meas_ctx(ham_data_full, self.trial_data)
-        if state is None:
-            state = self.prop_ops.init_prop_state(
-                sys=self.sys,
-                ham_data=ham_data_full,
-                trial_ops=self.trial_ops,
-                trial_data=self.trial_data,
-                meas_ops=self.meas_ops,
-                params=self.params,
-                mesh=self.mesh,
-            )
-
-        if self.params_cls is QmcParams:
-            ham_data_runtime = _compact_ham_data_for_runtime(ham_data_full, meas_ctx)
-            if ham_data_runtime is not ham_data_full:
-                self.ham_data = ham_data_runtime
-
-        self._runtime_prop_ctx = prop_ctx
-        self._runtime_meas_ctx = meas_ctx
-        self._runtime_state = state
-        return state, meas_ctx, prop_ctx
+        self._runtime_prop_ctx = prepared.prop_ctx
+        self._runtime_meas_ctx = prepared.meas_ctx
+        self._runtime_state = prepared.state
+        return prepared.state, prepared.meas_ctx, prepared.prop_ctx
 
     def kernel(self, **driver_kwargs: Any):
         """
@@ -375,14 +312,18 @@ def _assemble_job(
     job_cls: type[Job],
     walker_kind_resolver: Callable[[Any, WalkerKind | None], WalkerKind],
 ) -> Job:
-    staged, ham_data = _resolve_staged_and_ham_data(
+    trial_data_override = trial_data
+    trial_ops_override = trial_ops
+    meas_ops_override = meas_ops
+    prop_ops_override = prop_ops
+
+    staged = _resolve_staged(
         obj_or_staged,
         norb_frozen=norb_frozen,
         chol_cut=chol_cut,
         cache=cache,
         overwrite=overwrite,
         verbose=verbose,
-        mesh=mesh,
     )
     ham = staged.ham
 
@@ -396,6 +337,17 @@ def _assemble_job(
         trial_data = td if trial_data is None else trial_data
         trial_ops = to if trial_ops is None else trial_ops
         meas_ops = mo if meas_ops is None else meas_ops
+
+    runtime_layout = make_runtime_layout(
+        staged=staged,
+        allow_host_rhf=job_cls is Job,
+        trial_data_override=trial_data_override,
+        trial_ops_override=trial_ops_override,
+        meas_ops_override=meas_ops_override,
+        prop_ops_override=prop_ops_override,
+        mixed_precision=mixed_precision,
+    )
+    ham_data = runtime_layout.make_initial_ham_data(ham, mesh)
 
     if prop_ops is None:
         prop_ops = prop_builder(
@@ -419,6 +371,7 @@ def _assemble_job(
         meas_ops=meas_ops,
         prop_ops=prop_ops,
         block_fn=block_fn,
+        runtime_layout=runtime_layout,
         mesh=mesh,
     )
 

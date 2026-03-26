@@ -139,15 +139,15 @@ class Afqmc:
             print(f"  {field.name:<{width}} = {getattr(params, field.name)}")
         print("")
 
-    def dump_flags(self, job) -> None:
+    def dump_flags(self, job: Job) -> None:
         self._dump_flags_helper(job)
 
-    def _dump_flags_helper(self, job) -> None:
+    def _dump_flags_helper(self, job: Job) -> None:
         meta = job.staged.meta
         src = meta["source_kind"]
         chol_cut = meta["chol_cut"]
         sys = job.sys
-        nchol = job.ham_data.chol.shape[0]
+        nchol = job.ham_data.nchol
         params = job.params
         trial = job.staged.trial
         print("******** AFQMC ********")

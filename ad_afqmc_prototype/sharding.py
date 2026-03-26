@@ -1,6 +1,6 @@
 from typing import TypeVar, cast
 
-from numpy.typing import NDArray
+from numpy.typing import DTypeLike, NDArray
 
 import jax
 import jax.numpy as jnp
@@ -84,20 +84,31 @@ def shard_first_axis(x: ArrayLike, mesh: Mesh) -> jax.Array:
     return jax.device_put(x, NamedSharding(mesh, P("data")))
 
 
-def shard_model_axis(x: ArrayLike, mesh: Mesh) -> jax.Array:
+def shard_model_axis(
+    x: ArrayLike,
+    mesh: Mesh,
+    *,
+    dtype: DTypeLike | None = None,
+    announce_padding: bool = True,
+) -> jax.Array:
     sharding = NamedSharding(mesh, P("model"))
+    target_dtype = np.dtype(dtype) if dtype is not None else None
 
     if isinstance(x, np.ndarray):
         n_model = _mesh_axis_size(mesh, "model")
         n_chol = int(x.shape[0])
         remainder = n_chol % n_model
-        if remainder != 0:
-            padded_n_chol = n_chol + (n_model - remainder)
-            print(
-                f"[shard] padding chol from {n_chol} to {padded_n_chol} "
-                f"to shard evenly over n_model={n_model}.",
-                flush=True,
-            )
+        padded_n_chol = n_chol + (n_model - remainder) if remainder != 0 else n_chol
+        needs_cast = target_dtype is not None and x.dtype != target_dtype
+        if remainder != 0 or needs_cast:
+            if remainder != 0 and announce_padding:
+                print(
+                    f"[shard] padding chol from {n_chol} to {padded_n_chol} "
+                    f"to shard evenly over n_model={n_model}.",
+                    flush=True,
+                )
+
+            out_dtype = x.dtype if target_dtype is None else target_dtype
 
             def _callback(index):
                 if index is None:
@@ -106,25 +117,37 @@ def shard_model_axis(x: ArrayLike, mesh: Mesh) -> jax.Array:
                 assert isinstance(head, slice)
                 start = 0 if head.start is None else int(head.start)
                 stop = int(head.stop)
-                if stop <= n_chol:
+                if stop <= n_chol and target_dtype is None:
                     return x[index]
 
-                shard = np.zeros((stop - start, *x.shape[1:]), dtype=x.dtype)
+                shard = np.zeros((stop - start, *x.shape[1:]), dtype=out_dtype)
                 valid_stop = min(stop, n_chol)
                 if valid_stop > start:
-                    shard[: valid_stop - start] = x[start:valid_stop]
+                    shard[: valid_stop - start] = np.asarray(
+                        x[start:valid_stop],
+                        dtype=out_dtype,
+                    )
                 return shard
 
             return jax.make_array_from_callback(
                 (padded_n_chol, *x.shape[1:]),
                 sharding,
                 _callback,
-                dtype=x.dtype,
+                dtype=out_dtype,
             )
 
     n_model = _mesh_axis_size(mesh, "model")
     if int(x.shape[0]) % n_model != 0:
-        x = _pad_for_model_axis(x, mesh)
+        if announce_padding:
+            x = _pad_for_model_axis(x, mesh)
+        else:
+            remainder = int(x.shape[0]) % n_model
+            pad_width = [(0, 0)] * x.ndim
+            pad_width[0] = (0, n_model - remainder)
+            x = cast(ArrayLike, jnp.pad(x, pad_width, mode="constant"))
+
+    if target_dtype is not None:
+        x = cast(ArrayLike, jnp.asarray(x, dtype=target_dtype))
     return jax.device_put(x, sharding)
 
 
@@ -142,6 +165,7 @@ def shard_ham_data(ham_data: THam, mesh: Mesh | None) -> THam:
         return ham_data
 
     if isinstance(ham_data, HamChol):
+        nchol = ham_data.nchol if int(ham_data.chol.shape[0]) == 0 else None
         return cast(
             THam,
             HamChol(
@@ -149,6 +173,7 @@ def shard_ham_data(ham_data: THam, mesh: Mesh | None) -> THam:
                 h1=replicate(ham_data.h1, mesh),
                 chol=shard_model_axis(ham_data.chol, mesh),
                 basis=ham_data.basis,
+                nchol=nchol,
             ),
         )
 
