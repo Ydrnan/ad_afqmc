@@ -24,6 +24,16 @@ Array = np.ndarray
 STAGE_FORMAT_VERSION = 1
 
 
+def _stage_begin(message: str) -> float:
+    print(f"[stage] {message}...")
+    return time.time()
+
+
+def _stage_end(start: float, message: str, *, details: str | None = None) -> None:
+    suffix = f" | {details}" if details else ""
+    print(f"[stage] {message} in {time.time() - start:.2f}s{suffix}")
+
+
 def modified_cholesky(
     mat: Array,
     max_error: float = 1e-6,
@@ -514,14 +524,22 @@ def stage(
     mol = obj.mol
 
     if ham is None:
+        t_ham = _stage_begin("building Hamiltonian")
         ham = _stage_ham_input(
             obj,
             chol_cut=chol_cut,
             verbose=verbose,
         )
+        _stage_end(
+            t_ham,
+            "Hamiltonian ready",
+            details=f"norb={ham.norb} nchol={ham.chol.shape[0]}",
+        )
 
     if trial is None:
+        t_trial = _stage_begin("building trial input")
         trial = _stage_trial_input(obj)
+        _stage_end(t_trial, "trial input ready", details=f"kind={trial.kind}")
 
     meta: Dict[str, Any] = {
         "format_version": STAGE_FORMAT_VERSION,
@@ -559,7 +577,9 @@ def dump(staged: StagedInputs, path: Union[str, Path]) -> None:
         path: output file path
     """
     p = Path(path).expanduser().resolve()
+    t_dump = _stage_begin(f"writing staged inputs to {p}")
     _dump_h5(staged, p)
+    _stage_end(t_dump, "staged inputs written")
 
 
 def load(path: Union[str, Path]) -> StagedInputs:
@@ -573,7 +593,14 @@ def load(path: Union[str, Path]) -> StagedInputs:
         StagedInputs
     """
     p = Path(path).expanduser().resolve()
-    return _load_h5(p)
+    t_load = _stage_begin(f"loading staged inputs from {p}")
+    staged = _load_h5(p)
+    _stage_end(
+        t_load,
+        "staged inputs loaded",
+        details=f"norb={staged.ham.norb} nchol={staged.ham.chol.shape[0]} trial={staged.trial.kind}",
+    )
+    return staged
 
 
 def _is_cc_like(obj: Any) -> bool:
@@ -864,6 +891,7 @@ def _load_h5(path: Path) -> StagedInputs:
     with h5py.File(path, "r") as f:
         meta = json.loads(_to_json_str(f.attrs["meta_json"]))
 
+        t_ham = _stage_begin("reading Hamiltonian from cache")
         gham: Any = f["ham"]
         ham = HamInput(
             h0=float(np.array(gham["h0"]).item()),
@@ -876,7 +904,11 @@ def _load_h5(path: Path) -> StagedInputs:
             source_kind=str(gham.attrs["source_kind"]),
             basis=cast(HamBasis, str(gham.attrs["basis"])),
         )
+        _stage_end(
+            t_ham, "Hamiltonian loaded", details=f"norb={ham.norb} nchol={ham.chol.shape[0]}"
+        )
 
+        t_trial = _stage_begin("reading trial input from cache")
         gtr: Any = f["trial"]
         gdata = gtr["data"]
         trial_data = {k: np.array(gdata[k]) for k in gdata.keys()}
@@ -886,5 +918,6 @@ def _load_h5(path: Path) -> StagedInputs:
             norb_frozen=int(gtr.attrs["norb_frozen"]),
             source_kind=str(gtr.attrs["source_kind"]),
         )
+        _stage_end(t_trial, "trial input loaded", details=f"kind={trial.kind}")
 
         return StagedInputs(ham=ham, trial=trial, meta=meta)

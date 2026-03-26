@@ -151,7 +151,7 @@ class Afqmc:
         nchol = job.ham_data.nchol
         params = job.params
         trial = job.staged.trial
-        print("******** AFQMC ********")
+        print("\n******** AFQMC ********")
         print(f" norb            = {sys.norb}")
         print(f" nelec_up        = {sys.nelec[0]}")
         print(f" nelec_dn        = {sys.nelec[1]}")

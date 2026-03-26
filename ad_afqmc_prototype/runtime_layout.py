@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
+import time
 from typing import Any, ClassVar, Protocol
 
 import jax
@@ -18,7 +20,19 @@ from .sharding import has_model_axis, replicate, shard_model_axis
 from .staging import HamInput, StagedInputs
 from .trial.rhf import RhfTrial
 
+print = partial(print, flush=True)
+
 _HOST_CHOL_BLOCK_SIZE = 16
+
+
+def _setup_begin(message: str) -> float:
+    print(f"[setup] {message}...")
+    return time.time()
+
+
+def _setup_end(start: float, message: str, *, details: str | None = None) -> None:
+    suffix = f" | {details}" if details else ""
+    print(f"[setup] {message} in {time.time() - start:.2f}s{suffix}")
 
 
 @dataclass(frozen=True)
@@ -273,15 +287,20 @@ class DefaultRuntimeLayout:
         ham_data_runtime = job.ham_data
 
         if prop_ctx is None:
+            t_prop = _setup_begin("building propagation context")
             prop_ctx = job.prop_ops.build_prop_ctx(
                 ham_data_runtime,
                 job.trial_ops.get_rdm1(job.trial_data),
                 job.params,
             )
+            _setup_end(t_prop, "propagation context ready")
         if meas_ctx is None:
+            t_meas = _setup_begin("building measurement context")
             meas_ctx = job.meas_ops.build_meas_ctx(ham_data_runtime, job.trial_data)
+            _setup_end(t_meas, "measurement context ready")
 
         if state is None:
+            t_state = _setup_begin("initializing propagation state")
             state = job.prop_ops.init_prop_state(
                 sys=job.sys,
                 ham_data=ham_data_runtime,
@@ -291,6 +310,7 @@ class DefaultRuntimeLayout:
                 params=job.params,
                 mesh=job.mesh,
             )
+            _setup_end(t_state, "propagation state ready")
 
         if job.params_cls is QmcParams:
             ham_data_runtime = _compact_ham_data_for_runtime(ham_data_runtime, meas_ctx)
@@ -328,6 +348,7 @@ class RhfHostRuntimeLayout:
         trial_rdm1 = job.trial_ops.get_rdm1(trial_data)
 
         if prop_ctx is None:
+            t_prop = _setup_begin("building propagation context")
             prop_ctx = _build_rhf_prop_ctx_from_host(
                 job.staged,
                 trial_rdm1=trial_rdm1,
@@ -335,15 +356,19 @@ class RhfHostRuntimeLayout:
                 mixed_precision=self.mixed_precision,
                 mesh=job.mesh,
             )
+            _setup_end(t_prop, "propagation context ready")
         if meas_ctx is None:
+            t_meas = _setup_begin("building measurement context")
             meas_ctx = _build_rhf_meas_ctx_from_host(
                 job.staged,
                 trial_data,
                 cfg=self.rhf_meas_cfg,
                 mesh=job.mesh,
             )
+            _setup_end(t_meas, "measurement context ready")
 
         if state is None:
+            t_state = _setup_begin("initializing propagation state")
             initial_walkers = wk.init_walkers(
                 sys=job.sys,
                 rdm1=trial_rdm1,
@@ -370,6 +395,7 @@ class RhfHostRuntimeLayout:
                 initial_walkers=initial_walkers,
                 initial_e_estimate=jnp.mean(e_samples),
             )
+            _setup_end(t_state, "propagation state ready")
 
         return PreparedRuntime(
             ham_data=ham_data_runtime,

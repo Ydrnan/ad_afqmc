@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import inspect
+import time
 from dataclasses import dataclass, field, replace
+from functools import partial
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Union, cast
 
 import numpy as np
 from jax.sharding import Mesh
+
+print = partial(print, flush=True)
 
 from . import driver
 from .core.ops import MeasOps, TrialOps
@@ -17,6 +21,16 @@ from .prop.blocks import block as default_block
 from .prop.types import PropOps, PropState, QmcParams, QmcParamsBase
 from .runtime_layout import RuntimeLayout, make_runtime_layout
 from .staging import StagedInputs, load, stage
+
+
+def _setup_begin(message: str) -> float:
+    print(f"[setup] {message}...")
+    return time.time()
+
+
+def _setup_end(start: float, message: str, *, details: str | None = None) -> None:
+    suffix = f" | {details}" if details else ""
+    print(f"[setup] {message} in {time.time() - start:.2f}s{suffix}")
 
 
 def _filter_kwargs_for(callable_obj: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -141,6 +155,7 @@ def _make_trial_bundle(
     data = tr.data
 
     kind = tr.kind.lower()
+    t_bundle = _setup_begin(f"building trial bundle ({kind})")
 
     if kind == "rhf":
         from .meas.rhf import make_rhf_meas_ops
@@ -149,6 +164,7 @@ def _make_trial_bundle(
         trial_data = make_rhf_trial_data(data, sys)
         trial_ops = make_rhf_trial_ops(sys=sys)
         meas_ops = make_rhf_meas_ops(sys=sys)
+        _setup_end(t_bundle, "trial bundle ready", details=f"kind={kind}")
         return trial_data, trial_ops, meas_ops
 
     if kind == "uhf":
@@ -158,6 +174,7 @@ def _make_trial_bundle(
         trial_data = make_uhf_trial_data(data, sys)
         trial_ops = make_uhf_trial_ops(sys=sys)
         meas_ops = make_uhf_meas_ops(sys=sys)
+        _setup_end(t_bundle, "trial bundle ready", details=f"kind={kind}")
         return trial_data, trial_ops, meas_ops
 
     if kind == "ghf":
@@ -167,6 +184,7 @@ def _make_trial_bundle(
         trial_data = make_ghf_trial_data(data, sys=sys)
         trial_ops = make_ghf_trial_ops(sys=sys)
         meas_ops = make_ghf_meas_ops_chol(sys=sys)
+        _setup_end(t_bundle, "trial bundle ready", details=f"kind={kind}")
         return trial_data, trial_ops, meas_ops
 
     if kind == "cisd":
@@ -176,6 +194,7 @@ def _make_trial_bundle(
         trial_data = make_cisd_trial_data(data, sys)
         trial_ops = make_cisd_trial_ops(sys=sys)
         meas_ops = make_cisd_meas_ops(sys=sys, mixed_precision=mixed_precision)
+        _setup_end(t_bundle, "trial bundle ready", details=f"kind={kind}")
         return trial_data, trial_ops, meas_ops
 
     if kind == "ucisd":
@@ -185,6 +204,7 @@ def _make_trial_bundle(
         trial_data = make_ucisd_trial_data(data, sys)
         trial_ops = make_ucisd_trial_ops(sys=sys)
         meas_ops = make_ucisd_meas_ops(sys=sys, mixed_precision=mixed_precision)
+        _setup_end(t_bundle, "trial bundle ready", details=f"kind={kind}")
         return trial_data, trial_ops, meas_ops
 
     if kind == "gcisd":
@@ -194,6 +214,7 @@ def _make_trial_bundle(
         trial_data = make_gcisd_trial_data(data, sys)
         trial_ops = make_gcisd_trial_ops(sys=sys)
         meas_ops = make_gcisd_meas_ops(sys=sys)
+        _setup_end(t_bundle, "trial bundle ready", details=f"kind={kind}")
         return trial_data, trial_ops, meas_ops
 
     raise ValueError(f"Unsupported TrialInput.kind: {tr.kind!r}")
@@ -347,7 +368,9 @@ def _assemble_job(
         prop_ops_override=prop_ops_override,
         mixed_precision=mixed_precision,
     )
+    t_ham_runtime = _setup_begin("preparing runtime Hamiltonian")
     ham_data = runtime_layout.make_initial_ham_data(ham, mesh)
+    _setup_end(t_ham_runtime, "runtime Hamiltonian ready")
 
     if prop_ops is None:
         prop_ops = prop_builder(
