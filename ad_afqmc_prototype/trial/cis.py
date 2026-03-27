@@ -35,6 +35,22 @@ class CisTrial:
     def norb(self) -> int:
         return int(self.nocc + self.nvir)
 
+    @property
+    def nocc_full(self) -> int:
+        return self.nocc
+
+    @property
+    def nvir_full(self) -> int:
+        return self.nvir
+
+    @property
+    def occ_act_slice(self) -> slice:
+        return slice(0, self.nocc)
+
+    @property
+    def vir_act_slice(self) -> slice:
+        return slice(self.nocc, self.norb)
+
     def tree_flatten(self):
         children = (self.ci1,)
         aux = None
