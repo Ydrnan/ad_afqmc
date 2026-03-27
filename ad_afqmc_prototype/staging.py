@@ -5,10 +5,11 @@ import time
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any, Dict, Tuple, Union, cast
+from typing import Any, Dict, Tuple, TypeAlias, Union, cast
 
 import h5py
 import numpy as np
+from numpy.typing import NDArray
 
 print = partial(print, flush=True)
 
@@ -18,7 +19,7 @@ from .ham.chol import HamBasis
 # into serializable data classes representing Hamiltonian and trial
 # wavefunction inputs which can be used for building AFQMC objects.
 
-Array = np.ndarray
+Array: TypeAlias = NDArray[Any]
 
 # to keep track of format versions when loading/saving staged inputs
 STAGE_FORMAT_VERSION = 1
@@ -32,6 +33,63 @@ def _stage_begin(message: str) -> float:
 def _stage_end(start: float, message: str, *, details: str | None = None) -> None:
     suffix = f" | {details}" if details else ""
     print(f"[stage] {message} in {time.time() - start:.2f}s{suffix}")
+
+
+def _normalize_frozen_list(frozen: Any, *, nmo: int) -> np.ndarray:
+    frozen_arr = np.asarray(frozen, dtype=np.int64)
+    if frozen_arr.ndim != 1:
+        raise ValueError("cc.frozen must be a one-dimensional list of MO indices.")
+    if frozen_arr.size == 0:
+        return frozen_arr
+
+    frozen_arr = np.sort(frozen_arr)
+    if np.unique(frozen_arr).size != frozen_arr.size:
+        raise ValueError("cc.frozen contains duplicate MO indices.")
+    if frozen_arr[0] < 0 or frozen_arr[-1] >= nmo:
+        raise ValueError(f"cc.frozen indices must lie in [0, {nmo}).")
+
+    return frozen_arr
+
+
+def _infer_restricted_trial_freeze_from_cc(
+    *,
+    cc_frozen: Any,
+    nmo_full: int,
+    nocc_full: int,
+    norb_frozen: int,
+    t1_shape: tuple[int, int],
+) -> tuple[int, int]:
+    frozen = _normalize_frozen_list(cc_frozen, nmo=nmo_full)
+    occ_frozen = frozen[frozen < nocc_full]
+    vir_frozen = frozen[frozen >= nocc_full]
+
+    nocc_cc_frozen = int(occ_frozen.size)
+    nvir_cc_frozen = int(vir_frozen.size)
+
+    if occ_frozen.size and not np.array_equal(
+        occ_frozen, np.arange(nocc_cc_frozen, dtype=np.int64)
+    ):
+        raise ValueError(
+            "Occupied orbitals in list-valued cc.frozen must form a contiguous prefix."
+        )
+
+    vir_expected = np.arange(nmo_full - nvir_cc_frozen, nmo_full, dtype=np.int64)
+    if vir_frozen.size and not np.array_equal(vir_frozen, vir_expected):
+        raise ValueError("Virtual orbitals in list-valued cc.frozen must form a contiguous suffix.")
+
+    if norb_frozen > nocc_cc_frozen:
+        raise ValueError("norb_frozen cannot exceed the number of occupied orbitals frozen in CC.")
+
+    nocc_act_expected = nocc_full - nocc_cc_frozen
+    nvir_act_expected = (nmo_full - nocc_full) - nvir_cc_frozen
+    if t1_shape != (nocc_act_expected, nvir_act_expected):
+        raise ValueError(
+            "cc.frozen is inconsistent with the CC amplitudes in the restricted CISD trial."
+        )
+
+    nocc_t_core = nocc_cc_frozen - norb_frozen
+    nvir_t_outer = nvir_cc_frozen
+    return nocc_t_core, nvir_t_outer
 
 
 def modified_cholesky(
@@ -274,13 +332,13 @@ class StagedInputs:
 class StagedCc:
     """Wrapper ensuring the validity of the CC object"""
 
-    _delegate = {"t1", "t2", "_scf"}
+    _delegate = {"t1", "t2", "_scf", "frozen"}
     kind: str  # "ccsd", "uccsd", "gccsd"
     cc: Any
     mf: Any
     norb_frozen: int
 
-    def __init__(self, cc: Any, norb_frozen: int):
+    def __init__(self, cc: Any, norb_frozen: int | None):
         from pyscf.cc.ccsd import CCSD
         from pyscf.cc.gccsd import GCCSD
         from pyscf.cc.uccsd import UCCSD
@@ -314,15 +372,19 @@ class StagedCc:
             ), "cc has no frozen attribute, staging frozen must be 0."
             norb_frozen = 0
         elif norb_frozen is None:
-            norb_frozen = cc.frozen
-        elif isinstance(cc.frozen, int):
+            norb_frozen = int(cc.frozen) if isinstance(cc.frozen, (int, np.integer)) else 0
+        elif isinstance(cc.frozen, (int, np.integer)):
             assert cc.frozen == norb_frozen, "cc.frozen and staging frozen must be equal."
+        elif kind != "ccsd":
+            raise NotImplementedError(
+                "List-valued cc.frozen is currently supported only for restricted CCSD staging."
+            )
         else:
-            raise ValueError(f"Unexpected type '{type(cc.frozen)}' for cc.frozen.")
+            _normalize_frozen_list(cc.frozen, nmo=mf.mo_coeff.shape[-1])
 
         assert norb_frozen >= 0
         assert norb_frozen < mf.mo_coeff.shape[-1]
-        if kind != "gcisd":
+        if kind != "gccsd":
             assert norb_frozen < max(mol.nelec[0], mol.nelec[1])
         else:
             assert norb_frozen < mol.nelectron
@@ -360,7 +422,7 @@ class StagedMf:
     mf: Any  # Python SCF object
     norb_frozen: int
 
-    def __init__(self, mf: Any, norb_frozen: int):
+    def __init__(self, mf: Any, norb_frozen: int | None):
         from pyscf.scf.ghf import GHF
         from pyscf.scf.hf import RHF
         from pyscf.scf.rohf import ROHF
@@ -431,7 +493,7 @@ class StagedMfOrCc:
     mf: StagedMf
     norb_frozen: int
 
-    def __init__(self, mf_or_cc, norb_frozen):
+    def __init__(self, mf_or_cc, norb_frozen: int | None):
         from pyscf.cc.ccsd import CCSD
         from pyscf.cc.gccsd import GCCSD
         from pyscf.cc.uccsd import UCCSD
@@ -495,8 +557,11 @@ def stage(
         obj:
             pyscf mf object (RHF/ROHF/UHF) or cc object (CCSD/UCCSD).
         norb_frozen:
-            Number of lowest orbitals to freeze.
-            Inferred from cc.frozen if obj is a cc object.
+            Number of lowest occupied orbitals removed from the AFQMC Hamiltonian.
+            For CC objects with integer ``cc.frozen``, this is inferred from ``cc.frozen``.
+            For restricted CCSD objects with list-valued ``cc.frozen``, trial-space frozen
+            occupied/virtual blocks are inferred from ``cc.frozen`` and ``norb_frozen``
+            defaults to 0 unless set explicitly.
         chol_cut:
             Cholesky decomposition cutoff.
         cache:
@@ -769,14 +834,35 @@ def _stage_cisd_input(obj: StagedMfOrCc) -> TrialInput:
     if obj.kind != "ccsd":
         raise ValueError(f"Unreachable: '{obj.kind}'.")
 
-    t1 = obj.t1
-    t2 = obj.t2
+    t1_arr = np.asarray(obj.t1)
+    t2_arr = np.asarray(obj.t2)
+    nocc_t_core = 0
+    nvir_t_outer = 0
 
-    ci2 = np.asarray(t2) + np.einsum("ia,jb->ijab", np.asarray(t1), np.asarray(t1))
+    if isinstance(obj.frozen, (list, tuple, np.ndarray)):
+        if obj.mol.nelec[0] != obj.mol.nelec[1]:
+            raise ValueError(
+                "List-valued cc.frozen is currently supported only for closed-shell restricted CCSD."
+            )
+
+        nocc_t_core, nvir_t_outer = _infer_restricted_trial_freeze_from_cc(
+            cc_frozen=obj.frozen,
+            nmo_full=int(obj.mf.mo_coeff.shape[-1]),
+            nocc_full=int(obj.mol.nelectron // 2),
+            norb_frozen=int(obj.norb_frozen),
+            t1_shape=(int(t1_arr.shape[0]), int(t1_arr.shape[1])),
+        )
+
+    ci2 = t2_arr + np.einsum("ia,jb->ijab", t1_arr, t1_arr)
     ci2 = ci2.transpose(0, 2, 1, 3)  # (i,a,j,b) -> (i,j,a,b)
-    ci1 = np.asarray(t1)
+    ci1 = t1_arr
 
-    data = {"ci1": ci1, "ci2": ci2}
+    data = {
+        "ci1": ci1,
+        "ci2": ci2,
+        "nocc_t_core": np.array(nocc_t_core, dtype=np.int64),
+        "nvir_t_outer": np.array(nvir_t_outer, dtype=np.int64),
+    }
     return TrialInput(
         kind="cisd",
         data=data,

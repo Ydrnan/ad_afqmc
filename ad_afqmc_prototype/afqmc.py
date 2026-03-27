@@ -47,9 +47,7 @@ class Afqmc:
     mf_or_cc : Any
         Mean-field or coupled-cluster object from which to build Hamiltonian and trial wavefunction.
     norb_frozen : int, optional
-        Number of orbitals to freeze (from the bottom), by default 0 or cc.frozen
-        if mf_or_cc is a Pyscf SCF or CC instance, respectively. For CC instances,
-        norb_frozen cannot be set to a value differing fron cc.frozen.
+        Number of lowest occupied orbitals removed from the AFQMC Hamiltonian. For CC objects with integer cc.frozen, norb_frozen must match this attribute. For restricted CCSD objects with list-valued cc.frozen, the trial space frozen occupied/virtual blocks are inferred from cc.frozen and norb_frozen controls the orbitals frozen in AFQMC.
     chol_cut : float, optional
         Cholesky decomposition cutoff, by default 1e-5
     cache : Union[str, Path], optional

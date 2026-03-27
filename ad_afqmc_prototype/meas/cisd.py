@@ -10,9 +10,8 @@ from ..core.levels import LevelPack, LevelSpec
 from ..core.ops import MeasOps, k_energy, k_force_bias, o_rdm1
 from ..core.system import System
 from ..ham.chol import HamChol, slice_ham_level
-from ..trial.cisd import CisdTrial
+from ..trial.cisd import CisdTrial, slice_trial_level
 from ..trial.cisd import overlap_r as cisd_overlap_r
-from ..trial.cisd import slice_trial_level
 
 
 def _greens_restricted(walker: jax.Array, nocc: int) -> jax.Array:
@@ -20,15 +19,27 @@ def _greens_restricted(walker: jax.Array, nocc: int) -> jax.Array:
     return jnp.linalg.solve(wocc.T, walker.T)  # (nocc, norb)
 
 
-def _greenp_from_green(green: jax.Array) -> jax.Array:
+def _active_green_blocks(
+    green: jax.Array, trial_data: CisdTrial
+) -> tuple[jax.Array, jax.Array, jax.Array]:
     """
-    green_occ = green[:, nocc:]
-    greenp = vstack([green_occ, -I(nvir)])   shape (norb, nvir)
+    Extract active occupied/virtual blocks from the full-space Green's function.
+
+    Returns:
+      green_act:  (nocc_act, norb_full)
+      green_occ:  (nocc_act, nvir_act)
+      greenp_act: (norb_full, nvir_act)
     """
-    nocc = green.shape[0]
-    nvir = green.shape[1] - nocc
-    green_occ = green[:, nocc:]
-    return jnp.vstack((green_occ, -jnp.eye(nvir, dtype=green.dtype)))
+    occ_act = trial_data.occ_act_slice
+    vir_act = trial_data.vir_act_slice
+
+    green_act = green[occ_act, :]
+    green_occ = green[occ_act, vir_act]
+
+    greenp_act = jnp.zeros((trial_data.norb, trial_data.nvir), dtype=green.dtype)
+    greenp_act = greenp_act.at[: trial_data.nocc_full, :].set(green[:, vir_act])
+    greenp_act = greenp_act.at[vir_act, :].set(-jnp.eye(trial_data.nvir, dtype=green.dtype))
+    return green_act, green_occ, greenp_act
 
 
 @dataclass(frozen=True)
@@ -43,8 +54,8 @@ class CisdMeasCfg:
 @tree_util.register_pytree_node_class
 @dataclass(frozen=True)
 class CisdMeasCtx:
-    rot_chol: jax.Array  # (n_chol, nocc, norb)
-    lci1: jax.Array  # (n_chol, norb, nocc)
+    rot_chol: jax.Array  # (n_chol, nocc_full, norb_full)
+    lci1: jax.Array  # (n_chol, norb_full, nocc_act)
     cfg: CisdMeasCfg  # static
 
     def tree_flatten(self):
@@ -75,17 +86,17 @@ def build_meas_ctx(
     if ham_data.basis != "restricted":
         raise ValueError("CISD MeasOps currently assumes HamChol.basis == 'restricted'.")
 
-    chol = ham_data.chol  # (n_chol, norb, norb)
-    nocc = trial_data.nocc
+    chol = ham_data.chol  # (n_chol, norb_full, norb_full)
+    nocc_full = trial_data.nocc_full
 
-    rot_chol = chol[:, :nocc, :]  # (n_chol, nocc, norb)
+    rot_chol = chol[:, :nocc_full, :]  # (n_chol, nocc_full, norb_full)
 
     lci1 = jnp.einsum(
         "git,pt->gip",
-        chol[:, :, nocc:],
+        chol[:, :, trial_data.vir_act_slice],
         trial_data.ci1,
         optimize="optimal",
-    )  # (n_chol, norb, nocc)
+    )  # (n_chol, norb_full, nocc_act)
 
     return CisdMeasCtx(rot_chol=rot_chol, lci1=lci1, cfg=cfg)
 
@@ -112,7 +123,7 @@ def make_level_pack(
         norb_keep = None
     else:
         trial_orb = slice_trial_level(trial_data, level.nvir_keep)
-        norb_keep = int(trial_data.nocc) + int(level.nvir_keep)
+        norb_keep = int(trial_data.nocc_full) + int(level.nvir_keep)
 
     if orb_fullchol_ham is None:
         ham_orb_fullchol = slice_ham_level(ham_data, norb_keep=norb_keep, nchol_keep=None)
@@ -144,11 +155,10 @@ def force_bias_kernel_rw_rh(
     walker: jax.Array, ham_data: HamChol, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
 ) -> jax.Array:
     ci1, ci2 = trial_data.ci1, trial_data.ci2
-    nocc = trial_data.nocc
+    nocc_full = trial_data.nocc_full
 
-    green = _greens_restricted(walker, nocc)  # (nocc, norb)
-    green_occ = green[:, nocc:]  # (nocc, nvir)
-    greenp = _greenp_from_green(green)  # (norb, nvir)
+    green = _greens_restricted(walker, nocc_full)  # (nocc_full, norb_full)
+    green_act, green_occ, greenp = _active_green_blocks(green, trial_data)
 
     chol = ham_data.chol
     rot_chol = meas_ctx.rot_chol
@@ -159,7 +169,7 @@ def force_bias_kernel_rw_rh(
     # singles
     ci1g = jnp.einsum("pt,pt->", ci1, green_occ, optimize="optimal")
     ci1gp = jnp.einsum("pt,it->pi", ci1, greenp, optimize="optimal")  # (nocc, norb)
-    gci1gp = jnp.einsum("pj,pi->ij", green, ci1gp, optimize="optimal")  # (norb, norb)
+    gci1gp = jnp.einsum("pj,pi->ij", green_act, ci1gp, optimize="optimal")  # (norb, norb)
 
     fb_1_1 = 4.0 * ci1g * lg
     fb_1_2 = -2.0 * jnp.einsum(
@@ -184,8 +194,8 @@ def force_bias_kernel_rw_rh(
         optimize="optimal",
     )  # (nocc, nvir)
 
-    cisd_green_c = (greenp @ ci2g_c.T) @ green  # (norb, norb)
-    cisd_green_e = (greenp @ ci2g_e.T) @ green  # (norb, norb)
+    cisd_green_c = (greenp @ ci2g_c.T) @ green_act  # (norb, norb)
+    cisd_green_e = (greenp @ ci2g_e.T) @ green_act  # (norb, norb)
     cisd_green = -4.0 * cisd_green_c + 2.0 * cisd_green_e
 
     ci2g = 4.0 * ci2g_c - 2.0 * ci2g_e  # (nocc, nvir)
@@ -208,11 +218,10 @@ def energy_kernel_rw_rh(
     walker: jax.Array, ham_data: HamChol, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
 ) -> jax.Array:
     ci1, ci2 = trial_data.ci1, trial_data.ci2
-    nocc = trial_data.nocc
+    nocc_full = trial_data.nocc_full
 
-    green = _greens_restricted(walker, nocc)  # (nocc, norb)
-    green_occ = green[:, nocc:]  # (nocc, nvir)
-    greenp = _greenp_from_green(green)  # (norb, nvir)
+    green = _greens_restricted(walker, nocc_full)  # (nocc_full, norb_full)
+    green_act, green_occ, greenp = _active_green_blocks(green, trial_data)
 
     h1 = ham_data.h1
     chol = ham_data.chol
@@ -222,14 +231,14 @@ def energy_kernel_rw_rh(
     e0 = ham_data.h0
 
     # 1 body
-    hg = jnp.einsum("pj,pj->", h1[:nocc, :], green, optimize="optimal")
+    hg = jnp.einsum("pj,pj->", h1[:nocc_full, :], green, optimize="optimal")
     e1_0 = 2.0 * hg
 
     # singles
     ci1g = jnp.einsum("pt,pt->", ci1, green_occ, optimize="optimal")
     e1_1_1 = 4.0 * ci1g * hg
     gpci1 = greenp @ ci1.T  # (norb, nocc)
-    ci1_green = gpci1 @ green  # (norb, norb)
+    ci1_green = gpci1 @ green_act  # (norb, norb)
     e1_1_2 = -2.0 * jnp.einsum("ij,ij->", h1, ci1_green, optimize="optimal")
     e1_1 = e1_1_1 + e1_1_2
 
@@ -246,8 +255,8 @@ def energy_kernel_rw_rh(
         green_occ.astype(meas_ctx.cfg.mixed_complex_dtype),
         optimize="optimal",
     )
-    ci2_green_c = (greenp @ ci2g_c.T) @ green
-    ci2_green_e = (greenp @ ci2g_e.T) @ green
+    ci2_green_c = (greenp @ ci2g_c.T) @ green_act
+    ci2_green_e = (greenp @ ci2g_e.T) @ green_act
     ci2_green = 2.0 * ci2_green_c - 1.0 * ci2_green_e
 
     ci2g = 2.0 * ci2g_c - 1.0 * ci2g_e
@@ -277,10 +286,21 @@ def energy_kernel_rw_rh(
     )
     e2_1_2 = -2.0 * (lci1g @ lg)
 
-    ci1g1 = ci1 @ green_occ.T  # (nocc, nocc)
-    e2_1_3_1 = jnp.einsum("gpq,gqr,rp->", lg1, lg1, ci1g1, optimize="optimal")
-    lci1g_mat = jnp.einsum("gip,qi->gpq", meas_ctx.lci1, green, optimize="optimal")
-    e2_1_3_2 = -jnp.einsum("gpq,gqp->", lci1g_mat, lg1, optimize="optimal")
+    ci1g1 = ci1 @ green[:, trial_data.vir_act_slice].T  # (nocc_act, nocc_full)
+    e2_1_3_1 = jnp.einsum(
+        "gpq,gqa,ap->",
+        lg1,
+        lg1[:, :, trial_data.occ_act_slice],
+        ci1g1,
+        optimize="optimal",
+    )
+    lci1g_mat = jnp.einsum("gia,qi->gaq", meas_ctx.lci1, green, optimize="optimal")
+    e2_1_3_2 = -jnp.einsum(
+        "gaq,gqa->",
+        lci1g_mat,
+        lg1[:, :, trial_data.occ_act_slice],
+        optimize="optimal",
+    )
     e2_1_3 = e2_1_3_1 + e2_1_3_2
 
     e2_1 = e2_1_1 + 2.0 * (e2_1_2 + e2_1_3)
@@ -312,6 +332,7 @@ def energy_kernel_rw_rh(
             glgp_i = jnp.einsum("pi,it->pt", gl_i, greenp, optimize="optimal").astype(
                 meas_ctx.cfg.mixed_complex_dtype_testing
             )
+            glgp_i = glgp_i[trial_data.occ_act_slice, :]
             l2ci2_1 = jnp.einsum(
                 "pt,qu,ptqu->",
                 glgp_i,
@@ -344,6 +365,7 @@ def energy_kernel_rw_rh(
         glgp = jnp.einsum("gpi,it->gpt", gl, greenp, optimize="optimal").astype(
             meas_ctx.cfg.mixed_complex_dtype_testing
         )
+        glgp = glgp[:, trial_data.occ_act_slice, :]
         l2ci2_1 = jnp.einsum(
             "gpt,gqu,ptqu->g",
             glgp,
@@ -370,7 +392,7 @@ def energy_kernel_rw_rh(
 
 
 def rdm1_kernel_rw(
-    walker: jax.Array, ham_data: jax.Array, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
+    walker: jax.Array, ham_data: HamChol, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
 ) -> jax.Array:
     """
     Mixed estimator 1RDM for CISD trial with restricted walker.
@@ -380,22 +402,21 @@ def rdm1_kernel_rw(
     Returns (2, norb, norb): [alpha, beta] (identical for restricted).
     """
     ci1, ci2 = trial_data.ci1, trial_data.ci2
-    nocc = trial_data.nocc
+    nocc_full = trial_data.nocc_full
     norb = trial_data.norb
 
-    green = _greens_restricted(walker, nocc)  # (nocc, norb)
-    green_occ = green[:, nocc:]  # (nocc, nvir)
-    greenp = _greenp_from_green(green)  # (norb, nvir)
+    green = _greens_restricted(walker, nocc_full)  # (nocc_full, norb_full)
+    green_act, green_occ, greenp = _active_green_blocks(green, trial_data)
 
-    # HF Green's function: G^0[:, :nocc] = green.T, G^0[:, nocc:] = 0
+    # HF Green's function: G^0[:, :nocc_full] = green.T, G^0[:, nocc_full:] = 0
     g0 = jnp.zeros((norb, norb), dtype=green.dtype)
-    g0 = g0.at[:, :nocc].set(green.T)
+    g0 = g0.at[:, :nocc_full].set(green.T)
 
     # overlap components
     ci1g = jnp.einsum("pt,pt->", ci1, green_occ, optimize="optimal")
 
     # singles correction
-    ci1_green = (greenp @ ci1.T) @ green  # (norb, norb)
+    ci1_green = (greenp @ ci1.T) @ green_act  # (norb, norb)
 
     # doubles correction
     ci2g_c = jnp.einsum(
@@ -410,7 +431,7 @@ def rdm1_kernel_rw(
         green_occ.astype(meas_ctx.cfg.mixed_complex_dtype),
         optimize="optimal",
     )
-    ci2_green = 2.0 * (greenp @ ci2g_c.T) @ green - (greenp @ ci2g_e.T) @ green
+    ci2_green = 2.0 * (greenp @ ci2g_c.T) @ green_act - (greenp @ ci2g_e.T) @ green_act
 
     ci2g = 2.0 * ci2g_c - ci2g_e
     gci2g = jnp.einsum("qu,qu->", ci2g, green_occ, optimize="optimal")
