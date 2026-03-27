@@ -6,6 +6,7 @@ from typing import Literal
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 from pyscf import cc, gto, scf
 
@@ -259,6 +260,20 @@ def test_stage_splits_list_valued_cc_frozen_with_afqmc_frozen_core(mycc_frozen_l
     assert int(staged.trial.data["nvir_t_outer"].item()) == 1
 
 
+def test_stage_prefers_cc_mo_coeff_for_hamiltonian(mycc_rotated_basis):
+    staged = Afqmc(mycc_rotated_basis).stage()
+
+    c_cc = np.asarray(mycc_rotated_basis.mo_coeff)
+    c_scf = np.asarray(mycc_rotated_basis._scf.mo_coeff)
+    hcore = np.asarray(mycc_rotated_basis._scf.get_hcore())
+
+    h1_cc = c_cc.T.conj() @ hcore @ c_cc
+    h1_scf = c_scf.T.conj() @ hcore @ c_scf
+
+    assert np.allclose(staged.ham.h1, h1_cc)
+    assert not np.allclose(h1_cc, h1_scf)
+
+
 @pytest.fixture(scope="module")
 def mycc():
     mol = gto.M(
@@ -277,6 +292,49 @@ def mycc():
 
 
 @pytest.fixture(scope="module")
+def mycc_rotated_basis():
+    mol = gto.M(
+        atom="""
+        O        0.0000000000      0.0000000000      0.0000000000
+        H        0.9562300000      0.0000000000      0.0000000000
+        H       -0.2353791634      0.9268076728      0.0000000000
+        """,
+        basis="sto-6g",
+    )
+    mf = scf.RHF(mol)
+    mf.kernel()
+
+    nocc = mol.nelectron // 2
+    nvir = mf.mo_coeff.shape[-1] - nocc
+
+    rot_occ = np.eye(nocc)
+    theta_occ = 0.31
+    rot_occ[:2, :2] = np.array(
+        [
+            [np.cos(theta_occ), -np.sin(theta_occ)],
+            [np.sin(theta_occ), np.cos(theta_occ)],
+        ]
+    )
+
+    rot_vir = np.eye(nvir)
+    theta_vir = -0.47
+    rot_vir[:2, :2] = np.array(
+        [
+            [np.cos(theta_vir), -np.sin(theta_vir)],
+            [np.sin(theta_vir), np.cos(theta_vir)],
+        ]
+    )
+
+    mo_coeff = np.array(mf.mo_coeff, copy=True)
+    mo_coeff[:, :nocc] = mo_coeff[:, :nocc] @ rot_occ
+    mo_coeff[:, nocc:] = mo_coeff[:, nocc:] @ rot_vir
+
+    mycc = cc.CCSD(mf, mo_coeff=mo_coeff)
+    mycc.kernel()
+    return mycc
+
+
+@pytest.fixture(scope="module")
 def mycc_frozen_list():
     mol = gto.M(
         atom="""
@@ -289,6 +347,24 @@ def mycc_frozen_list():
     mf = scf.RHF(mol)
     mf.kernel()
     frozen = [0, int(mf.mo_coeff.shape[-1] - 1)]
+    mycc = cc.CCSD(mf, frozen=frozen)
+    mycc.kernel()
+    return mycc
+
+
+@pytest.fixture(scope="module")
+def mycc_frozen_ndarray():
+    mol = gto.M(
+        atom="""
+        O        0.0000000000      0.0000000000      0.0000000000
+        H        0.9562300000      0.0000000000      0.0000000000
+        H       -0.2353791634      0.9268076728      0.0000000000
+        """,
+        basis="sto-6g",
+    )
+    mf = scf.RHF(mol)
+    mf.kernel()
+    frozen = np.array([0, int(mf.mo_coeff.shape[-1] - 1)], dtype=np.int64)
     mycc = cc.CCSD(mf, frozen=frozen)
     mycc.kernel()
     return mycc

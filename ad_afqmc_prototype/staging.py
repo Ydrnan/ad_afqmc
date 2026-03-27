@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import time
 from dataclasses import dataclass
@@ -49,6 +50,29 @@ def _normalize_frozen_list(frozen: Any, *, nmo: int) -> np.ndarray:
         raise ValueError(f"cc.frozen indices must lie in [0, {nmo}).")
 
     return frozen_arr
+
+
+def _mo_coeff_signature(mo_coeff: Any) -> tuple[tuple[int, ...], ...]:
+    if isinstance(mo_coeff, (tuple, list)):
+        return tuple(tuple(int(dim) for dim in np.asarray(block).shape) for block in mo_coeff)
+    return (tuple(int(dim) for dim in np.asarray(mo_coeff).shape),)
+
+
+def _copy_scf_with_cc_mo_coeff(cc: Any, mf: Any) -> Any:
+    if not hasattr(cc, "mo_coeff") or cc.mo_coeff is None:
+        return mf
+
+    cc_sig = _mo_coeff_signature(cc.mo_coeff)
+    mf_sig = _mo_coeff_signature(mf.mo_coeff)
+    if cc_sig != mf_sig:
+        raise ValueError(
+            "CC object mo_coeff shape does not match the underlying SCF mo_coeff shape: "
+            f"{cc_sig} != {mf_sig}."
+        )
+
+    mf_copy = copy.copy(mf)
+    mf_copy.mo_coeff = cc.mo_coeff
+    return mf_copy
 
 
 def _infer_restricted_trial_freeze_from_cc(
@@ -349,7 +373,7 @@ class StagedCc:
         if not hasattr(cc, "_scf"):
             raise TypeError("CC-like object missing _scf reference to underlying scf object.")
         else:
-            mf = cc._scf
+            mf = _copy_scf_with_cc_mo_coeff(cc, cc._scf)
 
         if not hasattr(cc, "mol"):
             raise TypeError("CC-like object missing mol reference to underlying mol object.")
