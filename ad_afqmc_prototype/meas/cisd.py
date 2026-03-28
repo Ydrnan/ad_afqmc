@@ -13,6 +13,8 @@ from ..ham.chol import HamChol, slice_ham_level
 from ..trial.cisd import CisdTrial, slice_trial_level
 from ..trial.cisd import overlap_r as cisd_overlap_r
 
+_CISD_MEAS_CFG_ATTR = "_cisd_meas_cfg"
+
 
 def _greens_restricted(walker: jax.Array, nocc: int) -> jax.Array:
     wocc = walker[:nocc, :]  # (nocc, nocc)
@@ -49,6 +51,13 @@ class CisdMeasCfg:
     mixed_complex_dtype: jnp.dtype = jnp.complex128
     mixed_real_dtype_testing: jnp.dtype = jnp.float32
     mixed_complex_dtype_testing: jnp.dtype = jnp.complex64
+
+
+def get_cisd_meas_cfg(meas_ops: MeasOps) -> CisdMeasCfg | None:
+    cfg = getattr(meas_ops, _CISD_MEAS_CFG_ATTR, None)
+    if isinstance(cfg, CisdMeasCfg):
+        return cfg
+    return None
 
 
 @tree_util.register_pytree_node_class
@@ -461,9 +470,11 @@ def make_cisd_meas_ops(
         mixed_complex_dtype_testing=jnp.complex128 if testing else jnp.complex64,
     )
 
-    return MeasOps(
+    meas_ops = MeasOps(
         overlap=cisd_overlap_r,
         build_meas_ctx=lambda ham_data, trial_data: build_meas_ctx(ham_data, trial_data, cfg),
         kernels={k_force_bias: force_bias_kernel_rw_rh, k_energy: energy_kernel_rw_rh},
         observables={o_rdm1: rdm1_kernel_rw},
     )
+    object.__setattr__(meas_ops, _CISD_MEAS_CFG_ATTR, cfg)
+    return meas_ops

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from functools import partial
-import time
 from typing import Any, ClassVar, Protocol
 
 import jax
@@ -13,11 +13,13 @@ from jax.sharding import Mesh
 from .core.ops import MeasOps, TrialOps, k_energy
 from .core.system import System
 from .ham.chol import HamChol
+from .meas.cisd import CisdMeasCfg, CisdMeasCtx, get_cisd_meas_cfg
 from .meas.rhf import RhfMeasCfg, RhfMeasCtx, get_rhf_meas_cfg
 from .prop.chol_afqmc_ops import CholAfqmcCtx
 from .prop.types import PropOps, PropState, QmcParams, QmcParamsBase
 from .sharding import has_model_axis, replicate, shard_model_axis
 from .staging import HamInput, StagedInputs
+from .trial.cisd import CisdTrial
 from .trial.rhf import RhfTrial
 
 print = partial(print, flush=True)
@@ -120,7 +122,7 @@ def _as_host_array(x: Any) -> np.ndarray:
     return np.asarray(jax.device_get(x))
 
 
-def _build_rhf_prop_ctx_from_host(
+def _build_restricted_prop_ctx_from_host(
     staged: StagedInputs,
     *,
     trial_rdm1: jax.Array,
@@ -243,6 +245,92 @@ def _build_rhf_meas_ctx_from_host(
     )
 
 
+def _build_cisd_meas_ctx_from_host(
+    staged: StagedInputs,
+    trial_data: CisdTrial,
+    *,
+    cfg: CisdMeasCfg,
+    mesh: Mesh | None,
+) -> CisdMeasCtx:
+    ham = staged.ham
+    chol = np.asarray(ham.chol)
+    ci1 = _as_host_array(trial_data.ci1)
+
+    n_chol = int(chol.shape[0])
+    norb = int(chol.shape[1])
+    nocc_full = int(trial_data.nocc_full)
+    nocc_act = int(trial_data.nocc)
+
+    rot_chol = np.empty(
+        (n_chol, nocc_full, norb),
+        dtype=np.result_type(chol.dtype),
+    )
+    lci1 = np.empty(
+        (n_chol, norb, nocc_act),
+        dtype=np.result_type(chol.dtype, ci1.dtype),
+    )
+    vir_act_slice = trial_data.vir_act_slice
+
+    for start in range(0, n_chol, _HOST_CHOL_BLOCK_SIZE):
+        stop = min(start + _HOST_CHOL_BLOCK_SIZE, n_chol)
+        chol_blk = chol[start:stop]
+        rot_chol[start:stop] = chol_blk[:, :nocc_full, :]
+        lci1[start:stop] = np.einsum(
+            "git,pt->gip",
+            chol_blk[:, :, vir_act_slice],
+            ci1,
+            optimize="optimal",
+        )
+
+    if mesh is not None and mesh.size > 1 and has_model_axis(mesh):
+        rot_chol_a = shard_model_axis(rot_chol, mesh, announce_padding=False)
+        lci1_a = shard_model_axis(lci1, mesh, announce_padding=False)
+    else:
+        rot_chol_a = jnp.asarray(rot_chol)
+        lci1_a = jnp.asarray(lci1)
+
+    return CisdMeasCtx(rot_chol=rot_chol_a, lci1=lci1_a, cfg=cfg)
+
+
+def _init_state_from_prebuilt_ctx(
+    job: RuntimeJob,
+    *,
+    trial_data: object,
+    trial_rdm1: jax.Array,
+    ham_data_runtime: HamChol,
+    meas_ctx: object,
+) -> PropState:
+    from . import walkers as wk
+
+    initial_walkers = wk.init_walkers(
+        sys=job.sys,
+        rdm1=trial_rdm1,
+        n_walkers=job.params.n_walkers,
+    )
+    e_kernel = job.meas_ops.require_kernel(k_energy)
+    walker_0 = wk.take_walkers(initial_walkers, jnp.array([0]))
+    e_samples = jnp.real(
+        wk.vmap_chunked(e_kernel, n_chunks=1, in_axes=(0, None, None, None))(
+            walker_0,
+            ham_data_runtime,
+            meas_ctx,
+            trial_data,
+        )
+    )
+    return job.prop_ops.init_prop_state(
+        sys=job.sys,
+        ham_data=ham_data_runtime,
+        trial_ops=job.trial_ops,
+        trial_data=trial_data,
+        meas_ops=job.meas_ops,
+        params=job.params,
+        mesh=job.mesh,
+        initial_walkers=initial_walkers,
+        initial_e_estimate=jnp.mean(e_samples),
+        rdm1=trial_rdm1,
+    )
+
+
 def _compact_ham_data_for_runtime(ham_data: Any, meas_ctx: Any) -> Any:
     if not isinstance(ham_data, HamChol):
         return ham_data
@@ -339,7 +427,6 @@ class RhfHostRuntimeLayout:
         meas_ctx: object | None = None,
         prop_ctx: object | None = None,
     ) -> PreparedRuntime:
-        from . import walkers as wk
         from .trial.rhf import RhfTrial
 
         ham_data_runtime = job.ham_data
@@ -349,7 +436,7 @@ class RhfHostRuntimeLayout:
 
         if prop_ctx is None:
             t_prop = _setup_begin("building propagation context")
-            prop_ctx = _build_rhf_prop_ctx_from_host(
+            prop_ctx = _build_restricted_prop_ctx_from_host(
                 job.staged,
                 trial_rdm1=trial_rdm1,
                 dt=job.params.dt,
@@ -369,31 +456,74 @@ class RhfHostRuntimeLayout:
 
         if state is None:
             t_state = _setup_begin("initializing propagation state")
-            initial_walkers = wk.init_walkers(
-                sys=job.sys,
-                rdm1=trial_rdm1,
-                n_walkers=job.params.n_walkers,
-            )
-            e_kernel = job.meas_ops.require_kernel(k_energy)
-            walker_0 = wk.take_walkers(initial_walkers, jnp.array([0]))
-            e_samples = jnp.real(
-                wk.vmap_chunked(e_kernel, n_chunks=1, in_axes=(0, None, None, None))(
-                    walker_0,
-                    ham_data_runtime,
-                    meas_ctx,
-                    trial_data,
-                )
-            )
-            state = job.prop_ops.init_prop_state(
-                sys=job.sys,
-                ham_data=ham_data_runtime,
-                trial_ops=job.trial_ops,
+            state = _init_state_from_prebuilt_ctx(
+                job,
                 trial_data=trial_data,
-                meas_ops=job.meas_ops,
-                params=job.params,
+                trial_rdm1=trial_rdm1,
+                ham_data_runtime=ham_data_runtime,
+                meas_ctx=meas_ctx,
+            )
+            _setup_end(t_state, "propagation state ready")
+
+        return PreparedRuntime(
+            ham_data=ham_data_runtime,
+            state=state,
+            meas_ctx=meas_ctx,
+            prop_ctx=prop_ctx,
+        )
+
+
+@dataclass(frozen=True)
+class CisdHostRuntimeLayout:
+    mixed_precision: bool = True
+
+    def make_initial_ham_data(self, ham: HamInput | HamChol, mesh: Mesh | None) -> HamChol:
+        return _make_ham_data(ham, mesh, compact_chol=False)
+
+    def prepare(
+        self,
+        job: RuntimeJob,
+        *,
+        state: PropState | None = None,
+        meas_ctx: object | None = None,
+        prop_ctx: object | None = None,
+    ) -> PreparedRuntime:
+        ham_data_runtime = job.ham_data
+        trial_data = job.trial_data
+        assert isinstance(trial_data, CisdTrial)
+        trial_rdm1 = job.trial_ops.get_rdm1(trial_data)
+
+        if prop_ctx is None:
+            t_prop = _setup_begin("building propagation context")
+            prop_ctx = _build_restricted_prop_ctx_from_host(
+                job.staged,
+                trial_rdm1=trial_rdm1,
+                dt=job.params.dt,
+                mixed_precision=self.mixed_precision,
                 mesh=job.mesh,
-                initial_walkers=initial_walkers,
-                initial_e_estimate=jnp.mean(e_samples),
+            )
+            _setup_end(t_prop, "propagation context ready")
+        if meas_ctx is None:
+            t_meas = _setup_begin("building measurement context")
+            cfg = get_cisd_meas_cfg(job.meas_ops)
+            if cfg is None:
+                raise TypeError("CISD host runtime layout requires CisdMeasCfg-aware MeasOps.")
+            meas_ctx = _build_cisd_meas_ctx_from_host(
+                job.staged,
+                trial_data,
+                cfg=cfg,
+                mesh=job.mesh,
+            )
+            _setup_end(t_meas, "measurement context ready")
+
+        if state is None:
+            t_state = _setup_begin("initializing propagation state")
+            state = _init_state_from_prebuilt_ctx(
+                job,
+                trial_data=trial_data,
+                trial_rdm1=trial_rdm1,
+                ham_data_runtime=ham_data_runtime,
+                meas_ctx=meas_ctx,
             )
             _setup_end(t_state, "propagation state ready")
 
@@ -432,4 +562,19 @@ def make_runtime_layout(
             mixed_precision=mixed_precision,
             rhf_meas_cfg=rhf_meas_cfg or RhfMeasCfg(),
         )
+
+    cisd_meas_cfg = None
+    if isinstance(meas_ops_override, MeasOps):
+        cisd_meas_cfg = get_cisd_meas_cfg(meas_ops_override)
+    use_host_cisd = (
+        allow_host_rhf
+        and staged.trial.kind.lower() == "cisd"
+        and staged.ham.basis == "restricted"
+        and trial_data_override is None
+        and trial_ops_override is None
+        and (meas_ops_override is None or cisd_meas_cfg is not None)
+        and prop_ops_override is None
+    )
+    if use_host_cisd:
+        return CisdHostRuntimeLayout(mixed_precision=mixed_precision)
     return DefaultRuntimeLayout()

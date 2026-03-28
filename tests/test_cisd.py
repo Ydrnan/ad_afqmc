@@ -13,17 +13,31 @@ from pyscf import cc, gto, scf
 from ad_afqmc_prototype import testing
 from ad_afqmc_prototype.afqmc import Afqmc
 from ad_afqmc_prototype.core.ops import k_energy, k_force_bias
+from ad_afqmc_prototype.core.system import System
 from ad_afqmc_prototype.meas.cisd import (
+    CisdMeasCfg,
     build_meas_ctx,
     energy_kernel_rw_rh,
     force_bias_kernel_rw_rh,
+    get_cisd_meas_cfg,
     make_cisd_meas_ops,
     rdm1_kernel_rw,
 )
-
-# from ad_afqmc_prototype.prep.pyscf_interface import get_cisd
+from ad_afqmc_prototype.prop.chol_afqmc_ops import _build_prop_ctx
 from ad_afqmc_prototype.prop.types import QmcParams
-from ad_afqmc_prototype.trial.cisd import CisdTrial, make_cisd_trial_ops, overlap_r
+from ad_afqmc_prototype.runtime_layout import (
+    CisdHostRuntimeLayout,
+    _build_cisd_meas_ctx_from_host,
+    _build_restricted_prop_ctx_from_host,
+    _make_ham_data,
+)
+from ad_afqmc_prototype.setup import setup as setup_job
+from ad_afqmc_prototype.trial.cisd import (
+    CisdTrial,
+    make_cisd_trial_data,
+    make_cisd_trial_ops,
+    overlap_r,
+)
 
 
 def _make_cisd_trial(
@@ -272,6 +286,48 @@ def test_stage_prefers_cc_mo_coeff_for_hamiltonian(mycc_rotated_basis):
 
     assert np.allclose(staged.ham.h1, h1_cc)
     assert not np.allclose(h1_cc, h1_scf)
+
+
+def test_cisd_host_setup_builders_match_default_builders(mycc):
+    staged = Afqmc(mycc).stage()
+    ham_data = _make_ham_data(staged.ham, None, compact_chol=False)
+    sys = System(norb=int(staged.ham.norb), nelec=staged.ham.nelec, walker_kind="restricted")
+    trial_data = make_cisd_trial_data(staged.trial.data, sys)
+    trial_rdm1 = make_cisd_trial_ops(sys).get_rdm1(trial_data)
+
+    meas_ops = make_cisd_meas_ops(sys, mixed_precision=True)
+    cfg = get_cisd_meas_cfg(meas_ops)
+    assert cfg is not None
+    assert isinstance(cfg, CisdMeasCfg)
+
+    prop_host = _build_restricted_prop_ctx_from_host(
+        staged,
+        trial_rdm1=trial_rdm1,
+        dt=0.005,
+        mixed_precision=True,
+        mesh=None,
+    )
+    prop_ref = _build_prop_ctx(ham_data, trial_rdm1, 0.005, chol_flat_precision=jnp.float32)
+
+    assert jnp.allclose(prop_host.dt, prop_ref.dt)
+    assert jnp.allclose(prop_host.sqrt_dt, prop_ref.sqrt_dt)
+    assert jnp.allclose(prop_host.exp_h1_half, prop_ref.exp_h1_half)
+    assert jnp.allclose(prop_host.mf_shifts, prop_ref.mf_shifts)
+    assert jnp.allclose(prop_host.h0_prop, prop_ref.h0_prop)
+    assert jnp.allclose(prop_host.chol_flat, prop_ref.chol_flat)
+    assert prop_host.norb == prop_ref.norb
+
+    ctx_host = _build_cisd_meas_ctx_from_host(staged, trial_data, cfg=cfg, mesh=None)
+    ctx_ref = build_meas_ctx(ham_data, trial_data, cfg=cfg)
+
+    assert jnp.allclose(ctx_host.rot_chol, ctx_ref.rot_chol)
+    assert jnp.allclose(ctx_host.lci1, ctx_ref.lci1)
+    assert ctx_host.cfg == ctx_ref.cfg
+
+
+def test_setup_uses_cisd_host_runtime_layout(mycc):
+    job = setup_job(mycc)
+    assert isinstance(job.runtime_layout, CisdHostRuntimeLayout)
 
 
 @pytest.fixture(scope="module")
