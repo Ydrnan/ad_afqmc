@@ -37,6 +37,9 @@ from ad_afqmc_prototype.trial.cisd import (
     make_cisd_trial_data,
     make_cisd_trial_ops,
     overlap_r,
+    overlap_r_high,
+    overlap_r_high_realimag,
+    overlap_r_low,
 )
 
 
@@ -139,6 +142,42 @@ def test_active_space_matches_zero_padded_full_space(nocc_t_core, nvir_t_outer):
         dm_active = rdm1_kernel_rw(walker, ham, ctx_active, trial_active)
         dm_full = rdm1_kernel_rw(walker, ham, ctx_full, trial_full)
         assert jnp.allclose(dm_active, dm_full, rtol=1e-12, atol=1e-12), (dm_active, dm_full)
+
+
+@pytest.mark.parametrize("nocc_t_core,nvir_t_outer", [(0, 0), (1, 2)])
+def test_overlap_memory_modes_match(nocc_t_core, nvir_t_outer):
+    key = jax.random.PRNGKey(911)
+    k1, k2, k_w = jax.random.split(key, 3)
+
+    nocc_full = 4
+    nvir_full = 6
+    nocc_act = nocc_full - nocc_t_core
+    nvir_act = nvir_full - nvir_t_outer
+
+    ci1 = 0.05 * jax.random.normal(k1, (nocc_act, nvir_act), dtype=jnp.float64)
+    ci2 = 0.02 * jax.random.normal(k2, (nocc_act, nvir_act, nocc_act, nvir_act), dtype=jnp.float64)
+    ci2 = 0.5 * (ci2 + ci2.transpose(2, 3, 0, 1))
+
+    trial = CisdTrial(
+        ci1=ci1,
+        ci2=ci2,
+        nocc_t_core=nocc_t_core,
+        nvir_t_outer=nvir_t_outer,
+    )
+
+    norb_full = nocc_full + nvir_full
+    for i in range(4):
+        walker = testing.make_restricted_walker_near_ref(
+            jax.random.fold_in(k_w, i), norb_full, nocc_full, mix=0.25
+        )
+        o_high = overlap_r_high(walker, trial)
+        o_high_realimag = overlap_r_high_realimag(walker, trial)
+        o_low = overlap_r_low(walker, trial)
+        assert jnp.allclose(o_high_realimag, o_high, rtol=1e-12, atol=1e-12), (
+            o_high_realimag,
+            o_high,
+        )
+        assert jnp.allclose(o_low, o_high, rtol=1e-12, atol=1e-12), (o_low, o_high)
 
 
 @pytest.mark.parametrize("norb,nocc,n_chol,memory_mode", [(8, 3, 10, "low"), (10, 4, 12, "high")])
