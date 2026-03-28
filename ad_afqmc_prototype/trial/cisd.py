@@ -97,9 +97,7 @@ def get_rdm1(trial_data: CisdTrial) -> jax.Array:
 
 
 def _overlap_doubles_high_complex(ci2: jax.Array, x: jax.Array) -> jax.Array:
-    return 2.0 * jnp.einsum("iajb,ia,jb->", ci2, x, x) - jnp.einsum(
-        "iajb,ib,ja->", ci2, x, x
-    )
+    return 2.0 * jnp.einsum("iajb,ia,jb->", ci2, x, x) - jnp.einsum("iajb,ib,ja->", ci2, x, x)
 
 
 def _overlap_doubles_high_realimag(ci2: jax.Array, x: jax.Array) -> jax.Array:
