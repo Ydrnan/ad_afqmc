@@ -176,6 +176,28 @@ def _force_bias_ci2g_low(
     return ci2g_c, ci2g_e
 
 
+def _force_bias_ci2g_high_realimag(
+    ci2: jax.Array, green_occ: jax.Array, cfg: CisdMeasCfg
+) -> tuple[jax.Array, jax.Array]:
+    ci2_t = ci2.astype(cfg.mixed_real_dtype)
+    green_r = jnp.real(green_occ).astype(cfg.mixed_real_dtype)
+    green_i = jnp.imag(green_occ).astype(cfg.mixed_real_dtype)
+    imag_unit = jnp.asarray(1.0j, dtype=cfg.mixed_complex_dtype)
+
+    ci2g_c_r = jnp.einsum("ptqu,pt->qu", ci2_t, green_r, optimize="optimal")
+    ci2g_c_i = jnp.einsum("ptqu,pt->qu", ci2_t, green_i, optimize="optimal")
+    ci2g_e_r = jnp.einsum("ptqu,pu->qt", ci2_t, green_r, optimize="optimal")
+    ci2g_e_i = jnp.einsum("ptqu,pu->qt", ci2_t, green_i, optimize="optimal")
+
+    ci2g_c = ci2g_c_r.astype(cfg.mixed_complex_dtype) + imag_unit * ci2g_c_i.astype(
+        cfg.mixed_complex_dtype
+    )
+    ci2g_e = ci2g_e_r.astype(cfg.mixed_complex_dtype) + imag_unit * ci2g_e_i.astype(
+        cfg.mixed_complex_dtype
+    )
+    return ci2g_c, ci2g_e
+
+
 def _ci1gp_low(ci1: jax.Array, green: jax.Array, trial_data: CisdTrial) -> jax.Array:
     """
     Build ci1 @ greenp^T without materializing greenp.
@@ -241,6 +263,33 @@ def _force_bias_common_terms(
     cisd_green = -4.0 * cisd_green_c + 2.0 * cisd_green_e
 
     ci2g = 4.0 * ci2g_c - 2.0 * ci2g_e  # (nocc, nvir)
+    gci2g = jnp.einsum("qu,qu->", ci2g, green_occ, optimize="optimal")
+    overlap = 1.0 + 2.0 * ci1g + 0.5 * gci2g
+
+    return lg, ci1g, gci1gp, cisd_green, overlap, gci2g
+
+
+def _force_bias_common_terms_high_realimag(
+    walker: jax.Array, ham_data: HamChol, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
+    ci1, ci2 = trial_data.ci1, trial_data.ci2
+    nocc_full = trial_data.nocc_full
+
+    green = _greens_restricted(walker, nocc_full)
+    green_act, green_occ, greenp = _active_green_blocks(green, trial_data)
+
+    lg = jnp.einsum("gpj,pj->g", meas_ctx.rot_chol, green, optimize="optimal")
+
+    ci1g = jnp.einsum("pt,pt->", ci1, green_occ, optimize="optimal")
+    ci1gp = jnp.einsum("pt,it->pi", ci1, greenp, optimize="optimal")
+    gci1gp = jnp.einsum("pj,pi->ij", green_act, ci1gp, optimize="optimal")
+
+    ci2g_c, ci2g_e = _force_bias_ci2g_high_realimag(ci2, green_occ, meas_ctx.cfg)
+    cisd_green_c = (greenp @ ci2g_c.T) @ green_act
+    cisd_green_e = (greenp @ ci2g_e.T) @ green_act
+    cisd_green = -4.0 * cisd_green_c + 2.0 * cisd_green_e
+
+    ci2g = 4.0 * ci2g_c - 2.0 * ci2g_e
     gci2g = jnp.einsum("qu,qu->", ci2g, green_occ, optimize="optimal")
     overlap = 1.0 + 2.0 * ci1g + 0.5 * gci2g
 
@@ -316,7 +365,7 @@ def force_bias_kernel_rw_rh_high(
 def force_bias_kernel_rw_rh_high_realimag(
     walker: jax.Array, ham_data: HamChol, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
 ) -> jax.Array:
-    lg, ci1g, gci1gp, cisd_green, overlap, gci2g = _force_bias_common_terms(
+    lg, ci1g, gci1gp, cisd_green, overlap, gci2g = _force_bias_common_terms_high_realimag(
         walker, ham_data, meas_ctx, trial_data
     )
 
