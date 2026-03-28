@@ -168,12 +168,16 @@ def _overlap_r_with_doubles(
     return (1.0 + 2.0 * o1 + o2) * o0
 
 
-def overlap_r_high(walker: jax.Array, trial_data: CisdTrial) -> jax.Array:
+def overlap_r_high_complex(walker: jax.Array, trial_data: CisdTrial) -> jax.Array:
     return _overlap_r_with_doubles(walker, trial_data, _overlap_doubles_high_complex)
 
 
-def overlap_r_high_realimag(walker: jax.Array, trial_data: CisdTrial) -> jax.Array:
+def overlap_r_high(walker: jax.Array, trial_data: CisdTrial) -> jax.Array:
     return _overlap_r_with_doubles(walker, trial_data, _overlap_doubles_high_realimag)
+
+
+def overlap_r_high_realimag(walker: jax.Array, trial_data: CisdTrial) -> jax.Array:
+    return overlap_r_high(walker, trial_data)
 
 
 def overlap_r_low(walker: jax.Array, trial_data: CisdTrial) -> jax.Array:

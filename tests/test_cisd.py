@@ -38,6 +38,7 @@ from ad_afqmc_prototype.trial.cisd import (
     make_cisd_trial_ops,
     overlap_r,
     overlap_r_high,
+    overlap_r_high_complex,
     overlap_r_high_realimag,
     overlap_r_low,
 )
@@ -171,8 +172,13 @@ def test_overlap_memory_modes_match(nocc_t_core, nvir_t_outer):
             jax.random.fold_in(k_w, i), norb_full, nocc_full, mix=0.25
         )
         o_high = overlap_r_high(walker, trial)
+        o_high_complex = overlap_r_high_complex(walker, trial)
         o_high_realimag = overlap_r_high_realimag(walker, trial)
         o_low = overlap_r_low(walker, trial)
+        assert jnp.allclose(o_high_complex, o_high, rtol=1e-12, atol=1e-12), (
+            o_high_complex,
+            o_high,
+        )
         assert jnp.allclose(o_high_realimag, o_high, rtol=1e-12, atol=1e-12), (
             o_high_realimag,
             o_high,
