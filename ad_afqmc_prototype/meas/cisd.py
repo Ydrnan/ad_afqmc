@@ -110,6 +110,113 @@ def build_meas_ctx(
     return CisdMeasCtx(rot_chol=rot_chol, lci1=lci1, cfg=cfg)
 
 
+def _force_bias_chol_contract_high_complex(
+    chol: jax.Array, mat: jax.Array, cfg: CisdMeasCfg
+) -> jax.Array:
+    return jnp.einsum(
+        "gij,ij->g",
+        chol.astype(cfg.mixed_real_dtype),
+        mat.astype(cfg.mixed_complex_dtype),
+        optimize="optimal",
+    )
+
+
+def _force_bias_chol_contract_high_realimag(
+    chol: jax.Array, mat: jax.Array, cfg: CisdMeasCfg
+) -> jax.Array:
+    chol_r = chol.astype(cfg.mixed_real_dtype)
+    mat_r = jnp.real(mat).astype(cfg.mixed_real_dtype)
+    mat_i = jnp.imag(mat).astype(cfg.mixed_real_dtype)
+    imag_unit = jnp.asarray(1.0j, dtype=cfg.mixed_complex_dtype)
+
+    real_part = jnp.einsum("gij,ij->g", chol_r, mat_r, optimize="optimal")
+    imag_part = jnp.einsum("gij,ij->g", chol_r, mat_i, optimize="optimal")
+    return real_part.astype(cfg.mixed_complex_dtype) + imag_unit * imag_part.astype(
+        cfg.mixed_complex_dtype
+    )
+
+
+def _force_bias_chol_contract_low(chol: jax.Array, mat: jax.Array, cfg: CisdMeasCfg) -> jax.Array:
+    mat_r = jnp.real(mat).astype(cfg.mixed_real_dtype)
+    mat_i = jnp.imag(mat).astype(cfg.mixed_real_dtype)
+    imag_unit = jnp.asarray(1.0j, dtype=cfg.mixed_complex_dtype)
+
+    def scan_body(_, chol_i: jax.Array) -> tuple[None, jax.Array]:
+        chol_i_r = chol_i.astype(cfg.mixed_real_dtype)
+        real_part = jnp.einsum("ij,ij->", chol_i_r, mat_r, optimize="optimal")
+        imag_part = jnp.einsum("ij,ij->", chol_i_r, mat_i, optimize="optimal")
+        y = real_part.astype(cfg.mixed_complex_dtype) + imag_unit * imag_part.astype(
+            cfg.mixed_complex_dtype
+        )
+        return None, y
+
+    _, ys = lax.scan(scan_body, None, chol)
+    return ys
+
+
+def _force_bias_ci2g_low(
+    ci2: jax.Array, green_occ: jax.Array, cfg: CisdMeasCfg
+) -> tuple[jax.Array, jax.Array]:
+    ci2_t = ci2.astype(cfg.mixed_real_dtype)
+    green_t = green_occ.astype(cfg.mixed_complex_dtype)
+    out_shape = (int(ci2.shape[2]), int(ci2.shape[3]))
+    zero_c = jnp.zeros(out_shape, dtype=cfg.mixed_complex_dtype)
+    zero_e = jnp.zeros(out_shape, dtype=cfg.mixed_complex_dtype)
+
+    def scan_body(
+        carry: tuple[jax.Array, jax.Array], xs: tuple[jax.Array, jax.Array]
+    ) -> tuple[tuple[jax.Array, jax.Array], None]:
+        acc_c, acc_e = carry
+        ci2_p, green_p = xs
+        acc_c = acc_c + jnp.einsum("tqu,t->qu", ci2_p, green_p, optimize="optimal")
+        acc_e = acc_e + jnp.einsum("tqu,u->qt", ci2_p, green_p, optimize="optimal")
+        return (acc_c, acc_e), None
+
+    (ci2g_c, ci2g_e), _ = lax.scan(scan_body, (zero_c, zero_e), (ci2_t, green_t))
+    return ci2g_c, ci2g_e
+
+
+def _force_bias_common_terms(
+    walker: jax.Array, ham_data: HamChol, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
+    ci1, ci2 = trial_data.ci1, trial_data.ci2
+    nocc_full = trial_data.nocc_full
+
+    green = _greens_restricted(walker, nocc_full)  # (nocc_full, norb_full)
+    green_act, green_occ, greenp = _active_green_blocks(green, trial_data)
+
+    rot_chol = meas_ctx.rot_chol
+
+    lg = jnp.einsum("gpj,pj->g", rot_chol, green, optimize="optimal")
+
+    ci1g = jnp.einsum("pt,pt->", ci1, green_occ, optimize="optimal")
+    ci1gp = jnp.einsum("pt,it->pi", ci1, greenp, optimize="optimal")  # (nocc, norb)
+    gci1gp = jnp.einsum("pj,pi->ij", green_act, ci1gp, optimize="optimal")  # (norb, norb)
+
+    ci2g_c = jnp.einsum(
+        "ptqu,pt->qu",
+        ci2.astype(meas_ctx.cfg.mixed_real_dtype),
+        green_occ.astype(meas_ctx.cfg.mixed_complex_dtype),
+        optimize="optimal",
+    )  # (nocc, nvir)
+    ci2g_e = jnp.einsum(
+        "ptqu,pu->qt",
+        ci2.astype(meas_ctx.cfg.mixed_real_dtype),
+        green_occ.astype(meas_ctx.cfg.mixed_complex_dtype),
+        optimize="optimal",
+    )  # (nocc, nvir)
+
+    cisd_green_c = (greenp @ ci2g_c.T) @ green_act  # (norb, norb)
+    cisd_green_e = (greenp @ ci2g_e.T) @ green_act  # (norb, norb)
+    cisd_green = -4.0 * cisd_green_c + 2.0 * cisd_green_e
+
+    ci2g = 4.0 * ci2g_c - 2.0 * ci2g_e  # (nocc, nvir)
+    gci2g = jnp.einsum("qu,qu->", ci2g, green_occ, optimize="optimal")
+    overlap = 1.0 + 2.0 * ci1g + 0.5 * gci2g
+
+    return lg, ci1g, gci1gp, cisd_green, overlap, gci2g
+
+
 def make_level_pack(
     *,
     ham_data: HamChol,
@@ -160,67 +267,75 @@ def make_level_pack(
     )
 
 
+def force_bias_kernel_rw_rh_high(
+    walker: jax.Array, ham_data: HamChol, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
+) -> jax.Array:
+    lg, ci1g, gci1gp, cisd_green, overlap, gci2g = _force_bias_common_terms(
+        walker, ham_data, meas_ctx, trial_data
+    )
+
+    fb_0 = 2.0 * lg
+    fb_1_1 = 4.0 * ci1g * lg
+    fb_1_2 = -2.0 * _force_bias_chol_contract_high_complex(ham_data.chol, gci1gp, meas_ctx.cfg)
+    fb_2_1 = lg * gci2g
+    fb_2_2 = _force_bias_chol_contract_high_complex(ham_data.chol, cisd_green, meas_ctx.cfg)
+
+    return (fb_0 + fb_1_1 + fb_1_2 + fb_2_1 + fb_2_2) / overlap
+
+
+def force_bias_kernel_rw_rh_high_realimag(
+    walker: jax.Array, ham_data: HamChol, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
+) -> jax.Array:
+    lg, ci1g, gci1gp, cisd_green, overlap, gci2g = _force_bias_common_terms(
+        walker, ham_data, meas_ctx, trial_data
+    )
+
+    fb_0 = 2.0 * lg
+    fb_1_1 = 4.0 * ci1g * lg
+    fb_2_1 = lg * gci2g
+    fb_corr = _force_bias_chol_contract_high_realimag(
+        ham_data.chol,
+        cisd_green - 2.0 * gci1gp,
+        meas_ctx.cfg,
+    )
+
+    return (fb_0 + fb_1_1 + fb_2_1 + fb_corr) / overlap
+
+
+def force_bias_kernel_rw_rh_low(
+    walker: jax.Array, ham_data: HamChol, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
+) -> jax.Array:
+    ci1 = trial_data.ci1
+    nocc_full = trial_data.nocc_full
+
+    green = _greens_restricted(walker, nocc_full)
+    green_act, green_occ, greenp = _active_green_blocks(green, trial_data)
+
+    lg = jnp.einsum("gpj,pj->g", meas_ctx.rot_chol, green, optimize="optimal")
+    ci1g = jnp.einsum("pt,pt->", ci1, green_occ, optimize="optimal")
+    ci1gp = jnp.einsum("pt,it->pi", ci1, greenp, optimize="optimal")
+
+    ci2g_c, ci2g_e = _force_bias_ci2g_low(trial_data.ci2, green_occ, meas_ctx.cfg)
+    ci2g = 4.0 * ci2g_c - 2.0 * ci2g_e
+    gci2g = jnp.einsum("qu,qu->", ci2g, green_occ, optimize="optimal")
+    overlap = 1.0 + 2.0 * ci1g + 0.5 * gci2g
+
+    fb_left = -(greenp @ ci2g.T) - 2.0 * ci1gp.T
+    fb_corr_mat = fb_left @ green_act
+    fb_corr = _force_bias_chol_contract_low(ham_data.chol, fb_corr_mat, meas_ctx.cfg)
+
+    fb_0 = 2.0 * lg
+    fb_1_1 = 4.0 * ci1g * lg
+    fb_2_1 = lg * gci2g
+    return (fb_0 + fb_1_1 + fb_2_1 + fb_corr) / overlap
+
+
 def force_bias_kernel_rw_rh(
     walker: jax.Array, ham_data: HamChol, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
 ) -> jax.Array:
-    ci1, ci2 = trial_data.ci1, trial_data.ci2
-    nocc_full = trial_data.nocc_full
-
-    green = _greens_restricted(walker, nocc_full)  # (nocc_full, norb_full)
-    green_act, green_occ, greenp = _active_green_blocks(green, trial_data)
-
-    chol = ham_data.chol
-    rot_chol = meas_ctx.rot_chol
-
-    lg = jnp.einsum("gpj,pj->g", rot_chol, green, optimize="optimal")
-    fb_0 = 2.0 * lg
-
-    # singles
-    ci1g = jnp.einsum("pt,pt->", ci1, green_occ, optimize="optimal")
-    ci1gp = jnp.einsum("pt,it->pi", ci1, greenp, optimize="optimal")  # (nocc, norb)
-    gci1gp = jnp.einsum("pj,pi->ij", green_act, ci1gp, optimize="optimal")  # (norb, norb)
-
-    fb_1_1 = 4.0 * ci1g * lg
-    fb_1_2 = -2.0 * jnp.einsum(
-        "gij,ij->g",
-        chol.astype(meas_ctx.cfg.mixed_real_dtype),
-        gci1gp.astype(meas_ctx.cfg.mixed_complex_dtype),
-        optimize="optimal",
-    )
-    fb_1 = fb_1_1 + fb_1_2
-
-    # doubles
-    ci2g_c = jnp.einsum(
-        "ptqu,pt->qu",
-        ci2.astype(meas_ctx.cfg.mixed_real_dtype),
-        green_occ.astype(meas_ctx.cfg.mixed_complex_dtype),
-        optimize="optimal",
-    )  # (nocc, nvir)
-    ci2g_e = jnp.einsum(
-        "ptqu,pu->qt",
-        ci2.astype(meas_ctx.cfg.mixed_real_dtype),
-        green_occ.astype(meas_ctx.cfg.mixed_complex_dtype),
-        optimize="optimal",
-    )  # (nocc, nvir)
-
-    cisd_green_c = (greenp @ ci2g_c.T) @ green_act  # (norb, norb)
-    cisd_green_e = (greenp @ ci2g_e.T) @ green_act  # (norb, norb)
-    cisd_green = -4.0 * cisd_green_c + 2.0 * cisd_green_e
-
-    ci2g = 4.0 * ci2g_c - 2.0 * ci2g_e  # (nocc, nvir)
-    gci2g = jnp.einsum("qu,qu->", ci2g, green_occ, optimize="optimal")
-
-    fb_2_1 = lg * gci2g
-    fb_2_2 = jnp.einsum(
-        "gij,ij->g",
-        chol.astype(meas_ctx.cfg.mixed_real_dtype),
-        cisd_green.astype(meas_ctx.cfg.mixed_complex_dtype),
-        optimize="optimal",
-    )
-    fb_2 = fb_2_1 + fb_2_2
-
-    overlap = 1.0 + 2.0 * ci1g + 0.5 * gci2g
-    return (fb_0 + fb_1 + fb_2) / overlap
+    if meas_ctx.cfg.memory_mode == "low":
+        return force_bias_kernel_rw_rh_low(walker, ham_data, meas_ctx, trial_data)
+    return force_bias_kernel_rw_rh_high(walker, ham_data, meas_ctx, trial_data)
 
 
 def energy_kernel_rw_rh(
