@@ -176,6 +176,36 @@ def _force_bias_ci2g_low(
     return ci2g_c, ci2g_e
 
 
+def _ci1gp_low(ci1: jax.Array, green: jax.Array, trial_data: CisdTrial) -> jax.Array:
+    """
+    Build ci1 @ greenp^T without materializing greenp.
+
+    Nonzero columns of the result live only on:
+      - occupied_full: green[:, vir_act] projected by ci1
+      - active_virtual: -ci1
+    """
+    nocc_act = trial_data.nocc
+    norb = trial_data.norb
+    ci1gp = jnp.zeros((nocc_act, norb), dtype=jnp.result_type(ci1, green))
+    ci1gp = ci1gp.at[:, : trial_data.nocc_full].set(ci1 @ green[:, trial_data.vir_act_slice].T)
+    ci1gp = ci1gp.at[:, trial_data.vir_act_slice].set(-ci1)
+    return ci1gp
+
+
+def _greenp_times_ci2g_t_low(ci2g: jax.Array, green: jax.Array, trial_data: CisdTrial) -> jax.Array:
+    """
+    Build greenp @ ci2g^T without materializing greenp.
+
+    Nonzero rows of the result live only on:
+      - occupied_full: green[:, vir_act] @ ci2g^T
+      - active_virtual: -ci2g^T
+    """
+    out = jnp.zeros((trial_data.norb, trial_data.nocc), dtype=jnp.result_type(ci2g, green))
+    out = out.at[: trial_data.nocc_full, :].set(green[:, trial_data.vir_act_slice] @ ci2g.T)
+    out = out.at[trial_data.vir_act_slice, :].set(-ci2g.T)
+    return out
+
+
 def _force_bias_common_terms(
     walker: jax.Array, ham_data: HamChol, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
@@ -309,18 +339,19 @@ def force_bias_kernel_rw_rh_low(
     nocc_full = trial_data.nocc_full
 
     green = _greens_restricted(walker, nocc_full)
-    green_act, green_occ, greenp = _active_green_blocks(green, trial_data)
+    green_act = green[trial_data.occ_act_slice, :]
+    green_occ = green[trial_data.occ_act_slice, trial_data.vir_act_slice]
 
     lg = jnp.einsum("gpj,pj->g", meas_ctx.rot_chol, green, optimize="optimal")
     ci1g = jnp.einsum("pt,pt->", ci1, green_occ, optimize="optimal")
-    ci1gp = jnp.einsum("pt,it->pi", ci1, greenp, optimize="optimal")
+    ci1gp = _ci1gp_low(ci1, green, trial_data)
 
     ci2g_c, ci2g_e = _force_bias_ci2g_low(trial_data.ci2, green_occ, meas_ctx.cfg)
     ci2g = 4.0 * ci2g_c - 2.0 * ci2g_e
     gci2g = jnp.einsum("qu,qu->", ci2g, green_occ, optimize="optimal")
     overlap = 1.0 + 2.0 * ci1g + 0.5 * gci2g
 
-    fb_left = -(greenp @ ci2g.T) - 2.0 * ci1gp.T
+    fb_left = -_greenp_times_ci2g_t_low(ci2g, green, trial_data) - 2.0 * ci1gp.T
     fb_corr_mat = fb_left @ green_act
     fb_corr = _force_bias_chol_contract_low(ham_data.chol, fb_corr_mat, meas_ctx.cfg)
 
