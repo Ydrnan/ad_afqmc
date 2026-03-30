@@ -279,6 +279,55 @@ def test_force_bias_variants_match_mixed_precision(nocc_t_core, nvir_t_outer):
         assert jnp.allclose(fb_low, fb_high, rtol=2e-5, atol=2e-5), (fb_low, fb_high)
 
 
+@pytest.mark.parametrize("nocc_t_core,nvir_t_outer", [(0, 0), (1, 2)])
+def test_energy_memory_modes_match(nocc_t_core, nvir_t_outer):
+    key = jax.random.PRNGKey(939)
+    k1, k2, k_ham, k_w = jax.random.split(key, 4)
+
+    nocc_full = 4
+    nvir_full = 6
+    nocc_act = nocc_full - nocc_t_core
+    nvir_act = nvir_full - nvir_t_outer
+
+    ci1 = 0.05 * jax.random.normal(k1, (nocc_act, nvir_act), dtype=jnp.float64)
+    ci2 = 0.02 * jax.random.normal(k2, (nocc_act, nvir_act, nocc_act, nvir_act), dtype=jnp.float64)
+    ci2 = 0.5 * (ci2 + ci2.transpose(2, 3, 0, 1))
+
+    trial = CisdTrial(
+        ci1=ci1,
+        ci2=ci2,
+        nocc_t_core=nocc_t_core,
+        nvir_t_outer=nvir_t_outer,
+    )
+    ham = testing.make_random_ham_chol(
+        k_ham, norb=nocc_full + nvir_full, n_chol=8, basis="restricted"
+    )
+    cfg_high = CisdMeasCfg(
+        memory_mode="high",
+        mixed_real_dtype=jnp.float64,
+        mixed_complex_dtype=jnp.complex128,
+        mixed_real_dtype_testing=jnp.float64,
+        mixed_complex_dtype_testing=jnp.complex128,
+    )
+    cfg_low = CisdMeasCfg(
+        memory_mode="low",
+        mixed_real_dtype=jnp.float64,
+        mixed_complex_dtype=jnp.complex128,
+        mixed_real_dtype_testing=jnp.float64,
+        mixed_complex_dtype_testing=jnp.complex128,
+    )
+    ctx_high = build_meas_ctx(ham, trial, cfg_high)
+    ctx_low = build_meas_ctx(ham, trial, cfg_low)
+
+    for i in range(4):
+        walker = testing.make_restricted_walker_near_ref(
+            jax.random.fold_in(k_w, i), nocc_full + nvir_full, nocc_full, mix=0.25
+        )
+        e_high = energy_kernel_rw_rh(walker, ham, ctx_high, trial)
+        e_low = energy_kernel_rw_rh(walker, ham, ctx_low, trial)
+        assert jnp.allclose(e_low, e_high, rtol=1e-12, atol=1e-12), (e_low, e_high)
+
+
 @pytest.mark.parametrize("norb,nocc,n_chol,memory_mode", [(8, 3, 10, "low"), (10, 4, 12, "high")])
 def test_auto_force_bias_matches_manual_cisd(norb, nocc, n_chol, memory_mode):
     walker_kind = "restricted"

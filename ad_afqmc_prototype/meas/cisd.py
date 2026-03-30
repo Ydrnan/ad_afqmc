@@ -632,6 +632,8 @@ def energy_kernel_rw_rh(
     lg = jnp.einsum("gpj,pj->g", rot_chol, green, optimize="optimal")  # (n_chol,)
     e2_0_1 = 2.0 * (lg @ lg)
 
+    e2_1_3_1 = jnp.array(0.0, dtype=jnp.result_type(walker, ci1, ci2))
+    e2_1_3_2 = jnp.array(0.0, dtype=jnp.result_type(walker, ci1, ci2))
     if meas_ctx.cfg.memory_mode == "low":
         ci1g1 = ci1 @ green[:, trial_data.vir_act_slice].T  # (nocc_act, nocc_full)
         dtype_acc = jnp.result_type(walker, ci1, ci2)
@@ -677,8 +679,6 @@ def energy_kernel_rw_rh(
     lci1g = _force_bias_chol_contract_high_realimag(chol, ci1_green, meas_ctx.cfg)
     e2_1_2 = -2.0 * (lci1g @ lg)
 
-    e2_1_3_1 = jnp.array(0.0, dtype=jnp.result_type(walker, ci1, ci2))
-    e2_1_3_2 = jnp.array(0.0, dtype=jnp.result_type(walker, ci1, ci2))
     if meas_ctx.cfg.memory_mode != "low":
         ci1g1 = ci1 @ green[:, trial_data.vir_act_slice].T  # (nocc_act, nocc_full)
         e2_1_3_1 = jnp.einsum(
