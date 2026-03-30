@@ -273,6 +273,32 @@ def _energy_l2ci2_batched_realimag(glgp: jax.Array, ci2_t: jax.Array) -> tuple[j
     return t1, t2
 
 
+def _energy_gl_scalar_realimag(green: jax.Array, chol_i: jax.Array, cfg: CisdMeasCfg) -> jax.Array:
+    green_r = jnp.real(green).astype(cfg.mixed_real_dtype)
+    green_i = jnp.imag(green).astype(cfg.mixed_real_dtype)
+    chol_i_r = chol_i.astype(cfg.mixed_real_dtype)
+    imag_unit = jnp.asarray(1.0j, dtype=cfg.mixed_complex_dtype)
+
+    real_part = jnp.einsum("pj,ji->pi", green_r, chol_i_r, optimize="optimal")
+    imag_part = jnp.einsum("pj,ji->pi", green_i, chol_i_r, optimize="optimal")
+    return real_part.astype(cfg.mixed_complex_dtype) + imag_unit * imag_part.astype(
+        cfg.mixed_complex_dtype
+    )
+
+
+def _energy_gl_batched_realimag(green: jax.Array, chol: jax.Array, cfg: CisdMeasCfg) -> jax.Array:
+    green_r = jnp.real(green).astype(cfg.mixed_real_dtype)
+    green_i = jnp.imag(green).astype(cfg.mixed_real_dtype)
+    chol_r = chol.astype(cfg.mixed_real_dtype)
+    imag_unit = jnp.asarray(1.0j, dtype=cfg.mixed_complex_dtype)
+
+    real_part = jnp.einsum("pj,gji->gpi", green_r, chol_r, optimize="optimal")
+    imag_part = jnp.einsum("pj,gji->gpi", green_i, chol_r, optimize="optimal")
+    return real_part.astype(cfg.mixed_complex_dtype) + imag_unit * imag_part.astype(
+        cfg.mixed_complex_dtype
+    )
+
+
 def _force_bias_common_terms(
     walker: jax.Array, ham_data: HamChol, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
@@ -593,7 +619,7 @@ def energy_kernel_rw_rh(
             e22_acc, e23_acc = carry
             chol_i, rot_chol_i = x  # (norb,norb), (nocc,norb)
 
-            gl_i = jnp.einsum("pj,ji->pi", green, chol_i, optimize="optimal")
+            gl_i = _energy_gl_scalar_realimag(green, chol_i, meas_ctx.cfg)
             lci2_green_i = jnp.einsum("pi,ji->pj", rot_chol_i, ci2_green, optimize="optimal")
 
             e22_acc = e22_acc + 0.5 * jnp.einsum("pi,pi->", gl_i, lci2_green_i, optimize="optimal")
@@ -610,12 +636,7 @@ def energy_kernel_rw_rh(
         (e2_2_2_2, e2_2_3), _ = lax.scan(scan_over_chol, (zero, zero), (chol, rot_chol))
     else:
         lci2_green = jnp.einsum("gpi,ji->gpj", rot_chol, ci2_green, optimize="optimal")
-        gl = jnp.einsum(
-            "pj,gji->gpi",
-            green.astype(meas_ctx.cfg.mixed_complex_dtype),
-            chol.astype(meas_ctx.cfg.mixed_real_dtype),
-            optimize="optimal",
-        )
+        gl = _energy_gl_batched_realimag(green, chol, meas_ctx.cfg)
         e2_2_2_2 = 0.5 * jnp.einsum("gpi,gpi->", gl, lci2_green, optimize="optimal")
 
         glgp = jnp.einsum("gpi,it->gpt", gl, greenp, optimize="optimal").astype(
