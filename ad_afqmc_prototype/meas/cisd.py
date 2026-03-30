@@ -240,17 +240,41 @@ def _energy_l2ci2_scalar_realimag(glgp_i: jax.Array, ci2_t: jax.Array) -> tuple[
     x_i = jnp.imag(glgp_i).astype(ci2_t.dtype)
     imag_unit = jnp.asarray(1.0j, dtype=glgp_i.dtype)
 
-    t1_rr = jnp.einsum("pt,qu,ptqu->", x_r, x_r, ci2_t, optimize="optimal")
-    t1_ii = jnp.einsum("pt,qu,ptqu->", x_i, x_i, ci2_t, optimize="optimal")
-    t1_ri = jnp.einsum("pt,qu,ptqu->", x_r, x_i, ci2_t, optimize="optimal")
-    t1_ir = jnp.einsum("pt,qu,ptqu->", x_i, x_r, ci2_t, optimize="optimal")
-    t1 = (t1_rr - t1_ii).astype(glgp_i.dtype) + imag_unit * (t1_ri + t1_ir).astype(glgp_i.dtype)
+    zero = jnp.array(0.0, dtype=ci2_t.dtype)
 
-    t2_rr = jnp.einsum("pu,qt,ptqu->", x_r, x_r, ci2_t, optimize="optimal")
-    t2_ii = jnp.einsum("pu,qt,ptqu->", x_i, x_i, ci2_t, optimize="optimal")
-    t2_ri = jnp.einsum("pu,qt,ptqu->", x_r, x_i, ci2_t, optimize="optimal")
-    t2_ir = jnp.einsum("pu,qt,ptqu->", x_i, x_r, ci2_t, optimize="optimal")
-    t2 = (t2_rr - t2_ii).astype(glgp_i.dtype) + imag_unit * (t2_ri + t2_ir).astype(glgp_i.dtype)
+    def scan_body(
+        carry: tuple[jax.Array, jax.Array, jax.Array, jax.Array],
+        xs: tuple[jax.Array, jax.Array, jax.Array],
+    ) -> tuple[tuple[jax.Array, jax.Array, jax.Array, jax.Array], None]:
+        t1_r, t1_i, t2_r, t2_i = carry
+        xp_r, xp_i, ci2_p = xs
+
+        a_r = jnp.einsum("t,tqu->qu", xp_r, ci2_p, optimize="optimal")
+        a_i = jnp.einsum("t,tqu->qu", xp_i, ci2_p, optimize="optimal")
+        t1_r = t1_r + jnp.einsum("qu,qu->", a_r, x_r, optimize="optimal") - jnp.einsum(
+            "qu,qu->", a_i, x_i, optimize="optimal"
+        )
+        t1_i = t1_i + jnp.einsum("qu,qu->", a_r, x_i, optimize="optimal") + jnp.einsum(
+            "qu,qu->", a_i, x_r, optimize="optimal"
+        )
+
+        b_r = jnp.einsum("u,tqu->qt", xp_r, ci2_p, optimize="optimal")
+        b_i = jnp.einsum("u,tqu->qt", xp_i, ci2_p, optimize="optimal")
+        t2_r = t2_r + jnp.einsum("qt,qt->", b_r, x_r, optimize="optimal") - jnp.einsum(
+            "qt,qt->", b_i, x_i, optimize="optimal"
+        )
+        t2_i = t2_i + jnp.einsum("qt,qt->", b_r, x_i, optimize="optimal") + jnp.einsum(
+            "qt,qt->", b_i, x_r, optimize="optimal"
+        )
+        return (t1_r, t1_i, t2_r, t2_i), None
+
+    (t1_r, t1_i, t2_r, t2_i), _ = lax.scan(
+        scan_body,
+        (zero, zero, zero, zero),
+        (x_r, x_i, ci2_t),
+    )
+    t1 = t1_r.astype(glgp_i.dtype) + imag_unit * t1_i.astype(glgp_i.dtype)
+    t2 = t2_r.astype(glgp_i.dtype) + imag_unit * t2_i.astype(glgp_i.dtype)
     return t1, t2
 
 
@@ -259,17 +283,43 @@ def _energy_l2ci2_batched_realimag(glgp: jax.Array, ci2_t: jax.Array) -> tuple[j
     x_i = jnp.imag(glgp).astype(ci2_t.dtype)
     imag_unit = jnp.asarray(1.0j, dtype=glgp.dtype)
 
-    t1_rr = jnp.einsum("gpt,gqu,ptqu->g", x_r, x_r, ci2_t, optimize="optimal")
-    t1_ii = jnp.einsum("gpt,gqu,ptqu->g", x_i, x_i, ci2_t, optimize="optimal")
-    t1_ri = jnp.einsum("gpt,gqu,ptqu->g", x_r, x_i, ci2_t, optimize="optimal")
-    t1_ir = jnp.einsum("gpt,gqu,ptqu->g", x_i, x_r, ci2_t, optimize="optimal")
-    t1 = (t1_rr - t1_ii).astype(glgp.dtype) + imag_unit * (t1_ri + t1_ir).astype(glgp.dtype)
+    x_r_scan = jnp.swapaxes(x_r, 0, 1)
+    x_i_scan = jnp.swapaxes(x_i, 0, 1)
+    zero = jnp.zeros((x_r.shape[0],), dtype=ci2_t.dtype)
 
-    t2_rr = jnp.einsum("gpu,gqt,ptqu->g", x_r, x_r, ci2_t, optimize="optimal")
-    t2_ii = jnp.einsum("gpu,gqt,ptqu->g", x_i, x_i, ci2_t, optimize="optimal")
-    t2_ri = jnp.einsum("gpu,gqt,ptqu->g", x_r, x_i, ci2_t, optimize="optimal")
-    t2_ir = jnp.einsum("gpu,gqt,ptqu->g", x_i, x_r, ci2_t, optimize="optimal")
-    t2 = (t2_rr - t2_ii).astype(glgp.dtype) + imag_unit * (t2_ri + t2_ir).astype(glgp.dtype)
+    def scan_body(
+        carry: tuple[jax.Array, jax.Array, jax.Array, jax.Array],
+        xs: tuple[jax.Array, jax.Array, jax.Array],
+    ) -> tuple[tuple[jax.Array, jax.Array, jax.Array, jax.Array], None]:
+        t1_r, t1_i, t2_r, t2_i = carry
+        xp_r, xp_i, ci2_p = xs
+
+        a_r = jnp.einsum("gt,tqu->gqu", xp_r, ci2_p, optimize="optimal")
+        a_i = jnp.einsum("gt,tqu->gqu", xp_i, ci2_p, optimize="optimal")
+        t1_r = t1_r + jnp.einsum("gqu,gqu->g", a_r, x_r, optimize="optimal") - jnp.einsum(
+            "gqu,gqu->g", a_i, x_i, optimize="optimal"
+        )
+        t1_i = t1_i + jnp.einsum("gqu,gqu->g", a_r, x_i, optimize="optimal") + jnp.einsum(
+            "gqu,gqu->g", a_i, x_r, optimize="optimal"
+        )
+
+        b_r = jnp.einsum("gu,tqu->gqt", xp_r, ci2_p, optimize="optimal")
+        b_i = jnp.einsum("gu,tqu->gqt", xp_i, ci2_p, optimize="optimal")
+        t2_r = t2_r + jnp.einsum("gqt,gqt->g", b_r, x_r, optimize="optimal") - jnp.einsum(
+            "gqt,gqt->g", b_i, x_i, optimize="optimal"
+        )
+        t2_i = t2_i + jnp.einsum("gqt,gqt->g", b_r, x_i, optimize="optimal") + jnp.einsum(
+            "gqt,gqt->g", b_i, x_r, optimize="optimal"
+        )
+        return (t1_r, t1_i, t2_r, t2_i), None
+
+    (t1_r, t1_i, t2_r, t2_i), _ = lax.scan(
+        scan_body,
+        (zero, zero, zero, zero),
+        (x_r_scan, x_i_scan, ci2_t),
+    )
+    t1 = t1_r.astype(glgp.dtype) + imag_unit * t1_i.astype(glgp.dtype)
+    t2 = t2_r.astype(glgp.dtype) + imag_unit * t2_i.astype(glgp.dtype)
     return t1, t2
 
 
