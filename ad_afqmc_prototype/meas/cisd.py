@@ -240,6 +240,27 @@ def _energy_l2ci2_scalar_realimag(glgp_i: jax.Array, ci2_t: jax.Array) -> tuple[
     x_i = jnp.imag(glgp_i).astype(ci2_t.dtype)
     imag_unit = jnp.asarray(1.0j, dtype=glgp_i.dtype)
 
+    t1_rr = jnp.einsum("pt,qu,ptqu->", x_r, x_r, ci2_t, optimize="optimal")
+    t1_ii = jnp.einsum("pt,qu,ptqu->", x_i, x_i, ci2_t, optimize="optimal")
+    t1_ri = jnp.einsum("pt,qu,ptqu->", x_r, x_i, ci2_t, optimize="optimal")
+    t1_ir = jnp.einsum("pt,qu,ptqu->", x_i, x_r, ci2_t, optimize="optimal")
+    t1 = (t1_rr - t1_ii).astype(glgp_i.dtype) + imag_unit * (t1_ri + t1_ir).astype(glgp_i.dtype)
+
+    t2_rr = jnp.einsum("pu,qt,ptqu->", x_r, x_r, ci2_t, optimize="optimal")
+    t2_ii = jnp.einsum("pu,qt,ptqu->", x_i, x_i, ci2_t, optimize="optimal")
+    t2_ri = jnp.einsum("pu,qt,ptqu->", x_r, x_i, ci2_t, optimize="optimal")
+    t2_ir = jnp.einsum("pu,qt,ptqu->", x_i, x_r, ci2_t, optimize="optimal")
+    t2 = (t2_rr - t2_ii).astype(glgp_i.dtype) + imag_unit * (t2_ri + t2_ir).astype(glgp_i.dtype)
+    return t1, t2
+
+
+def _energy_l2ci2_scalar_blocked_realimag(
+    glgp_i: jax.Array, ci2_t: jax.Array
+) -> tuple[jax.Array, jax.Array]:
+    x_r = jnp.real(glgp_i).astype(ci2_t.dtype)
+    x_i = jnp.imag(glgp_i).astype(ci2_t.dtype)
+    imag_unit = jnp.asarray(1.0j, dtype=glgp_i.dtype)
+
     zero = jnp.array(0.0, dtype=ci2_t.dtype)
 
     def scan_body(
@@ -279,6 +300,27 @@ def _energy_l2ci2_scalar_realimag(glgp_i: jax.Array, ci2_t: jax.Array) -> tuple[
 
 
 def _energy_l2ci2_batched_realimag(glgp: jax.Array, ci2_t: jax.Array) -> tuple[jax.Array, jax.Array]:
+    x_r = jnp.real(glgp).astype(ci2_t.dtype)
+    x_i = jnp.imag(glgp).astype(ci2_t.dtype)
+    imag_unit = jnp.asarray(1.0j, dtype=glgp.dtype)
+
+    t1_rr = jnp.einsum("gpt,gqu,ptqu->g", x_r, x_r, ci2_t, optimize="optimal")
+    t1_ii = jnp.einsum("gpt,gqu,ptqu->g", x_i, x_i, ci2_t, optimize="optimal")
+    t1_ri = jnp.einsum("gpt,gqu,ptqu->g", x_r, x_i, ci2_t, optimize="optimal")
+    t1_ir = jnp.einsum("gpt,gqu,ptqu->g", x_i, x_r, ci2_t, optimize="optimal")
+    t1 = (t1_rr - t1_ii).astype(glgp.dtype) + imag_unit * (t1_ri + t1_ir).astype(glgp.dtype)
+
+    t2_rr = jnp.einsum("gpu,gqt,ptqu->g", x_r, x_r, ci2_t, optimize="optimal")
+    t2_ii = jnp.einsum("gpu,gqt,ptqu->g", x_i, x_i, ci2_t, optimize="optimal")
+    t2_ri = jnp.einsum("gpu,gqt,ptqu->g", x_r, x_i, ci2_t, optimize="optimal")
+    t2_ir = jnp.einsum("gpu,gqt,ptqu->g", x_i, x_r, ci2_t, optimize="optimal")
+    t2 = (t2_rr - t2_ii).astype(glgp.dtype) + imag_unit * (t2_ri + t2_ir).astype(glgp.dtype)
+    return t1, t2
+
+
+def _energy_l2ci2_batched_blocked_realimag(
+    glgp: jax.Array, ci2_t: jax.Array
+) -> tuple[jax.Array, jax.Array]:
     x_r = jnp.real(glgp).astype(ci2_t.dtype)
     x_i = jnp.imag(glgp).astype(ci2_t.dtype)
     imag_unit = jnp.asarray(1.0j, dtype=glgp.dtype)
