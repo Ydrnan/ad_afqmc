@@ -235,6 +235,44 @@ def _greenp_times_ci2g_t_low(
     return out
 
 
+def _energy_l2ci2_scalar_realimag(glgp_i: jax.Array, ci2_t: jax.Array) -> tuple[jax.Array, jax.Array]:
+    x_r = jnp.real(glgp_i).astype(ci2_t.dtype)
+    x_i = jnp.imag(glgp_i).astype(ci2_t.dtype)
+    imag_unit = jnp.asarray(1.0j, dtype=glgp_i.dtype)
+
+    t1_rr = jnp.einsum("pt,qu,ptqu->", x_r, x_r, ci2_t, optimize="optimal")
+    t1_ii = jnp.einsum("pt,qu,ptqu->", x_i, x_i, ci2_t, optimize="optimal")
+    t1_ri = jnp.einsum("pt,qu,ptqu->", x_r, x_i, ci2_t, optimize="optimal")
+    t1_ir = jnp.einsum("pt,qu,ptqu->", x_i, x_r, ci2_t, optimize="optimal")
+    t1 = (t1_rr - t1_ii).astype(glgp_i.dtype) + imag_unit * (t1_ri + t1_ir).astype(glgp_i.dtype)
+
+    t2_rr = jnp.einsum("pu,qt,ptqu->", x_r, x_r, ci2_t, optimize="optimal")
+    t2_ii = jnp.einsum("pu,qt,ptqu->", x_i, x_i, ci2_t, optimize="optimal")
+    t2_ri = jnp.einsum("pu,qt,ptqu->", x_r, x_i, ci2_t, optimize="optimal")
+    t2_ir = jnp.einsum("pu,qt,ptqu->", x_i, x_r, ci2_t, optimize="optimal")
+    t2 = (t2_rr - t2_ii).astype(glgp_i.dtype) + imag_unit * (t2_ri + t2_ir).astype(glgp_i.dtype)
+    return t1, t2
+
+
+def _energy_l2ci2_batched_realimag(glgp: jax.Array, ci2_t: jax.Array) -> tuple[jax.Array, jax.Array]:
+    x_r = jnp.real(glgp).astype(ci2_t.dtype)
+    x_i = jnp.imag(glgp).astype(ci2_t.dtype)
+    imag_unit = jnp.asarray(1.0j, dtype=glgp.dtype)
+
+    t1_rr = jnp.einsum("gpt,gqu,ptqu->g", x_r, x_r, ci2_t, optimize="optimal")
+    t1_ii = jnp.einsum("gpt,gqu,ptqu->g", x_i, x_i, ci2_t, optimize="optimal")
+    t1_ri = jnp.einsum("gpt,gqu,ptqu->g", x_r, x_i, ci2_t, optimize="optimal")
+    t1_ir = jnp.einsum("gpt,gqu,ptqu->g", x_i, x_r, ci2_t, optimize="optimal")
+    t1 = (t1_rr - t1_ii).astype(glgp.dtype) + imag_unit * (t1_ri + t1_ir).astype(glgp.dtype)
+
+    t2_rr = jnp.einsum("gpu,gqt,ptqu->g", x_r, x_r, ci2_t, optimize="optimal")
+    t2_ii = jnp.einsum("gpu,gqt,ptqu->g", x_i, x_i, ci2_t, optimize="optimal")
+    t2_ri = jnp.einsum("gpu,gqt,ptqu->g", x_r, x_i, ci2_t, optimize="optimal")
+    t2_ir = jnp.einsum("gpu,gqt,ptqu->g", x_i, x_r, ci2_t, optimize="optimal")
+    t2 = (t2_rr - t2_ii).astype(glgp.dtype) + imag_unit * (t2_ri + t2_ir).astype(glgp.dtype)
+    return t1, t2
+
+
 def _force_bias_common_terms(
     walker: jax.Array, ham_data: HamChol, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
@@ -564,20 +602,7 @@ def energy_kernel_rw_rh(
                 meas_ctx.cfg.mixed_complex_dtype_testing
             )
             glgp_i = glgp_i[trial_data.occ_act_slice, :]
-            l2ci2_1 = jnp.einsum(
-                "pt,qu,ptqu->",
-                glgp_i,
-                glgp_i,
-                ci2_t,
-                optimize="optimal",
-            )
-            l2ci2_2 = jnp.einsum(
-                "pu,qt,ptqu->",
-                glgp_i,
-                glgp_i,
-                ci2_t,
-                optimize="optimal",
-            )
+            l2ci2_1, l2ci2_2 = _energy_l2ci2_scalar_realimag(glgp_i, ci2_t)
             e23_acc = e23_acc + (2.0 * l2ci2_1 - l2ci2_2)
 
             return (e22_acc, e23_acc), zero
@@ -597,19 +622,8 @@ def energy_kernel_rw_rh(
             meas_ctx.cfg.mixed_complex_dtype_testing
         )
         glgp = glgp[:, trial_data.occ_act_slice, :]
-        l2ci2_1 = jnp.einsum(
-            "gpt,gqu,ptqu->g",
-            glgp,
-            glgp,
-            ci2.astype(meas_ctx.cfg.mixed_real_dtype_testing),
-            optimize="optimal",
-        )
-        l2ci2_2 = jnp.einsum(
-            "gpu,gqt,ptqu->g",
-            glgp,
-            glgp,
-            ci2.astype(meas_ctx.cfg.mixed_real_dtype_testing),
-            optimize="optimal",
+        l2ci2_1, l2ci2_2 = _energy_l2ci2_batched_realimag(
+            glgp, ci2.astype(meas_ctx.cfg.mixed_real_dtype_testing)
         )
         e2_2_3 = 2.0 * l2ci2_1.sum() - l2ci2_2.sum()
 
