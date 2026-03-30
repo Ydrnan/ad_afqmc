@@ -18,6 +18,7 @@ from ad_afqmc_prototype.meas.cisd import (
     CisdMeasCfg,
     build_meas_ctx,
     energy_kernel_rw_rh,
+    force_bias_kernel_rw_rh_high_complex,
     force_bias_kernel_rw_rh_high,
     force_bias_kernel_rw_rh_high_realimag,
     force_bias_kernel_rw_rh_low,
@@ -218,9 +219,14 @@ def test_force_bias_high_variants_match(nocc_t_core, nvir_t_outer):
         walker = testing.make_restricted_walker_near_ref(
             jax.random.fold_in(k_w, i), nocc_full + nvir_full, nocc_full, mix=0.25
         )
+        fb_high_complex = force_bias_kernel_rw_rh_high_complex(walker, ham, ctx, trial)
         fb_high = force_bias_kernel_rw_rh_high(walker, ham, ctx, trial)
         fb_high_realimag = force_bias_kernel_rw_rh_high_realimag(walker, ham, ctx, trial)
         fb_low = force_bias_kernel_rw_rh_low(walker, ham, ctx, trial)
+        assert jnp.allclose(fb_high_complex, fb_high, rtol=1e-12, atol=1e-12), (
+            fb_high_complex,
+            fb_high,
+        )
         assert jnp.allclose(fb_high_realimag, fb_high, rtol=1e-12, atol=1e-12), (
             fb_high_realimag,
             fb_high,

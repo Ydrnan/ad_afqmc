@@ -346,7 +346,7 @@ def make_level_pack(
     )
 
 
-def force_bias_kernel_rw_rh_high(
+def force_bias_kernel_rw_rh_high_complex(
     walker: jax.Array, ham_data: HamChol, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
 ) -> jax.Array:
     lg, ci1g, gci1gp, cisd_green, overlap, gci2g = _force_bias_common_terms(
@@ -362,7 +362,7 @@ def force_bias_kernel_rw_rh_high(
     return (fb_0 + fb_1_1 + fb_1_2 + fb_2_1 + fb_2_2) / overlap
 
 
-def force_bias_kernel_rw_rh_high_realimag(
+def force_bias_kernel_rw_rh_high(
     walker: jax.Array, ham_data: HamChol, meas_ctx: CisdMeasCtx, trial_data: CisdTrial
 ) -> jax.Array:
     lg, ci1g, gci1gp, cisd_green, overlap, gci2g = _force_bias_common_terms_high_realimag(
@@ -379,6 +379,9 @@ def force_bias_kernel_rw_rh_high_realimag(
     )
 
     return (fb_0 + fb_1_1 + fb_2_1 + fb_corr) / overlap
+
+
+force_bias_kernel_rw_rh_high_realimag = force_bias_kernel_rw_rh_high
 
 
 def force_bias_kernel_rw_rh_low(
