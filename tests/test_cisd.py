@@ -2,8 +2,6 @@ from ad_afqmc_prototype import config
 
 config.configure_once()
 
-from typing import Literal
-
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -18,11 +16,11 @@ from ad_afqmc_prototype.meas.cisd import (
     CisdMeasCfg,
     build_meas_ctx,
     energy_kernel_rw_rh,
-    force_bias_kernel_rw_rh_high_complex,
+    force_bias_kernel_rw_rh,
     force_bias_kernel_rw_rh_high,
+    force_bias_kernel_rw_rh_high_complex,
     force_bias_kernel_rw_rh_high_realimag,
     force_bias_kernel_rw_rh_low,
-    force_bias_kernel_rw_rh,
     get_cisd_meas_cfg,
     make_cisd_meas_ops,
     rdm1_kernel_rw,
@@ -53,7 +51,6 @@ def _make_cisd_trial(
     norb: int,
     nocc: int,
     *,
-    memory_mode: Literal["low", "high"] = "low",
     dtype=jnp.float64,
     scale_ci1: float = 0.05,
     scale_ci2: float = 0.02,
@@ -352,10 +349,9 @@ def test_auto_force_bias_matches_manual_cisd(norb, nocc, n_chol, memory_mode):
         make_trial_fn_kwargs=dict(
             norb=norb,
             nocc=nocc,
-            memory_mode=memory_mode,
         ),
-        make_trial_ops_fn=make_cisd_trial_ops,
-        make_meas_ops_fn=make_cisd_meas_ops,
+        make_trial_ops_fn=lambda sys: make_cisd_trial_ops(sys, memory_mode=memory_mode),
+        make_meas_ops_fn=lambda sys: make_cisd_meas_ops(sys, memory_mode=memory_mode),
     )
 
     fb_manual = meas_manual.require_kernel(k_force_bias)
@@ -398,10 +394,9 @@ def test_auto_energy_matches_manual_cisd(norb, nocc, n_chol, memory_mode):
         make_trial_fn_kwargs=dict(
             norb=norb,
             nocc=nocc,
-            memory_mode=memory_mode,
         ),
-        make_trial_ops_fn=make_cisd_trial_ops,
-        make_meas_ops_fn=make_cisd_meas_ops,
+        make_trial_ops_fn=lambda sys: make_cisd_trial_ops(sys, memory_mode=memory_mode),
+        make_meas_ops_fn=lambda sys: make_cisd_meas_ops(sys, memory_mode=memory_mode),
     )
 
     if not meas_manual.has_kernel(k_energy):
