@@ -458,18 +458,7 @@ def energy_kernel_rw_rh(
     e1_1 = e1_1_1 + e1_1_2
 
     # doubles
-    ci2g_c = jnp.einsum(
-        "ptqu,pt->qu",
-        ci2.astype(meas_ctx.cfg.mixed_real_dtype),
-        green_occ.astype(meas_ctx.cfg.mixed_complex_dtype),
-        optimize="optimal",
-    )
-    ci2g_e = jnp.einsum(
-        "ptqu,pu->qt",
-        ci2.astype(meas_ctx.cfg.mixed_real_dtype),
-        green_occ.astype(meas_ctx.cfg.mixed_complex_dtype),
-        optimize="optimal",
-    )
+    ci2g_c, ci2g_e = _force_bias_ci2g_high_realimag(ci2, green_occ, meas_ctx.cfg)
     ci2_green_c = (greenp @ ci2g_c.T) @ green_act
     ci2_green_e = (greenp @ ci2g_e.T) @ green_act
     ci2_green = 2.0 * ci2_green_c - 1.0 * ci2_green_e
@@ -529,12 +518,7 @@ def energy_kernel_rw_rh(
 
     # singles
     e2_1_1 = 2.0 * e2_0 * ci1g
-    lci1g = jnp.einsum(
-        "gij,ij->g",
-        chol.astype(meas_ctx.cfg.mixed_real_dtype),
-        ci1_green.astype(meas_ctx.cfg.mixed_complex_dtype),
-        optimize="optimal",
-    )
+    lci1g = _force_bias_chol_contract_high_realimag(chol, ci1_green, meas_ctx.cfg)
     e2_1_2 = -2.0 * (lci1g @ lg)
 
     e2_1_3_1 = jnp.array(0.0, dtype=jnp.result_type(walker, ci1, ci2))
@@ -561,12 +545,7 @@ def energy_kernel_rw_rh(
 
     # doubles
     e2_2_1 = e2_0 * gci2g
-    lci2g = jnp.einsum(
-        "gij,ij->g",
-        chol.astype(meas_ctx.cfg.mixed_real_dtype),
-        ci2_green.astype(meas_ctx.cfg.mixed_complex_dtype),
-        optimize="optimal",
-    )
+    lci2g = _force_bias_chol_contract_high_realimag(chol, ci2_green, meas_ctx.cfg)
     e2_2_2_1 = -(lci2g @ lg)
 
     if meas_ctx.cfg.memory_mode == "low":
