@@ -485,10 +485,46 @@ def energy_kernel_rw_rh(
 
     # 2 body
     lg = jnp.einsum("gpj,pj->g", rot_chol, green, optimize="optimal")  # (n_chol,)
-    lg1 = jnp.einsum("gpj,qj->gpq", rot_chol, green, optimize="optimal")  # (n_chol,nocc,nocc)
-
     e2_0_1 = 2.0 * (lg @ lg)
-    e2_0_2 = -jnp.sum(lg1 * jnp.swapaxes(lg1, -1, -2))
+
+    if meas_ctx.cfg.memory_mode == "low":
+        ci1g1 = ci1 @ green[:, trial_data.vir_act_slice].T  # (nocc_act, nocc_full)
+        dtype_acc = jnp.result_type(walker, ci1, ci2)
+        zero = jnp.array(0.0, dtype=dtype_acc)
+
+        def scan_lg1_branch(
+            carry: tuple[jax.Array, jax.Array, jax.Array],
+            xs: tuple[jax.Array, jax.Array],
+        ) -> tuple[tuple[jax.Array, jax.Array, jax.Array], None]:
+            e20_acc, e2131_acc, e2132_acc = carry
+            rot_chol_i, lci1_i = xs  # (nocc_full, norb_full), (norb_full, nocc_act)
+
+            lg1_i = jnp.einsum("pj,qj->pq", rot_chol_i, green, optimize="optimal")
+            e20_acc = e20_acc - jnp.sum(lg1_i * jnp.swapaxes(lg1_i, -1, -2))
+            e2131_acc = e2131_acc + jnp.einsum(
+                "pq,qa,ap->",
+                lg1_i,
+                lg1_i[:, trial_data.occ_act_slice],
+                ci1g1,
+                optimize="optimal",
+            )
+            lci1g_mat_i = jnp.einsum("ia,qi->aq", lci1_i, green, optimize="optimal")
+            e2132_acc = e2132_acc - jnp.einsum(
+                "aq,qa->",
+                lci1g_mat_i,
+                lg1_i[:, trial_data.occ_act_slice],
+                optimize="optimal",
+            )
+            return (e20_acc, e2131_acc, e2132_acc), None
+
+        (e2_0_2, e2_1_3_1, e2_1_3_2), _ = lax.scan(
+            scan_lg1_branch,
+            (zero, zero, zero),
+            (rot_chol, meas_ctx.lci1),
+        )
+    else:
+        lg1 = jnp.einsum("gpj,qj->gpq", rot_chol, green, optimize="optimal")  # (n_chol,nocc,nocc)
+        e2_0_2 = -jnp.sum(lg1 * jnp.swapaxes(lg1, -1, -2))
     e2_0 = e2_0_1 + e2_0_2
 
     # singles
@@ -501,21 +537,24 @@ def energy_kernel_rw_rh(
     )
     e2_1_2 = -2.0 * (lci1g @ lg)
 
-    ci1g1 = ci1 @ green[:, trial_data.vir_act_slice].T  # (nocc_act, nocc_full)
-    e2_1_3_1 = jnp.einsum(
-        "gpq,gqa,ap->",
-        lg1,
-        lg1[:, :, trial_data.occ_act_slice],
-        ci1g1,
-        optimize="optimal",
-    )
-    lci1g_mat = jnp.einsum("gia,qi->gaq", meas_ctx.lci1, green, optimize="optimal")
-    e2_1_3_2 = -jnp.einsum(
-        "gaq,gqa->",
-        lci1g_mat,
-        lg1[:, :, trial_data.occ_act_slice],
-        optimize="optimal",
-    )
+    e2_1_3_1 = jnp.array(0.0, dtype=jnp.result_type(walker, ci1, ci2))
+    e2_1_3_2 = jnp.array(0.0, dtype=jnp.result_type(walker, ci1, ci2))
+    if meas_ctx.cfg.memory_mode != "low":
+        ci1g1 = ci1 @ green[:, trial_data.vir_act_slice].T  # (nocc_act, nocc_full)
+        e2_1_3_1 = jnp.einsum(
+            "gpq,gqa,ap->",
+            lg1,
+            lg1[:, :, trial_data.occ_act_slice],
+            ci1g1,
+            optimize="optimal",
+        )
+        lci1g_mat = jnp.einsum("gia,qi->gaq", meas_ctx.lci1, green, optimize="optimal")
+        e2_1_3_2 = -jnp.einsum(
+            "gaq,gqa->",
+            lci1g_mat,
+            lg1[:, :, trial_data.occ_act_slice],
+            optimize="optimal",
+        )
     e2_1_3 = e2_1_3_1 + e2_1_3_2
 
     e2_1 = e2_1_1 + 2.0 * (e2_1_2 + e2_1_3)
@@ -531,8 +570,6 @@ def energy_kernel_rw_rh(
     e2_2_2_1 = -(lci2g @ lg)
 
     if meas_ctx.cfg.memory_mode == "low":
-        dtype_acc = jnp.result_type(walker, ci1, ci2)
-        zero = jnp.array(0.0, dtype=dtype_acc)
         ci2_t = ci2.astype(meas_ctx.cfg.mixed_real_dtype)
 
         def scan_over_chol(carry, x):
