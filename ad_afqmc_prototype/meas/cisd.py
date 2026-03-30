@@ -198,7 +198,9 @@ def _force_bias_ci2g_high_realimag(
     return ci2g_c, ci2g_e
 
 
-def _ci1gp_low(ci1: jax.Array, green: jax.Array, trial_data: CisdTrial) -> jax.Array:
+def _ci1gp_low(
+    ci1: jax.Array, green: jax.Array, trial_data: CisdTrial, cfg: CisdMeasCfg
+) -> jax.Array:
     """
     Build ci1 @ greenp^T without materializing greenp.
 
@@ -208,13 +210,17 @@ def _ci1gp_low(ci1: jax.Array, green: jax.Array, trial_data: CisdTrial) -> jax.A
     """
     nocc_act = trial_data.nocc
     norb = trial_data.norb
-    ci1gp = jnp.zeros((nocc_act, norb), dtype=jnp.result_type(ci1, green))
-    ci1gp = ci1gp.at[:, : trial_data.nocc_full].set(ci1 @ green[:, trial_data.vir_act_slice].T)
-    ci1gp = ci1gp.at[:, trial_data.vir_act_slice].set(-ci1)
+    ci1_t = ci1.astype(cfg.mixed_real_dtype)
+    green_t = green[:, trial_data.vir_act_slice].astype(cfg.mixed_complex_dtype)
+    ci1gp = jnp.zeros((nocc_act, norb), dtype=cfg.mixed_complex_dtype)
+    ci1gp = ci1gp.at[:, : trial_data.nocc_full].set(ci1_t @ green_t.T)
+    ci1gp = ci1gp.at[:, trial_data.vir_act_slice].set(-ci1_t)
     return ci1gp
 
 
-def _greenp_times_ci2g_t_low(ci2g: jax.Array, green: jax.Array, trial_data: CisdTrial) -> jax.Array:
+def _greenp_times_ci2g_t_low(
+    ci2g: jax.Array, green: jax.Array, trial_data: CisdTrial, cfg: CisdMeasCfg
+) -> jax.Array:
     """
     Build greenp @ ci2g^T without materializing greenp.
 
@@ -222,8 +228,9 @@ def _greenp_times_ci2g_t_low(ci2g: jax.Array, green: jax.Array, trial_data: Cisd
       - occupied_full: green[:, vir_act] @ ci2g^T
       - active_virtual: -ci2g^T
     """
-    out = jnp.zeros((trial_data.norb, trial_data.nocc), dtype=jnp.result_type(ci2g, green))
-    out = out.at[: trial_data.nocc_full, :].set(green[:, trial_data.vir_act_slice] @ ci2g.T)
+    green_t = green[:, trial_data.vir_act_slice].astype(cfg.mixed_complex_dtype)
+    out = jnp.zeros((trial_data.norb, trial_data.nocc), dtype=cfg.mixed_complex_dtype)
+    out = out.at[: trial_data.nocc_full, :].set(green_t @ ci2g.T)
     out = out.at[trial_data.vir_act_slice, :].set(-ci2g.T)
     return out
 
@@ -393,18 +400,19 @@ def force_bias_kernel_rw_rh_low(
     green = _greens_restricted(walker, nocc_full)
     green_act = green[trial_data.occ_act_slice, :]
     green_occ = green[trial_data.occ_act_slice, trial_data.vir_act_slice]
+    green_act_t = green_act.astype(meas_ctx.cfg.mixed_complex_dtype)
 
     lg = jnp.einsum("gpj,pj->g", meas_ctx.rot_chol, green, optimize="optimal")
     ci1g = jnp.einsum("pt,pt->", ci1, green_occ, optimize="optimal")
-    ci1gp = _ci1gp_low(ci1, green, trial_data)
+    ci1gp = _ci1gp_low(ci1, green, trial_data, meas_ctx.cfg)
 
     ci2g_c, ci2g_e = _force_bias_ci2g_low(trial_data.ci2, green_occ, meas_ctx.cfg)
     ci2g = 4.0 * ci2g_c - 2.0 * ci2g_e
     gci2g = jnp.einsum("qu,qu->", ci2g, green_occ, optimize="optimal")
     overlap = 1.0 + 2.0 * ci1g + 0.5 * gci2g
 
-    fb_left = -_greenp_times_ci2g_t_low(ci2g, green, trial_data) - 2.0 * ci1gp.T
-    fb_corr_mat = fb_left @ green_act
+    fb_left = -_greenp_times_ci2g_t_low(ci2g, green, trial_data, meas_ctx.cfg) - 2.0 * ci1gp.T
+    fb_corr_mat = fb_left @ green_act_t
     fb_corr = _force_bias_chol_contract_low(ham_data.chol, fb_corr_mat, meas_ctx.cfg)
 
     fb_0 = 2.0 * lg
