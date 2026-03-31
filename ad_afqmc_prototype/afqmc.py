@@ -8,6 +8,7 @@ import dataclasses
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Union
+import copy
 
 import numpy as np
 from numpy.typing import NDArray, ArrayLike
@@ -21,12 +22,14 @@ from .setup import Job
 from .setup import setup as setup_job
 from .setup_fp import JobFp
 from .setup_fp import setup_fp as setup_job_fp
-from .setup_lno import setup_lno as setup_job_lno
-from . import setup_lno
+
+# from .setup_lno import setup_lno as setup_job_lno
+# from . import setup_lno
 from .staging import StagedInputs, _is_cc_like
 from .staging import dump as dump_staged
 from .staging import load as load_staged
 from .staging import stage as stage_inputs
+from . import staging
 
 
 def _default_seed() -> int:
@@ -374,6 +377,7 @@ class AfqmcFp(Afqmc):
             n_chunks=n_chunks,
         )
         self.n_traj = n_traj
+        self.n_prop_steps: int | None = None
         self.ene0 = ene0
 
     def _dump_params(self, params: QmcParamsFp) -> None:
@@ -563,7 +567,7 @@ class AfqmcLnoFrag(Afqmc):
             return self._staged
 
         assert isinstance(self.norb_frozen, (tuple, list, np.ndarray))
-        ham = setup_lno.build_ham(
+        ham = staging.build_ham_lno(
             self._obj,
             norb_frozen=self.norb_frozen,
             chol_cut=self.chol_cut,
@@ -599,18 +603,29 @@ class AfqmcLnoFrag(Afqmc):
         """
         Assemble a runnable Job from current settings and staged inputs.
         """
+        from .core.system import System
+        from .meas.rhf import make_lno_rhf_meas_ops
+
         if self._job is not None and not force:
             return self._job
 
-        staged = self.stage()
-        qmc_params = self._make_params()
-        self.params = qmc_params
+        if meas_ops is not None:
+            raise ValueError("meas_ops must be None as we overwrite it.")
 
-        job = setup_job_lno(
+        staged = self.stage()
+        params = self._make_params()
+        self.params = params
+
+        ham = staged.ham
+        walker_kind = ham.basis
+        sys = System(norb=int(ham.norb), nelec=ham.nelec, walker_kind=walker_kind)
+        meas_ops = make_lno_rhf_meas_ops(sys=sys, params=params)
+
+        job = setup_job(
             staged,
             walker_kind=self.walker_kind,
             mixed_precision=self.mixed_precision,
-            params=qmc_params,
+            params=params,
             trial_data=trial_data,
             trial_ops=trial_ops,
             meas_ops=meas_ops,
@@ -697,6 +712,51 @@ class AfqmcLnoFrag(Afqmc):
         self.qmc_result = qmc_result
 
         return orb_corr, orb_corr_stderr
+
+
+def run_afqmc_lno_helper(
+    mf: Any,
+    norb_act=None,
+    nelec_act=None,
+    mo_coeff=None,
+    norb_frozen: int | ArrayLike | None = [],
+    chol_cut: float = 1e-5,
+    seed: int | None = None,
+    dt: float = 0.005,
+    n_walkers: int = 5,
+    nblocks: int = 1000,
+    target_error: float = 1e-4,
+    prjlo: NDArray | None = None,
+    n_eql: int = 2,
+):
+    from pyscf import scf
+
+    # choose the orbital basis
+    if mo_coeff is None:
+        if isinstance(mf, scf.uhf.UHF):
+            mo_coeff = mf.mo_coeff[0]
+        elif isinstance(mf, scf.rhf.RHF):
+            mo_coeff = mf.mo_coeff
+        else:
+            raise Exception("# Invalid mean field object!")
+
+    mf2 = copy.deepcopy(mf)
+    mf2.mo_coeff = mo_coeff
+
+    myafqmc = AfqmcLnoFrag(
+        mf2,
+        norb_frozen=norb_frozen,
+        chol_cut=chol_cut,
+        n_eql_blocks=n_eql,
+        n_blocks=nblocks,
+        seed=seed,
+        dt=dt,
+        n_walkers=n_walkers,
+        prjlo=prjlo,
+    )
+    mean_ecorr, err_ecorr = myafqmc.kernel(target_error=target_error)
+
+    return mean_ecorr, err_ecorr
 
 
 # Backward-compatible aliases

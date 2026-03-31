@@ -10,7 +10,7 @@ from pyscf import gto, scf
 from ad_afqmc_prototype import testing
 from ad_afqmc_prototype.prop.types import QmcParams
 from ad_afqmc_prototype.trial.rhf import RhfTrial
-from ad_afqmc_prototype.lno_helper import run_afqmc
+from ad_afqmc_prototype.afqmc import run_afqmc_lno_helper
 
 
 def _make_random_rhf_trial(key, norb, nocc):
@@ -48,7 +48,7 @@ def test_calc_rhf(mf, params, e_ref, err_ref, norb_frozen):
     nactocc = mf.mol.nelectron // 2 - norb_frozen
     prjlo = np.array([[0] for i in range(nactocc - 1)] + [[1]])
 
-    elcorr_afqmc, err_afqmc = run_afqmc(
+    elcorr_afqmc, err_afqmc = run_afqmc_lno_helper(
         mf,
         mo_coeff=mo_coeff,
         norb_act=norb_act,

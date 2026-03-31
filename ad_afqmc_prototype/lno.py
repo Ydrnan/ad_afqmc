@@ -4,9 +4,12 @@ from functools import reduce
 from pyscf.lib import logger
 from pyscf import lib, lo
 
-from pyscf.lno import LNO
+try:
+    from pyscf.lno import LNO
+except ModuleNotFoundError:
+    raise ModuleNotFoundError("You need to install pyscf-forge for LNO.")
 
-from lno_helper import run_afqmc
+from .afqmc import run_afqmc_lno_helper
 
 _fdot = np.dot
 fdot = lambda *args: reduce(_fdot, args)
@@ -106,7 +109,7 @@ def impurity_solve(
             # Performing LNO-AFQMC
             prjlo = np.array([uocc_loc.flatten()])
 
-            elcorr_afqmc, err_afqmc = run_afqmc(
+            elcorr_afqmc, err_afqmc = run_afqmc_lno_helper(
                 mf,
                 mo_coeff=mo_coeff,
                 norb_act=(nactocc + nactvir),

@@ -867,3 +867,46 @@ def _load_h5(path: Path) -> StagedInputs:
         )
 
         return StagedInputs(ham=ham, trial=trial, meta=meta)
+
+
+def build_ham_lno(
+    obj: Any,
+    *,
+    norb_frozen: ArrayLike,
+    chol_cut: float,
+) -> HamInput:
+    from pyscf import mcscf, ao2mo
+
+    obj = StagedMfOrCc(obj, norb_frozen)
+    mf = obj.mf.mf
+    mol = mf.mol
+
+    norb = obj.norb
+    norb_frozen = np.array(obj.norb_frozen)
+    basis_coeff = mf.mo_coeff
+
+    nelec_frozen = 2 * np.sum(norb_frozen < mol.nelec[0])
+    nact = basis_coeff.shape[1] - norb_frozen.size
+    nelec_act = mol.nelectron - nelec_frozen
+    mc = mcscf.CASSCF(mf, nact, nelec_act)
+    mc.frozen = norb_frozen  # type: ignore
+    nelec = mc.nelecas  # type: ignore
+    h1, h0 = mc.get_h1eff()  # type: ignore
+    act = [i for i in range(norb) if i not in norb_frozen]
+    e = np.asarray(ao2mo.kernel(mf.mol, mf.mo_coeff[:, act]))  # , compact=False)
+    chol = modified_cholesky(e, max_error=chol_cut)
+    chol = chol.reshape((-1, nact, nact))
+
+    ham = HamInput(
+        h0=float(h0),
+        h1=np.asarray(h1),
+        chol=np.asarray(chol),
+        nelec=nelec,
+        norb=nact,
+        chol_cut=float(chol_cut),
+        norb_frozen=norb_frozen,
+        source_kind=obj.source,
+        basis="restricted",
+    )
+
+    return ham
