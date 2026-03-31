@@ -235,7 +235,9 @@ def _greenp_times_ci2g_t_low(
     return out
 
 
-def _energy_l2ci2_scalar_realimag(glgp_i: jax.Array, ci2_t: jax.Array) -> tuple[jax.Array, jax.Array]:
+def _energy_l2ci2_scalar_realimag(
+    glgp_i: jax.Array, ci2_t: jax.Array
+) -> tuple[jax.Array, jax.Array]:
     x_r = jnp.real(glgp_i).astype(ci2_t.dtype)
     x_i = jnp.imag(glgp_i).astype(ci2_t.dtype)
     imag_unit = jnp.asarray(1.0j, dtype=glgp_i.dtype)
@@ -272,20 +274,28 @@ def _energy_l2ci2_scalar_blocked_realimag(
 
         a_r = jnp.einsum("t,tqu->qu", xp_r, ci2_p, optimize="optimal")
         a_i = jnp.einsum("t,tqu->qu", xp_i, ci2_p, optimize="optimal")
-        t1_r = t1_r + jnp.einsum("qu,qu->", a_r, x_r, optimize="optimal") - jnp.einsum(
-            "qu,qu->", a_i, x_i, optimize="optimal"
+        t1_r = (
+            t1_r
+            + jnp.einsum("qu,qu->", a_r, x_r, optimize="optimal")
+            - jnp.einsum("qu,qu->", a_i, x_i, optimize="optimal")
         )
-        t1_i = t1_i + jnp.einsum("qu,qu->", a_r, x_i, optimize="optimal") + jnp.einsum(
-            "qu,qu->", a_i, x_r, optimize="optimal"
+        t1_i = (
+            t1_i
+            + jnp.einsum("qu,qu->", a_r, x_i, optimize="optimal")
+            + jnp.einsum("qu,qu->", a_i, x_r, optimize="optimal")
         )
 
         b_r = jnp.einsum("u,tqu->qt", xp_r, ci2_p, optimize="optimal")
         b_i = jnp.einsum("u,tqu->qt", xp_i, ci2_p, optimize="optimal")
-        t2_r = t2_r + jnp.einsum("qt,qt->", b_r, x_r, optimize="optimal") - jnp.einsum(
-            "qt,qt->", b_i, x_i, optimize="optimal"
+        t2_r = (
+            t2_r
+            + jnp.einsum("qt,qt->", b_r, x_r, optimize="optimal")
+            - jnp.einsum("qt,qt->", b_i, x_i, optimize="optimal")
         )
-        t2_i = t2_i + jnp.einsum("qt,qt->", b_r, x_i, optimize="optimal") + jnp.einsum(
-            "qt,qt->", b_i, x_r, optimize="optimal"
+        t2_i = (
+            t2_i
+            + jnp.einsum("qt,qt->", b_r, x_i, optimize="optimal")
+            + jnp.einsum("qt,qt->", b_i, x_r, optimize="optimal")
         )
         return (t1_r, t1_i, t2_r, t2_i), None
 
@@ -299,7 +309,9 @@ def _energy_l2ci2_scalar_blocked_realimag(
     return t1, t2
 
 
-def _energy_l2ci2_batched_realimag(glgp: jax.Array, ci2_t: jax.Array) -> tuple[jax.Array, jax.Array]:
+def _energy_l2ci2_batched_realimag(
+    glgp: jax.Array, ci2_t: jax.Array
+) -> tuple[jax.Array, jax.Array]:
     x_r = jnp.real(glgp).astype(ci2_t.dtype)
     x_i = jnp.imag(glgp).astype(ci2_t.dtype)
     imag_unit = jnp.asarray(1.0j, dtype=glgp.dtype)
@@ -338,20 +350,28 @@ def _energy_l2ci2_batched_blocked_realimag(
 
         a_r = jnp.einsum("gt,tqu->gqu", xp_r, ci2_p, optimize="optimal")
         a_i = jnp.einsum("gt,tqu->gqu", xp_i, ci2_p, optimize="optimal")
-        t1_r = t1_r + jnp.einsum("gqu,gqu->g", a_r, x_r, optimize="optimal") - jnp.einsum(
-            "gqu,gqu->g", a_i, x_i, optimize="optimal"
+        t1_r = (
+            t1_r
+            + jnp.einsum("gqu,gqu->g", a_r, x_r, optimize="optimal")
+            - jnp.einsum("gqu,gqu->g", a_i, x_i, optimize="optimal")
         )
-        t1_i = t1_i + jnp.einsum("gqu,gqu->g", a_r, x_i, optimize="optimal") + jnp.einsum(
-            "gqu,gqu->g", a_i, x_r, optimize="optimal"
+        t1_i = (
+            t1_i
+            + jnp.einsum("gqu,gqu->g", a_r, x_i, optimize="optimal")
+            + jnp.einsum("gqu,gqu->g", a_i, x_r, optimize="optimal")
         )
 
         b_r = jnp.einsum("gu,tqu->gqt", xp_r, ci2_p, optimize="optimal")
         b_i = jnp.einsum("gu,tqu->gqt", xp_i, ci2_p, optimize="optimal")
-        t2_r = t2_r + jnp.einsum("gqt,gqt->g", b_r, x_r, optimize="optimal") - jnp.einsum(
-            "gqt,gqt->g", b_i, x_i, optimize="optimal"
+        t2_r = (
+            t2_r
+            + jnp.einsum("gqt,gqt->g", b_r, x_r, optimize="optimal")
+            - jnp.einsum("gqt,gqt->g", b_i, x_i, optimize="optimal")
         )
-        t2_i = t2_i + jnp.einsum("gqt,gqt->g", b_r, x_i, optimize="optimal") + jnp.einsum(
-            "gqt,gqt->g", b_i, x_r, optimize="optimal"
+        t2_i = (
+            t2_i
+            + jnp.einsum("gqt,gqt->g", b_r, x_i, optimize="optimal")
+            + jnp.einsum("gqt,gqt->g", b_i, x_r, optimize="optimal")
         )
         return (t1_r, t1_i, t2_r, t2_i), None
 
@@ -819,10 +839,14 @@ def make_cisd_meas_ops(
         mixed_complex_dtype_testing=jnp.complex128 if testing else jnp.complex64,
     )
 
+    force_bias_kernel = (
+        force_bias_kernel_rw_rh_high if memory_mode == "low" else force_bias_kernel_rw_rh
+    )
+
     meas_ops = MeasOps(
         overlap=cisd_overlap_r,
         build_meas_ctx=lambda ham_data, trial_data: build_meas_ctx(ham_data, trial_data, cfg),
-        kernels={k_force_bias: force_bias_kernel_rw_rh, k_energy: energy_kernel_rw_rh},
+        kernels={k_force_bias: force_bias_kernel, k_energy: energy_kernel_rw_rh},
         observables={o_rdm1: rdm1_kernel_rw},
     )
     object.__setattr__(meas_ops, _CISD_MEAS_CFG_ATTR, cfg)
