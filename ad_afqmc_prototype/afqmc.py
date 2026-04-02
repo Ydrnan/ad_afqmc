@@ -138,6 +138,32 @@ class Afqmc:
             print(f"  {field.name:<{width}} = {getattr(params, field.name)}")
         print("")
 
+    def _resolve_meas_cfg(self, job: Job) -> object | None:
+        from .meas.cisd import get_cisd_meas_cfg
+        from .meas.rhf import get_rhf_meas_cfg
+
+        for getter in (get_cisd_meas_cfg, get_rhf_meas_cfg):
+            cfg = getter(job.meas_ops)
+            if cfg is not None:
+                return cfg
+        return None
+
+    def _dump_cfg(self, name: str, cfg: object) -> None:
+        if not dataclasses.is_dataclass(cfg):
+            print(f" {name:<15} = {cfg}")
+            return
+
+        print(f" {name:<15} = {type(cfg).__name__}")
+        fields = dataclasses.fields(cfg)
+        width = len(max(fields, key=lambda f: len(f.name)).name)
+        for field in fields:
+            value = getattr(cfg, field.name)
+            if isinstance(value, type):
+                value_str = value.__name__
+            else:
+                value_str = str(value)
+            print(f"  {field.name:<{width}} = {value_str}")
+
     def dump_flags(self, job: Job) -> None:
         self._dump_flags_helper(job)
 
@@ -160,6 +186,10 @@ class Afqmc:
         print(f" cache           = {str(self.cache) if self.cache else None}")
         print(f" walker_kind     = {sys.walker_kind}")
         print(f" mixed_precision = {self.mixed_precision}\n")
+        meas_cfg = self._resolve_meas_cfg(job)
+        if meas_cfg is not None:
+            self._dump_cfg("meas_cfg", meas_cfg)
+            print("")
         self._dump_params(params)
 
     def _key(self) -> tuple:
