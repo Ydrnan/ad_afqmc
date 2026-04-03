@@ -1,9 +1,5 @@
 from pyscf import gto, scf
 
-from ad_afqmc_prototype import config
-
-config.configure_once()
-
 from ad_afqmc_prototype.afqmc import Afqmc
 
 mol = gto.M(
@@ -19,5 +15,5 @@ mol = gto.M(
 mf = scf.RHF(mol)
 mf.kernel()
 
-afqmc = Afqmc(mf)
-mean, err = afqmc.kernel()
+af = Afqmc(mf)
+mean, err = af.kernel()

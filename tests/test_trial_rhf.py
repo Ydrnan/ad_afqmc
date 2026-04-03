@@ -8,6 +8,8 @@ from ad_afqmc_prototype.core.ops import k_energy, k_force_bias
 from ad_afqmc_prototype.core.system import System
 from ad_afqmc_prototype.ham.chol import HamChol
 from ad_afqmc_prototype.meas.rhf import (
+    RhfMeasCfg,
+    RhfMeasMemoryMode,
     build_meas_ctx,
     energy_kernel_rw_rh,
     energy_kernel_uw_rh,
@@ -44,6 +46,7 @@ def test_build_meas_ctx_shapes():
     assert ctx.rot_h1.shape == (nocc, norb)
     assert ctx.rot_chol.shape == (n_chol, nocc, norb)
     assert ctx.rot_chol_flat.shape == (n_chol, nocc * norb)
+    assert ctx.cfg.memory_mode == "high"
 
 
 def test_force_bias_matches_reference_restricted():
@@ -109,13 +112,58 @@ def test_energy_is_h0_when_h1_and_chol_zero_restricted_and_unrestricted():
     assert jnp.allclose(e_u, ham.h0)
 
 
+@pytest.mark.parametrize("memory_mode", ["low"])
+def test_energy_memory_modes_match_high_restricted(memory_mode: RhfMeasMemoryMode):
+    key = jax.random.PRNGKey(4)
+    norb, nocc, n_chol = 6, 3, 5
+    ham = _make_small_ham(key, norb, n_chol)
+
+    c = _rand_orthonormal(key, norb, nocc).astype(jnp.complex64)
+    tr = RhfTrial(mo_coeff=c)
+    ctx_high = build_meas_ctx(ham, tr, cfg=RhfMeasCfg(memory_mode="high"))
+    ctx_mode = build_meas_ctx(ham, tr, cfg=RhfMeasCfg(memory_mode=memory_mode))
+
+    key, sub = jax.random.split(key)
+    a = jax.random.normal(sub, (nocc, nocc)).astype(jnp.complex64)
+    a = a + (1.2 + 0.1j) * jnp.eye(nocc, dtype=a.dtype)
+    w = c @ a
+
+    e_high = energy_kernel_rw_rh(w, ham, ctx_high, tr)
+    e_mode = energy_kernel_rw_rh(w, ham, ctx_mode, tr)
+    assert jnp.allclose(e_mode, e_high, rtol=1e-6, atol=1e-6)
+
+
+@pytest.mark.parametrize("memory_mode", ["low"])
+def test_energy_memory_modes_match_high_unrestricted(memory_mode: RhfMeasMemoryMode):
+    key = jax.random.PRNGKey(5)
+    norb, nocc, n_chol = 6, 3, 5
+    ham = _make_small_ham(key, norb, n_chol)
+
+    c = _rand_orthonormal(key, norb, nocc).astype(jnp.complex64)
+    tr = RhfTrial(mo_coeff=c)
+    ctx_high = build_meas_ctx(ham, tr, cfg=RhfMeasCfg(memory_mode="high"))
+    ctx_mode = build_meas_ctx(ham, tr, cfg=RhfMeasCfg(memory_mode=memory_mode))
+
+    key, sub_u, sub_d = jax.random.split(key, 3)
+    a_u = jax.random.normal(sub_u, (nocc, nocc)).astype(jnp.complex64)
+    a_d = jax.random.normal(sub_d, (nocc, nocc)).astype(jnp.complex64)
+    a_u = a_u + (1.3 + 0.1j) * jnp.eye(nocc, dtype=a_u.dtype)
+    a_d = a_d + (1.1 - 0.2j) * jnp.eye(nocc, dtype=a_d.dtype)
+    wu = c @ a_u
+    wd = c @ a_d
+
+    e_high = energy_kernel_uw_rh((wu, wd), ham, ctx_high, tr)
+    e_mode = energy_kernel_uw_rh((wu, wd), ham, ctx_mode, tr)
+    assert jnp.allclose(e_mode, e_high, rtol=1e-6, atol=1e-6)
+
+
 def test_make_rhf_meas_ops_dispatch_and_kernels_exist():
     norb, nocc = 4, 2
     sys_r = System(norb=norb, nelec=(nocc, nocc), walker_kind="restricted")
     sys_u = System(norb=norb, nelec=(nocc, nocc), walker_kind="unrestricted")
 
     meas_r = make_rhf_meas_ops(sys_r)
-    meas_u = make_rhf_meas_ops(sys_u)
+    meas_u = make_rhf_meas_ops(sys_u, memory_mode="low")
 
     assert k_force_bias in meas_r.kernels
     assert k_energy in meas_r.kernels

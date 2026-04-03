@@ -186,7 +186,7 @@ def make_common_pyscf(
     walker_kind,
     ham_basis: HamBasis = "restricted",
 ):
-    obj = StagedMfOrCc(mf, norb_frozen=0)
+    obj = StagedMfOrCc(mf, frozen=0)
     ham_input = _stage_ham_input(obj, chol_cut=1e-6, verbose=False)
     h0 = jnp.asarray(ham_input.h0)
     h1 = jnp.asarray(ham_input.h1)

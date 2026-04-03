@@ -87,16 +87,20 @@ def block(
 
     thresh = jnp.sqrt(2.0 / jnp.asarray(params.dt))
     e_ref = state.e_estimate
-    e_samples = jnp.where(jnp.abs(e_samples - e_ref) > thresh, e_ref, e_samples)
+    is_nan = ~jnp.isfinite(e_samples)
+    e_samples = jnp.where(is_nan | (jnp.abs(e_samples - e_ref) > thresh), e_ref, e_samples)
 
-    weights = state.weights
+    weights = jnp.where(is_nan, 0.0, state.weights)
     w_sum = jnp.sum(weights)
     w_sum_safe = jnp.where(w_sum == 0, 1.0, w_sum)
     e_block = jnp.sum(weights * e_samples) / w_sum_safe
     e_block = jnp.where(w_sum == 0, e_ref, e_block)
 
     alpha = jnp.asarray(params.shift_ema, dtype=jnp.result_type(e_block))
-    state = state._replace(e_estimate=(1.0 - alpha) * state.e_estimate + alpha * e_block)
+    state = state._replace(
+        weights=weights,
+        e_estimate=(1.0 - alpha) * state.e_estimate + alpha * e_block,
+    )
 
     obs_samples: dict[str, jax.Array] = {}
     for name in observable_names:
@@ -282,10 +286,6 @@ def block_mlmc(
         e_kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None)
     )
 
-    weights = state.weights
-    n_walkers = int(weights.shape[0])
-    w_sum = jnp.sum(weights)
-    w_sum_safe = jnp.where(w_sum == 0, 1.0, w_sum)
     e_ref = state.e_estimate
 
     # baseline level (0): evaluate on all walkers
@@ -294,7 +294,13 @@ def block_mlmc(
     e0 = energy_vmapped(walkers0, p0.ham_data, p0.meas_ctx, p0.trial_data)
     e0 = jnp.real(e0)
     thresh = jnp.sqrt(2.0 / jnp.asarray(params.dt))
-    e0 = jnp.where(jnp.abs(e0 - e_ref) > thresh, e_ref, e0)
+    is_nan = ~jnp.isfinite(e0)
+    e0 = jnp.where(is_nan | (jnp.abs(e0 - e_ref) > thresh), e_ref, e0)
+
+    weights = jnp.where(is_nan, 0.0, state.weights)
+    n_walkers = int(weights.shape[0])
+    w_sum = jnp.sum(weights)
+    w_sum_safe = jnp.where(w_sum == 0, 1.0, w_sum)
 
     num0 = jnp.sum(weights * e0)
     e0_block = jnp.where(w_sum == 0, e_ref, num0 / w_sum_safe)
@@ -340,9 +346,9 @@ def block_mlmc(
         )
 
         thresh = jnp.sqrt(2.0 / jnp.asarray(params.dt))
-        e0 = jnp.where(jnp.abs(e0 - e_ref) > thresh, e_ref, e0)
-        e_hi = jnp.where(jnp.abs(e_hi - e_ref) > thresh, e_ref, e_hi)
-        e_lo = jnp.where(jnp.abs(e_lo - e_ref) > thresh, e_ref, e_lo)
+        e0 = jnp.where(~jnp.isfinite(e0) | (jnp.abs(e0 - e_ref) > thresh), e_ref, e0)
+        e_hi = jnp.where(~jnp.isfinite(e_hi) | (jnp.abs(e_hi - e_ref) > thresh), e_ref, e_hi)
+        e_lo = jnp.where(~jnp.isfinite(e_lo) | (jnp.abs(e_lo - e_ref) > thresh), e_ref, e_lo)
 
         delta = jnp.array(e_hi) - jnp.array(e_lo)
 
@@ -357,7 +363,10 @@ def block_mlmc(
     e_mlmc_block = jnp.where(w_sum == 0, e_ref, num_total / w_sum_safe)
 
     alpha = jnp.asarray(params.shift_ema, dtype=jnp.result_type(e_mlmc_block))
-    state = state._replace(e_estimate=(1.0 - alpha) * state.e_estimate + alpha * e_mlmc_block)
+    state = state._replace(
+        weights=weights,
+        e_estimate=(1.0 - alpha) * state.e_estimate + alpha * e_mlmc_block,
+    )
 
     zeta = jax.random.uniform(key_sr)
     w_sr, weights_sr = sr_fun(state.walkers, state.weights, zeta, sys.walker_kind)

@@ -1,5 +1,6 @@
 import os
 from functools import partial
+from typing import cast
 
 os.environ.setdefault("XLA_FLAGS", "--xla_force_host_platform_device_count=4")
 
@@ -17,12 +18,32 @@ from jax.sharding import PartitionSpec as P
 import ad_afqmc_prototype.walkers as wk
 from ad_afqmc_prototype import testing
 from ad_afqmc_prototype.core.system import System
+from ad_afqmc_prototype.ham.chol import HamChol
+from ad_afqmc_prototype.ham.hubbard import HamHubbard
 from ad_afqmc_prototype.meas.auto import make_auto_meas_ops
+from ad_afqmc_prototype.meas.rhf import RhfMeasCfg, RhfMeasCtx, RhfMeasMemoryMode, make_rhf_meas_ops
+from ad_afqmc_prototype.meas.rhf import build_meas_ctx as build_rhf_meas_ctx
 from ad_afqmc_prototype.prop.afqmc import init_prop_state, make_prop_ops
 from ad_afqmc_prototype.prop.blocks import block
-from ad_afqmc_prototype.prop.chol_afqmc_ops import _build_prop_ctx
+from ad_afqmc_prototype.prop.chol_afqmc_ops import CholAfqmcCtx, _build_prop_ctx
 from ad_afqmc_prototype.prop.types import QmcParams
-from ad_afqmc_prototype.sharding import make_data_mesh, shard_prop_state
+from ad_afqmc_prototype.setup import setup
+from ad_afqmc_prototype.sharding import (
+    make_data_mesh,
+    make_data_model_mesh,
+    shard_ham_data,
+    shard_model_axis,
+    shard_prop_state,
+)
+from ad_afqmc_prototype.staging import HamInput, StagedInputs, TrialInput, dump
+from ad_afqmc_prototype.trial.rhf import RhfTrial, get_rdm1
+
+
+def _assert_named_sharding_spec(a: object, spec: P) -> None:
+    assert isinstance(a, jax.Array)
+    sharding = a.sharding
+    assert isinstance(sharding, NamedSharding)
+    assert sharding.spec == spec
 
 
 @pytest.mark.parametrize("n_per_dev", [4])
@@ -81,12 +102,10 @@ def test_block_runs_under_sharding(n_per_dev):
     state0_s = shard_prop_state(state0_u, mesh)
 
     def _assert_sharded_first_axis(a):
-        assert isinstance(a.sharding, NamedSharding)
-        assert a.sharding.spec == P("data")
+        _assert_named_sharding_spec(a, P("data"))
 
     def _assert_replicated(a):
-        assert isinstance(a.sharding, NamedSharding)
-        assert a.sharding.spec == P()
+        _assert_named_sharding_spec(a, P())
 
     for leaf in tree_util.tree_leaves(state0_s.walkers):
         _assert_sharded_first_axis(leaf)
@@ -205,10 +224,194 @@ def test_sr_sharded_matches_unsharded(n_per_dev):
     )
 
     # output should retain sharding
-    assert isinstance(w_s.sharding, NamedSharding)
-    assert w_s.sharding.spec == P("data")
-    assert isinstance(wt_s.sharding, NamedSharding)
-    assert wt_s.sharding.spec == P("data")
+    _assert_named_sharding_spec(w_s, P("data"))
+    _assert_named_sharding_spec(wt_s, P("data"))
+
+
+def test_hubbard_hamiltonian_rejects_model_axis_sharding():
+    mesh = make_data_model_mesh(2, 2)
+    ham = HamHubbard(h1=jnp.eye(4, dtype=jnp.float64), u=4.0)
+
+    with pytest.raises(ValueError, match="Cannot shard Hubbard Hamiltonian"):
+        shard_ham_data(ham, mesh)
+
+
+def test_shard_ham_data_pads_chol_to_model_divisible(capsys):
+    mesh = make_data_model_mesh(2, 2)
+    norb, n_chol = 4, 5
+    chol = np.arange(n_chol * norb * norb, dtype=np.float64).reshape(n_chol, norb, norb)
+    ham = HamChol(
+        h0=jnp.array(0.25, dtype=jnp.float64),
+        h1=jnp.eye(norb, dtype=jnp.float64),
+        chol=jnp.asarray(chol),
+        basis="restricted",
+    )
+
+    ham_s = shard_ham_data(ham, mesh)
+    out = capsys.readouterr().out
+
+    assert "padding chol from 5 to 6" in out
+    _assert_named_sharding_spec(ham_s.h0, P())
+    _assert_named_sharding_spec(ham_s.h1, P())
+    _assert_named_sharding_spec(ham_s.chol, P("model"))
+    assert ham_s.chol.shape == (6, norb, norb)
+
+    chol_s = np.asarray(jax.device_get(ham_s.chol))
+    np.testing.assert_allclose(chol_s[:n_chol], chol)
+    np.testing.assert_allclose(chol_s[n_chol], 0.0, atol=0.0)
+
+
+def test_shard_model_axis_pads_numpy_chol_without_mutating_source(capsys):
+    mesh = make_data_model_mesh(2, 2)
+    norb, n_chol = 4, 5
+    chol = np.arange(n_chol * norb * norb, dtype=np.float64).reshape(n_chol, norb, norb).copy()
+
+    chol_s = shard_model_axis(chol, mesh)
+    out = capsys.readouterr().out
+
+    assert "padding chol from 5 to 6" in out
+    assert chol.shape == (n_chol, norb, norb)
+    assert chol_s.shape == (6, norb, norb)
+    np.testing.assert_allclose(np.asarray(jax.device_get(chol_s[:n_chol])), chol)
+    np.testing.assert_allclose(np.asarray(jax.device_get(chol_s[n_chol])), 0.0, atol=0.0)
+
+
+@pytest.mark.parametrize("memory_mode", ["high", "low"])
+def test_job_prepare_runtime_compacts_hf_chol_and_reuses_cached_ctx(
+    tmp_path, memory_mode: RhfMeasMemoryMode
+):
+    mesh = make_data_model_mesh(2, 2)
+    norb, nocc, n_chol = 6, 3, 5
+    padded_n_chol = 6
+    chol = np.arange(n_chol * norb * norb, dtype=np.float64).reshape(n_chol, norb, norb)
+    staged = StagedInputs(
+        ham=HamInput(
+            h0=0.25,
+            h1=np.eye(norb, dtype=np.float64),
+            chol=chol,
+            nelec=(nocc, nocc),
+            norb=norb,
+            chol_cut=1.0e-5,
+            frozen=0,
+            source_kind="mf",
+            basis="restricted",
+        ),
+        trial=TrialInput(
+            kind="rhf",
+            data={"mo": np.eye(norb, dtype=np.float64)},
+            frozen=0,
+            source_kind="mf",
+        ),
+        meta={"source_kind": "mf", "chol_cut": 1.0e-5},
+    )
+    path = tmp_path / "runtime_compact.h5"
+    dump(staged, path)
+
+    sys_override = System(norb=norb, nelec=(nocc, nocc), walker_kind="restricted")
+    meas_ops_override = make_rhf_meas_ops(sys_override, memory_mode=memory_mode)
+    job = setup(path, mesh=mesh, meas_ops=meas_ops_override)
+    assert job.mesh is mesh
+    _assert_named_sharding_spec(job.ham_data.h0, P())
+    _assert_named_sharding_spec(job.ham_data.h1, P())
+    _assert_named_sharding_spec(job.ham_data.chol, P("model"))
+    assert job.ham_data.chol.shape == (0, 0, 0)
+    assert job.ham_data.nchol == padded_n_chol
+    assert job.staged.ham.chol.shape == chol.shape
+    assert isinstance(job.staged.ham.chol, np.ndarray)
+
+    ham_ref = shard_ham_data(
+        HamChol(
+            h0=jnp.array(0.25, dtype=jnp.float64),
+            h1=jnp.eye(norb, dtype=jnp.float64),
+            chol=jnp.asarray(chol),
+            basis="restricted",
+        ),
+        mesh,
+    )
+    trial_ref = RhfTrial(mo_coeff=jnp.eye(norb, dtype=jnp.float64)[:, :nocc])
+    prop_ctx_ref = _build_prop_ctx(ham_ref, get_rdm1(trial_ref), dt=job.params.dt)
+    meas_ctx_ref = build_rhf_meas_ctx(ham_ref, trial_ref, cfg=RhfMeasCfg(memory_mode=memory_mode))
+    state_ref = init_prop_state(
+        sys=job.sys,
+        ham_data=ham_ref,
+        trial_ops=job.trial_ops,
+        trial_data=trial_ref,
+        meas_ops=job.meas_ops,
+        params=job.params,
+        mesh=mesh,
+    )
+
+    state0, meas_ctx0, prop_ctx0 = job._prepare_runtime()
+    meas_ctx0 = cast(RhfMeasCtx, meas_ctx0)
+    prop_ctx0 = cast(CholAfqmcCtx, prop_ctx0)
+
+    _assert_named_sharding_spec(job.ham_data.chol, P("model"))
+    assert job.ham_data.chol.shape == (0, 0, 0)
+    assert job.ham_data.nchol == padded_n_chol
+    _assert_named_sharding_spec(prop_ctx0.chol_flat, P("model"))
+    _assert_named_sharding_spec(meas_ctx0.rot_chol, P("model"))
+    assert prop_ctx0.chol_flat.shape[0] == padded_n_chol
+    assert meas_ctx0.rot_chol.shape[0] == padded_n_chol
+    assert meas_ctx0.cfg.memory_mode == memory_mode
+    np.testing.assert_allclose(
+        np.asarray(jax.device_get(prop_ctx0.mf_shifts)),
+        np.asarray(jax.device_get(prop_ctx_ref.mf_shifts)),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(jax.device_get(prop_ctx0.exp_h1_half)),
+        np.asarray(jax.device_get(prop_ctx_ref.exp_h1_half)),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(jax.device_get(prop_ctx0.chol_flat)),
+        np.asarray(jax.device_get(prop_ctx_ref.chol_flat)),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(jax.device_get(meas_ctx0.rot_h1)),
+        np.asarray(jax.device_get(meas_ctx_ref.rot_h1)),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(jax.device_get(meas_ctx0.rot_chol)),
+        np.asarray(jax.device_get(meas_ctx_ref.rot_chol)),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(jax.device_get(meas_ctx0.rot_chol_flat)),
+        np.asarray(jax.device_get(meas_ctx_ref.rot_chol_flat)),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(jax.device_get(state0.weights)),
+        np.asarray(jax.device_get(state_ref.weights)),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(jax.device_get(state0.overlaps)),
+        np.asarray(jax.device_get(state_ref.overlaps)),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        np.asarray(jax.device_get(state0.e_estimate)),
+        np.asarray(jax.device_get(state_ref.e_estimate)),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+
+    state1, meas_ctx1, prop_ctx1 = job._prepare_runtime()
+    assert state1 is state0
+    assert meas_ctx1 is meas_ctx0
+    assert prop_ctx1 is prop_ctx0
 
 
 if __name__ == "__main__":

@@ -505,7 +505,7 @@ def energy_kernel_uw_rh(
     rot_chol_a = meas_ctx.rot_chol_a
     rot_chol_b = meas_ctx.rot_chol_b
 
-    h1_a = ham_data.h1
+    h1_a = (ham_data.h1 + ham_data.h1.T) / 2.0
     h1_b = meas_ctx.h1_b
     hg_a = jnp.einsum("pj,pj->", h1_a[:n_oa, :], green_a)
     hg_b = jnp.einsum("pj,pj->", h1_b[:n_ob, :], green_b)
@@ -1319,7 +1319,7 @@ def make_ucisd_meas_ops(
             k_force_bias: force_bias_kernel_uw_rh,
             k_energy: energy_kernel_uw_rh,
         }
-    elif "generalized":
+    elif wk == "generalized":
         overlap_fn = overlap_g
         kernels = {
             k_force_bias: force_bias_kernel_gw_rh,

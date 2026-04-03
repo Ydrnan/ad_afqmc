@@ -14,7 +14,7 @@ from jax.sharding import PartitionSpec as P
 from .core.ops import MeasOps, TrialOps
 from .core.system import System
 from .prop.blocks import BlockFn
-from .prop.types import PropOps, PropState, QmcParamsBase, QmcParams, QmcParamsFp
+from .prop.types import PropOps, PropState, QmcParams, QmcParamsBase, QmcParamsFp
 from .stat_utils import blocking_analysis_ratio, jackknife_ratios, rebin_observable, reject_outliers
 from .walkers import stochastic_reconfiguration
 
@@ -100,6 +100,7 @@ def run_qmc(
     block_fn: BlockFn,
     state: PropState | None = None,
     meas_ctx: Any | None = None,
+    prop_ctx: Any | None = None,
     target_error: float | None = None,
     mesh: Mesh | None = None,
     observable_names: tuple[str, ...] = (),
@@ -114,7 +115,8 @@ def run_qmc(
         meas_ops.require_observable(name)
 
     # build ctx
-    prop_ctx = prop_ops.build_prop_ctx(ham_data, trial_ops.get_rdm1(trial_data), params)
+    if prop_ctx is None:
+        prop_ctx = prop_ops.build_prop_ctx(ham_data, trial_ops.get_rdm1(trial_data), params)
     if meas_ctx is None:
         meas_ctx = meas_ops.build_meas_ctx(ham_data, trial_data)
     if state is None:
@@ -339,6 +341,7 @@ def run_qmc_energy(
     block_fn: BlockFn,
     state: PropState | None = None,
     meas_ctx: Any | None = None,
+    prop_ctx: Any | None = None,
     target_error: float | None = None,
     mesh: Mesh | None = None,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
@@ -353,6 +356,7 @@ def run_qmc_energy(
         block_fn=block_fn,
         state=state,
         meas_ctx=meas_ctx,
+        prop_ctx=prop_ctx,
         target_error=target_error,
         mesh=mesh,
         observable_names=(),
@@ -372,14 +376,17 @@ def run_qmc_fp(
     block_fn: BlockFn,
     state: PropState | None = None,
     meas_ctx: Any | None = None,
+    prop_ctx: Any | None = None,
     target_error: float | None = None,
+    mesh: Mesh | None = None,
 ) -> QmcResult:
     """
     Returns:
       (mean_energy, stderr, block_energies, block_weights)
     """
     # build ctx
-    prop_ctx = prop_ops.build_prop_ctx(ham_data, trial_ops.get_rdm1(trial_data), params)
+    if prop_ctx is None:
+        prop_ctx = prop_ops.build_prop_ctx(ham_data, trial_ops.get_rdm1(trial_data), params)
     if meas_ctx is None:
         meas_ctx = meas_ops.build_meas_ctx(ham_data, trial_data)
     if state is None:
@@ -420,6 +427,7 @@ def run_qmc_fp(
     chunk = print_every
     for i in range(params.n_traj):
         print("Trajectory count", i + 1)
+        print(f"{'tau':^12s}    " f"{'E_avg':^14s}  " f"{'E_err':^13s}  " f"{'sign':>6s}")
         if i > 0:
             params = dataclasses.replace(params, seed=params.seed + i)
             state = prop_ops.init_prop_state(
@@ -460,13 +468,13 @@ def run_qmc_fp(
         else:
             err = jnp.std(block_e_all[: i + 1], axis=0) / jnp.sqrt(i)
 
-        timer = params.dt * params.n_prop_steps * chunk * jnp.arange(params.n_blocks + 1)
+        timer = params.dt * params.n_prop_steps * jnp.arange(params.n_blocks + 1)
         for j in range(0, params.n_blocks + 1, chunk):
             print(
-                f"{(timer[j]):14.4f} "
-                f"{(mean[j*chunk].real):14.10f}  "
-                f"{(err[j*chunk].real):10.7e}  "
-                f"{(sign[j*chunk].real):10.2f}"
+                f"{(timer[j]):12.4f}    "
+                f"{(mean[j].real):14.10f}  "
+                f"{(err[j].real):13.7e}  "
+                f"{(sign[j].real):6.2f}"
             )
 
         # not implemented in free projection yet
@@ -501,6 +509,7 @@ def run_qmc_energy_fp(
     block_fn: BlockFn,
     state: PropState | None = None,
     meas_ctx: Any | None = None,
+    prop_ctx: Any | None = None,
     target_error: float | None = None,
     mesh: Mesh | None = None,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
@@ -515,6 +524,7 @@ def run_qmc_energy_fp(
         block_fn=block_fn,
         state=state,
         meas_ctx=meas_ctx,
+        prop_ctx=prop_ctx,
         target_error=target_error,
     )
     return out.mean_energy, out.stderr_energy, out.block_energies, out.block_weights

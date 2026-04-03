@@ -1,11 +1,12 @@
-```
- █████╗ ██████╗        █████╗ ███████╗ ██████╗ ███╗   ███╗ ██████╗
-██╔══██╗██╔══██╗      ██╔══██╗██╔════╝██╔═══██╗████╗ ████║██╔════╝
-███████║██║  ██║█████╗███████║█████╗  ██║   ██║██╔████╔██║██║
-██╔══██║██║  ██║╚════╝██╔══██║██╔══╝  ██║▄▄ ██║██║╚██╔╝██║██║
-██║  ██║██████╔╝      ██║  ██║██║     ╚██████╔╝██║ ╚═╝ ██║╚██████╗
-╚═╝  ╚═╝╚═════╝       ╚═╝  ╚═╝╚═╝      ╚══▀▀═╝ ╚═╝     ╚═╝ ╚═════╝
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="logo_dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="logo_light.svg">
+    <img alt="TROT" src="logo_light.svg" width="400">
+  </picture>
+  <br>
+  <em><b>T</b>rotter-propagated <b>R</b>andom <b>O</b>rbital <b>T</b>rajectories</em>
+</p>
 
 An end-to-end differentiable Auxiliary Field Quantum Monte Carlo (AFQMC) code based on Jax.
 

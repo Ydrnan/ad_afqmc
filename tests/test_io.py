@@ -2,6 +2,8 @@ from ad_afqmc_prototype import config
 
 config.configure_once()
 
+from typing import Any
+
 import pytest
 import jax.numpy as jnp
 from pyscf import gto, scf
@@ -9,7 +11,7 @@ from ad_afqmc_prototype.afqmc import Afqmc, AfqmcFp
 from ad_afqmc_prototype.prop.types import QmcParams, QmcParamsFp
 
 
-def mf():
+def build_mf() -> Any:
     mol = gto.M(
         atom="""
         N        0.0000000000      0.0000000000      0.0000000000
@@ -24,13 +26,13 @@ def mf():
     return mf
 
 
-mf = mf()  # type: ignore
+mf_obj = build_mf()
 
 
 @pytest.mark.parametrize(
     "mf, walker_kind, e_ref, err_ref",
     [
-        (mf, "unrestricted", -55.43066756011652, 0.00761980459817991),
+        (mf_obj, "unrestricted", -55.43066756011652, 0.00761980459817991),
     ],
 )
 def test_io(mf, tmp_path, params, walker_kind, e_ref, err_ref):
@@ -61,7 +63,7 @@ def params():
 @pytest.mark.parametrize(
     "mf, walker_kind, e_ref, err_ref",
     [
-        (mf, "unrestricted", -55.4067231213, 1.8318234e-02),
+        (mf_obj, "unrestricted", -55.4067231213, 1.8318234e-02),
     ],
 )
 def test_io_fp(mf, tmp_path, params_fp, walker_kind, e_ref, err_ref):
@@ -86,7 +88,7 @@ def params_fp():
         seed=1234,
         n_walkers=5,
         n_traj=4,
-        ene0=mf.e_tot,  # type: ignore
+        ene0=mf_obj.e_tot,
     )
 
 

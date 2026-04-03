@@ -7,17 +7,19 @@ configure_once()
 import dataclasses
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Union
+from typing import Any, Callable, Union, cast
 import copy
-
 import numpy as np
 from numpy.typing import NDArray, ArrayLike
 
 print = partial(print, flush=True)
 
+from jax.sharding import Mesh
+
 from .core.system import WalkerKind
 from .prop.types import QmcParamsBase, QmcParams, QmcParamsFp, QmcParamsLno
 from .driver import QmcResult
+from .runtime_provenance import print_runtime_provenance
 from .setup import Job
 from .setup import setup as setup_job
 from .setup_fp import JobFp
@@ -30,10 +32,6 @@ from .staging import dump as dump_staged
 from .staging import load as load_staged
 from .staging import stage as stage_inputs
 from . import staging
-
-
-def _default_seed() -> int:
-    return int(np.random.randint(0, int(1e9)))
 
 
 def banner_afqmc() -> str:
@@ -57,9 +55,7 @@ class Afqmc:
     mf_or_cc : Any
         Mean-field or coupled-cluster object from which to build Hamiltonian and trial wavefunction.
     norb_frozen : int, optional
-        Number of orbitals to freeze (from the bottom), by default 0 or cc.frozen
-        if mf_or_cc is a Pyscf SCF or CC instance, respectively. For CC instances,
-        norb_frozen cannot be set to a value differing fron cc.frozen.
+        Number of lowest occupied orbitals removed from the AFQMC Hamiltonian. For CC objects with integer cc.frozen, norb_frozen must match this attribute. For restricted CCSD objects with list-valued cc.frozen, the trial space frozen occupied/virtual blocks are inferred from cc.frozen and norb_frozen controls the orbitals frozen in AFQMC.
     chol_cut : float, optional
         Cholesky decomposition cutoff, by default 1e-5
     cache : Union[str, Path], optional
@@ -78,11 +74,15 @@ class Afqmc:
         Number of chunks if params is not provided, by default 1
     """
 
+    params_cls = QmcParams
+    job_cls = Job
+    setup_fn = staticmethod(setup_job)
+
     def __init__(
         self,
         mf_or_cc: Any,
         *,
-        norb_frozen: int | ArrayLike | None = None,
+        frozen: int | ArrayLike | None = None,
         chol_cut: float = 1e-5,
         cache: Union[str, Path] | None = None,
         n_eql_blocks: int | None = None,
@@ -102,7 +102,7 @@ class Afqmc:
             self._scf = mf_or_cc
             self.source_kind = "mf"
 
-        self.norb_frozen = norb_frozen
+        self.frozen = frozen
         self.chol_cut = float(chol_cut)
         self.cache = Path(cache).expanduser().resolve() if cache is not None else None
         self.overwrite_cache = False
@@ -112,13 +112,14 @@ class Afqmc:
         self.mixed_precision = True
 
         self.params: QmcParamsBase | None = None  # resolved in kernel
-        _defaults = QmcParams()
-        self.dt = _defaults.dt if dt is None else dt
-        self.n_walkers = _defaults.n_walkers if n_walkers is None else n_walkers
-        self.n_blocks = _defaults.n_blocks if n_blocks is None else n_blocks
-        self.n_eql_blocks = _defaults.n_eql_blocks if n_eql_blocks is None else n_eql_blocks
-        self.seed = _defaults.seed if seed is None else seed
-        self.n_chunks = _defaults.n_chunks if n_chunks is None else n_chunks
+        defaults = self.params_cls()
+        self.dt = defaults.dt if dt is None else dt
+        self.n_walkers = defaults.n_walkers if n_walkers is None else n_walkers
+        self.n_blocks = defaults.n_blocks if n_blocks is None else n_blocks
+        self.seed = defaults.seed if seed is None else seed
+        self.n_chunks = defaults.n_chunks if n_chunks is None else n_chunks
+        if hasattr(defaults, "n_eql_blocks"):
+            self.n_eql_blocks = defaults.n_eql_blocks if n_eql_blocks is None else n_eql_blocks
 
         self._staged: StagedInputs | None = None
         self._job: Job | None = None
@@ -137,30 +138,26 @@ class Afqmc:
     def job(self) -> Job | None:
         return self._job
 
-    def _dump_params(self, params: QmcParams) -> None:
-        assert isinstance(
-            params, QmcParams
-        ), f"Expected a QmcParams instance, but got {type(params)}"
+    def _dump_params(self, params: QmcParamsBase) -> None:
         fields = dataclasses.fields(params)
         width = len(max(fields, key=lambda f: len(f.name)).name)
-        print(" QmcParams:")
+        print(f" {type(params).__name__}:")
         for field in fields:
             print(f"  {field.name:<{width}} = {getattr(params, field.name)}")
         print("")
 
-    def dump_flags(self, job) -> None:
-        assert isinstance(job, Job), f"Expected a Job instance, but got {type(job)}"
+    def dump_flags(self, job: Job) -> None:
         self._dump_flags_helper(job)
 
-    def _dump_flags_helper(self, job) -> None:
+    def _dump_flags_helper(self, job: Job) -> None:
         meta = job.staged.meta
         src = meta["source_kind"]
         chol_cut = meta["chol_cut"]
         sys = job.sys
-        nchol = job.staged.ham.chol.shape[0]
+        nchol = job.ham_data.nchol
         params = job.params
         trial = job.staged.trial
-        print("******** AFQMC ********")
+        print("\n******** AFQMC ********")
         print(f" norb            = {sys.norb}")
         print(f" nelec_up        = {sys.nelec[0]}")
         print(f" nelec_dn        = {sys.nelec[1]}")
@@ -180,7 +177,7 @@ class Afqmc:
             cache_mtime = self.cache.stat().st_mtime
         return (
             self.source_kind,
-            self.norb_frozen,
+            self.frozen,
             float(self.chol_cut),
             str(self.cache) if self.cache is not None else None,
             bool(self.overwrite_cache),
@@ -198,7 +195,7 @@ class Afqmc:
 
         staged = stage_inputs(
             self._obj,
-            norb_frozen=self.norb_frozen if self.norb_frozen is not None else None,
+            frozen=self.frozen if self.frozen is not None else None,
             chol_cut=self.chol_cut,
             cache=self.cache,
             overwrite=self.overwrite_cache if self.cache is not None else False,
@@ -222,27 +219,32 @@ class Afqmc:
     #    self._job = None
     #    return staged
 
-    def _make_params(self) -> QmcParams:
+    def _validate_params(self, params: QmcParamsBase) -> QmcParamsBase:
+        return params
+
+    def _make_params(self) -> QmcParamsBase:
         """
         Create QmcParams if user didn't provide one.
         """
-        if self.params is not None and isinstance(self.params, QmcParams):
+        params_cls = self.params_cls
+
+        if self.params is not None and isinstance(self.params, params_cls):
             params = self.params
-        elif self.params is not None and not isinstance(self.params, QmcParams):
+        elif self.params is not None and not isinstance(self.params, params_cls):
             raise TypeError(
-                f"Expected type QmcParams for self.params, but received '{type(self.params)}'"
+                f"Expected type {params_cls.__name__} for self.params, but received '{type(self.params)}'"
             )
         else:
             kwargs: dict[str, Any] = {}
-            for field in dataclasses.fields(QmcParams):
+            for field in dataclasses.fields(params_cls):
                 if hasattr(self, field.name):
                     val = getattr(self, field.name)
                     if val is not None:
                         kwargs[field.name] = val
 
-            params = QmcParams(**kwargs)
+            params = params_cls(**kwargs)
 
-        return params
+        return self._validate_params(params)
 
     def build_job(
         self,
@@ -254,22 +256,24 @@ class Afqmc:
         prop_ops: Any = None,
         block_fn: Callable[..., Any] | None = None,
         prop_kwargs: dict[str, Any] | None = None,
+        mesh: Mesh | None = None,
     ) -> Job:
         """
         Assemble a runnable Job from current settings and staged inputs.
         """
-        if self._job is not None and not force:
+        if self._job is not None and not force and (mesh is None or self._job.mesh is mesh):
             return self._job
 
         staged = self.stage()
         qmc_params = self._make_params()
         self.params = qmc_params
 
-        job = setup_job(
+        job = self.setup_fn(
             staged,
             walker_kind=self.walker_kind,
+            mesh=mesh,
             mixed_precision=self.mixed_precision,
-            params=qmc_params,
+            params=cast(Any, qmc_params),
             trial_data=trial_data,
             trial_ops=trial_ops,
             meas_ops=meas_ops,
@@ -280,12 +284,17 @@ class Afqmc:
         self._job = job
         return job
 
-    def kernel(self, **driver_kwargs: Any) -> tuple[float, float]:
+    def _coerce_result(self, value: Any) -> Any:
+        return float(value)
+
+    def kernel(self, **driver_kwargs: Any) -> tuple[Any, Any]:
         """
         Runs AFQMC, returns (e_tot, e_err), and stores samples.
         """
         print(banner_afqmc())
-        job = self.build_job()
+        print_runtime_provenance()
+        mesh = driver_kwargs.get("mesh")
+        job = self.build_job(mesh=mesh)
         self.dump_flags(job)
 
         qmc_result = job.kernel(**driver_kwargs)
@@ -298,6 +307,22 @@ class Afqmc:
         return e_tot, e_err
 
     run = kernel
+
+    @classmethod
+    def _from_staged_common(cls, path: Union[str, Path], **kwargs: Any):
+        staged = load_staged(path)
+        meta = staged.meta
+
+        af = cls(
+            None,
+            frozen=meta["frozen"],
+            chol_cut=meta["chol_cut"],
+            **kwargs,
+        )
+        af._staged = staged
+        af.source_kind = meta["source_kind"]
+        af._cache_key = af._key()
+        return af
 
     @classmethod
     def from_staged(
@@ -314,25 +339,14 @@ class Afqmc:
         """
         Returns a new AFQMC object from a previously staged calculations
         (using save_staged method). The number of frozen orbitals, norb_frozen,
-        and the choliesky decomposition threshold, chol_cut, cannot be changed.
+        and the cholesky decomposition threshold, chol_cut, cannot be changed.
         Parameters
         ----------
         path: str, pathlib.Path
         The other parameters are identical to the ones in the AFQMC class.
         """
-        staged = load_staged(path)
-        meta = staged.meta
-
-        mf_or_cc = None
-
-        # Cannot be changed as the input has been staged
-        norb_frozen = meta["norb_frozen"]
-        chol_cut = meta["chol_cut"]
-
-        af = Afqmc(
-            mf_or_cc,
-            norb_frozen=norb_frozen,
-            chol_cut=chol_cut,
+        return cls._from_staged_common(
+            path,
             n_eql_blocks=n_eql_blocks,
             n_blocks=n_blocks,
             seed=seed,
@@ -341,24 +355,23 @@ class Afqmc:
             n_chunks=n_chunks,
         )
 
-        af._staged = staged
-        af.source_kind = meta["source_kind"]
-        af._cache_key = af._key()
-
-        return af
-
 
 class AfqmcFp(Afqmc):
+    params_cls = QmcParamsFp
+    job_cls = JobFp
+    setup_fn = staticmethod(setup_job_fp)
+
     def __init__(
         self,
         mf_or_cc: Any,
         *,
-        norb_frozen: int | ArrayLike | None = None,
+        frozen: int | ArrayLike | None = None,
         chol_cut: float = 1e-5,
         cache: Union[str, Path] | None = None,
         n_blocks: int | None = None,
         seed: int | None = None,
         dt: float | None = None,
+        n_prop_steps: int | None = None,
         n_walkers: int | None = None,
         n_chunks: int = 1,
         ene0: float | None = None,
@@ -366,7 +379,7 @@ class AfqmcFp(Afqmc):
     ):
         super().__init__(
             mf_or_cc,
-            norb_frozen=norb_frozen,
+            frozen=frozen,
             chol_cut=chol_cut,
             cache=cache,
             n_eql_blocks=None,
@@ -376,101 +389,36 @@ class AfqmcFp(Afqmc):
             n_walkers=n_walkers,
             n_chunks=n_chunks,
         )
-        self.n_traj = n_traj
-        self.n_prop_steps: int | None = None
+        defaults = self.params_cls()
+        self.n_prop_steps = defaults.n_prop_steps if n_prop_steps is None else n_prop_steps
+        self.n_traj = defaults.n_traj if n_traj is None else n_traj
         self.ene0 = ene0
 
-    def _dump_params(self, params: QmcParamsFp) -> None:
-        assert isinstance(
-            params, QmcParamsFp
-        ), f"Expected a QmcParamsFp instance, but got {type(params)}"
-        fields = dataclasses.fields(params)
-        width = len(max(fields, key=lambda f: len(f.name)).name)
-        print(" QmcParamsFp:")
-        for field in fields:
-            print(f"  {field.name:<{width}} = {getattr(params, field.name)}")
-        print("")
-
-    def dump_flags(self, job) -> None:
-        assert isinstance(job, JobFp), f"Expected a JobFp instance, but got {type(job)}"
-        self._dump_flags_helper(job)
-
-    def _make_params(self) -> QmcParamsFp:
-        """
-        Create QmcParamsFp if user didn't provide one.
-        """
-        if self.params is not None and isinstance(self.params, QmcParamsFp):
-            params = self.params
-        elif self.params is not None and not isinstance(self.params, QmcParamsFp):
-            raise TypeError(
-                f"Expected type QmcParamsFp for self.params, but received '{type(self.params)}'"
-            )
-        else:
-            kwargs: dict[str, Any] = {}
-            for field in dataclasses.fields(QmcParamsFp):
-                if hasattr(self, field.name):
-                    val = getattr(self, field.name)
-                    if val is not None:
-                        kwargs[field.name] = val
-
-            params = QmcParamsFp(**kwargs)
-
+    def _validate_params(self, params: QmcParamsBase) -> QmcParamsBase:
+        assert isinstance(params, QmcParamsFp)
         if params.ene0 is None:
             raise ValueError(
                 "The value of the parameter 'ene0' must be set, typically with SCF or CC energy."
             )
-
         return params
 
-    def build_job(
-        self,
-        *,
-        force: bool = False,
-        trial_data: Any = None,
-        trial_ops: Any = None,
-        meas_ops: Any = None,
-        prop_ops: Any = None,
-        block_fn: Callable[..., Any] | None = None,
-        prop_kwargs: dict[str, Any] | None = None,
-    ) -> JobFp:
-        """
-        Assemble a runnable Job from current settings and staged inputs.
-        """
-        if self._job is not None and not force:
-            assert isinstance(self._job, JobFp)
-            return self._job
+    def _coerce_result(self, value: Any) -> Any:
+        return value
 
-        staged = self.stage()
-        qmc_params = self._make_params()
-        self.params = qmc_params
-
-        job = setup_job_fp(
-            staged,
-            walker_kind=self.walker_kind,
-            mixed_precision=self.mixed_precision,
-            params=qmc_params,
-            trial_data=trial_data,
-            trial_ops=trial_ops,
-            meas_ops=meas_ops,
-            prop_ops=prop_ops,
-            block_fn=block_fn,
-            prop_kwargs=prop_kwargs,
-        )
-        self._job = job
-        return job
-
-    def kernel(self, **driver_kwargs: Any) -> tuple[np.ndarray, np.ndarray]:
+    def kernel(self, **driver_kwargs: Any) -> tuple[Any, Any]:
         """
         Runs AFQMC, returns (e_tot, e_err), and stores samples.
         """
         print(banner_afqmc())
-        job = self.build_job()
+        print_runtime_provenance()
+        mesh = driver_kwargs.get("mesh")
+        job = self.build_job(mesh=mesh)
         self.dump_flags(job)
 
         qmc_result = job.kernel(**driver_kwargs)
 
-        e_tot = np.asarray(qmc_result.mean_energy)
-        e_err = np.asarray(qmc_result.stderr_energy)
+        e_tot = qmc_result.mean_energy
+        e_err = qmc_result.stderr_energy
 
         self.qmc_result = qmc_result
 
@@ -486,6 +434,7 @@ class AfqmcFp(Afqmc):
         n_blocks: int | None = None,
         seed: int | None = None,
         dt: float | None = None,
+        n_prop_steps: int | None = None,
         n_walkers: int | None = None,
         n_chunks: int = 1,
     ) -> AfqmcFp:
@@ -498,31 +447,15 @@ class AfqmcFp(Afqmc):
         path: str, pathlib.Path
         The other parameters are identical to the ones in the AFQMC class.
         """
-        staged = load_staged(path)
-        meta = staged.meta
-
-        mf_or_cc = None
-
-        # Cannot be changed as the input has been staged
-        norb_frozen = meta["norb_frozen"]
-        chol_cut = meta["chol_cut"]
-
-        af = AfqmcFp(
-            mf_or_cc,
-            norb_frozen=norb_frozen,
-            chol_cut=chol_cut,
+        return cls._from_staged_common(
+            path,
             n_blocks=n_blocks,
             seed=seed,
             dt=dt,
+            n_prop_steps=n_prop_steps,
             n_walkers=n_walkers,
             n_chunks=n_chunks,
         )
-
-        af._staged = staged
-        af.source_kind = meta["source_kind"]
-        af._cache_key = af._key()
-
-        return af
 
 
 class AfqmcLnoFrag(Afqmc):
@@ -530,7 +463,7 @@ class AfqmcLnoFrag(Afqmc):
         self,
         mf_or_cc: Any,
         *,
-        norb_frozen: int | ArrayLike | None = None,
+        frozen: int | ArrayLike | None = None,
         chol_cut: float = 1e-5,
         cache: Union[str, Path] | None = None,
         n_eql_blocks: int | None = None,
@@ -543,7 +476,7 @@ class AfqmcLnoFrag(Afqmc):
     ):
         super().__init__(
             mf_or_cc,
-            norb_frozen=norb_frozen,
+            frozen=frozen,
             chol_cut=chol_cut,
             cache=cache,
             n_eql_blocks=n_eql_blocks,
@@ -566,16 +499,16 @@ class AfqmcLnoFrag(Afqmc):
         if self._staged is not None and self._cache_key == key and not force:
             return self._staged
 
-        assert isinstance(self.norb_frozen, (tuple, list, np.ndarray))
+        assert isinstance(self.frozen, np.ndarray)
         ham = staging.build_ham_lno(
             self._obj,
-            norb_frozen=self.norb_frozen,
+            frozen=self.frozen,
             chol_cut=self.chol_cut,
         )
 
         staged = stage_inputs(
             self._obj,
-            norb_frozen=self.norb_frozen if self.norb_frozen is not None else None,
+            frozen=self.frozen,
             chol_cut=self.chol_cut,
             cache=self.cache,
             overwrite=self.overwrite_cache if self.cache is not None else False,
@@ -676,6 +609,7 @@ class AfqmcLnoFrag(Afqmc):
         sys = job.sys
         nchol = job.staged.ham.chol.shape[0]
         params = job.params
+        assert isinstance(params, QmcParamsLno)
         trial = job.staged.trial
         print("******** AFQMC ********")
         print(f" nchol           = {nchol}")
@@ -719,7 +653,7 @@ def run_afqmc_lno_helper(
     norb_act=None,
     nelec_act=None,
     mo_coeff=None,
-    norb_frozen: int | ArrayLike | None = [],
+    frozen: int | ArrayLike | None = [],
     chol_cut: float = 1e-5,
     seed: int | None = None,
     dt: float = 0.005,
@@ -745,7 +679,7 @@ def run_afqmc_lno_helper(
 
     myafqmc = AfqmcLnoFrag(
         mf2,
-        norb_frozen=norb_frozen,
+        frozen=frozen,
         chol_cut=chol_cut,
         n_eql_blocks=n_eql,
         n_blocks=nblocks,

@@ -90,7 +90,7 @@ def afqmc_step(
 
     key, subkey = jax.random.split(state.rng_key)
     nw = wk.n_walkers(state.walkers)
-    fields = jax.random.normal(subkey, (nw, ham_data.chol.shape[0]))
+    fields = jax.random.normal(subkey, (nw, prop_ctx.chol_flat.shape[0]))
 
     fb_kernel = meas_ops.require_kernel(k_force_bias)
     force_bias = wk.vmap_chunked(
@@ -122,7 +122,7 @@ def afqmc_step(
     w_floor = float(getattr(params, "weight_floor", 1.0e-3))
     w_cap = float(getattr(params, "weight_cap", 100.0))
 
-    imp_ph = jnp.where(imp_ph < w_floor, 0.0, imp_ph)
+    imp_ph = jnp.where(~jnp.isfinite(imp_ph) | (imp_ph < w_floor), 0.0, imp_ph)
     node_encounters_new = state.node_encounters + jnp.sum(imp_ph <= 0.0)
     imp_ph = jnp.where(imp_ph > w_cap, 0.0, imp_ph)
 

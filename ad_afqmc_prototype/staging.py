@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import copy
 import json
 import time
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Any, Dict, Tuple, Union, cast
+from typing import Any, Dict, Tuple, TypeAlias, Union, cast
 
 import h5py
 import numpy as np
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
 
 print = partial(print, flush=True)
 
@@ -19,10 +20,100 @@ from .ham.chol import HamBasis
 # into serializable data classes representing Hamiltonian and trial
 # wavefunction inputs which can be used for building AFQMC objects.
 
-Array = np.ndarray
+Array: TypeAlias = NDArray[Any]
 
 # to keep track of format versions when loading/saving staged inputs
 STAGE_FORMAT_VERSION = 1
+
+
+def _stage_begin(message: str) -> float:
+    print(f"[stage] {message}...")
+    return time.time()
+
+
+def _stage_end(start: float, message: str, *, details: str | None = None) -> None:
+    suffix = f" | {details}" if details else ""
+    print(f"[stage] {message} in {time.time() - start:.2f}s{suffix}")
+
+
+def _normalize_frozen_list(frozen: Any, *, nmo: int) -> NDArray:
+    frozen_arr = np.asarray(frozen, dtype=np.int64)
+    if frozen_arr.ndim != 1:
+        raise ValueError("cc.frozen must be a one-dimensional list of MO indices.")
+    if frozen_arr.size == 0:
+        return frozen_arr
+
+    frozen_arr = np.sort(frozen_arr)
+    if np.unique(frozen_arr).size != frozen_arr.size:
+        raise ValueError("cc.frozen contains duplicate MO indices.")
+    if frozen_arr[0] < 0 or frozen_arr[-1] >= nmo:
+        raise ValueError(f"cc.frozen indices must lie in [0, {nmo}).")
+
+    return frozen_arr
+
+
+def _mo_coeff_signature(mo_coeff: Any) -> tuple[tuple[int, ...], ...]:
+    if isinstance(mo_coeff, (tuple, list)):
+        return tuple(tuple(int(dim) for dim in np.asarray(block).shape) for block in mo_coeff)
+    return (tuple(int(dim) for dim in np.asarray(mo_coeff).shape),)
+
+
+def _copy_scf_with_cc_mo_coeff(cc: Any, mf: Any) -> Any:
+    if not hasattr(cc, "mo_coeff") or cc.mo_coeff is None:
+        return mf
+
+    cc_sig = _mo_coeff_signature(cc.mo_coeff)
+    mf_sig = _mo_coeff_signature(mf.mo_coeff)
+    if cc_sig != mf_sig:
+        raise ValueError(
+            "CC object mo_coeff shape does not match the underlying SCF mo_coeff shape: "
+            f"{cc_sig} != {mf_sig}."
+        )
+
+    mf_copy = copy.copy(mf)
+    mf_copy.mo_coeff = cc.mo_coeff
+    return mf_copy
+
+
+def _infer_restricted_trial_freeze_from_cc(
+    *,
+    cc_frozen: Any,
+    nmo_full: int,
+    nocc_full: int,
+    norb_frozen: int,
+    t1_shape: tuple[int, int],
+) -> tuple[int, int]:
+    frozen = _normalize_frozen_list(cc_frozen, nmo=nmo_full)
+    occ_frozen = frozen[frozen < nocc_full]
+    vir_frozen = frozen[frozen >= nocc_full]
+
+    nocc_cc_frozen = int(occ_frozen.size)
+    nvir_cc_frozen = int(vir_frozen.size)
+
+    if occ_frozen.size and not np.array_equal(
+        occ_frozen, np.arange(nocc_cc_frozen, dtype=np.int64)
+    ):
+        raise ValueError(
+            "Occupied orbitals in list-valued cc.frozen must form a contiguous prefix."
+        )
+
+    vir_expected = np.arange(nmo_full - nvir_cc_frozen, nmo_full, dtype=np.int64)
+    if vir_frozen.size and not np.array_equal(vir_frozen, vir_expected):
+        raise ValueError("Virtual orbitals in list-valued cc.frozen must form a contiguous suffix.")
+
+    if norb_frozen > nocc_cc_frozen:
+        raise ValueError("norb_frozen cannot exceed the number of occupied orbitals frozen in CC.")
+
+    nocc_act_expected = nocc_full - nocc_cc_frozen
+    nvir_act_expected = (nmo_full - nocc_full) - nvir_cc_frozen
+    if t1_shape != (nocc_act_expected, nvir_act_expected):
+        raise ValueError(
+            "cc.frozen is inconsistent with the CC amplitudes in the restricted CISD trial."
+        )
+
+    nocc_t_core = nocc_cc_frozen - norb_frozen
+    nvir_t_outer = nvir_cc_frozen
+    return nocc_t_core, nvir_t_outer
 
 
 def modified_cholesky(
@@ -71,7 +162,7 @@ def modified_cholesky(
     return chol
 
 
-def chunked_cholesky(mol, max_error=1e-6, verbose=False, cmax=10) -> np.ndarray:
+def chunked_cholesky(mol, max_error=1e-6, verbose=False, cmax=10) -> NDArray:
     """Modified cholesky decomposition from pyscf eris.
 
     See, e.g. [Motta17]_
@@ -180,6 +271,68 @@ def chunked_cholesky(mol, max_error=1e-6, verbose=False, cmax=10) -> np.ndarray:
     return chol_vecs[:nchol]
 
 
+def _rotate_chol_to_mo(chol_vec: Array, basis_coeff: Array) -> Array:
+    """Rotate AO-space Cholesky into an MO basis."""
+    C = np.asarray(basis_coeff)
+    nao, norb = C.shape
+    nchol = int(chol_vec.shape[0])
+    out_dtype = np.result_type(chol_vec.dtype, C.dtype)
+
+    reuse_storage = nao == norb and out_dtype == chol_vec.dtype
+    if reuse_storage:
+        chol = chol_vec.reshape(nchol, nao, nao)
+    else:
+        chol = np.empty((nchol, norb, norb), dtype=out_dtype)
+
+    Cdag = np.asarray(C.conj().T)
+    tmp = np.empty((nao, norb), dtype=out_dtype)
+    for i in range(nchol):
+        chol_i_ao = chol_vec[i].reshape(nao, nao)
+        np.dot(chol_i_ao, C, out=tmp)
+        np.dot(Cdag, tmp, out=chol[i])
+
+    return chol
+
+
+def _rotate_chol_to_ghf_mo(chol_vec: Array, basis_coeff: Array) -> Array:
+    """Rotate spatial AO Cholesky factors into a generalized-spin MO basis."""
+    C = np.asarray(basis_coeff)
+    nao2, nmo = C.shape
+    if nao2 % 2 != 0:
+        raise ValueError(f"Expected even GHF AO dimension, got {nao2}")
+
+    nao = nao2 // 2
+    nchol = int(chol_vec.shape[0])
+    out_dtype = np.result_type(chol_vec.dtype, C.dtype)
+    chol = np.empty((nchol, nmo, nmo), dtype=out_dtype)
+
+    Cdag = np.asarray(C.conj().T)
+    chol_i_full = np.zeros((nao2, nao2), dtype=out_dtype)
+    tmp = np.empty((nao2, nmo), dtype=out_dtype)
+    for i in range(nchol):
+        chol_i = chol_vec[i].reshape(nao, nao)
+        chol_i_full.fill(0)
+        chol_i_full[:nao, :nao] = chol_i
+        chol_i_full[nao:, nao:] = chol_i
+        np.dot(chol_i_full, C, out=tmp)
+        np.dot(Cdag, tmp, out=chol[i])
+
+    return chol
+
+
+def _stage_frozen(frozen: int | ArrayLike | None) -> int | NDArray | None:
+    if isinstance(frozen, (list, tuple, np.ndarray)):
+        frozen = np.asarray(frozen, dtype=int)
+    elif frozen is None:
+        frozen = None
+    elif isinstance(frozen, int):
+        frozen = int(frozen)
+    else:
+        raise TypeError(f"Unsupported type '{type(frozen)}'.")
+
+    return frozen
+
+
 @dataclass(frozen=True, slots=True)
 class HamInput:
     """ham inputs in the chosen orthonormal one particle basis"""
@@ -190,7 +343,7 @@ class HamInput:
     nelec: Tuple[int, int]
     norb: int
     chol_cut: float
-    norb_frozen: int | ArrayLike
+    frozen: int | NDArray
     source_kind: str  # "mf" or "cc"
     basis: HamBasis  # "restricted" or "generalized"
 
@@ -201,7 +354,7 @@ class TrialInput:
 
     kind: str  # "slater", "cisd", "ucisd"
     data: Dict[str, Array]
-    norb_frozen: int | ArrayLike
+    frozen: int | NDArray
     source_kind: str  # "mf" or "cc"
 
 
@@ -216,13 +369,14 @@ class StagedInputs:
 class StagedCc:
     """Wrapper ensuring the validity of the CC object"""
 
-    _delegate = {"t1", "t2", "_scf"}
+    _delegate = {"t1", "t2", "_scf", "frozen"}
     kind: str  # "ccsd", "uccsd", "gccsd"
     cc: Any
     mf: Any
-    norb_frozen: int | ArrayLike
+    trial_frozen: int | NDArray
+    afqmc_frozen: int | NDArray
 
-    def __init__(self, cc: Any, norb_frozen: int | ArrayLike | None):
+    def __init__(self, cc: Any, frozen: int | ArrayLike | None):
         from pyscf.cc.ccsd import CCSD
         from pyscf.cc.gccsd import GCCSD
         from pyscf.cc.uccsd import UCCSD
@@ -233,12 +387,7 @@ class StagedCc:
         if not hasattr(cc, "_scf"):
             raise TypeError("CC-like object missing _scf reference to underlying scf object.")
         else:
-            mf = cc._scf
-
-        # if not hasattr(cc, "mol"):
-        #    raise TypeError("CC-like object missing mol reference to underlying mol object.")
-        # else:
-        #    mol = cc.mol
+            mf = _copy_scf_with_cc_mo_coeff(cc, cc._scf)
 
         if not hasattr(cc, "t1") or not hasattr(cc, "t2"):
             raise ValueError("CC amplitudes not found; did you run cc.kernel()?")
@@ -250,24 +399,37 @@ class StagedCc:
         elif isinstance(cc, GCCSD):
             kind = "gccsd"
 
-        if not hasattr(cc, "frozen") or cc.frozen is None:
-            assert (
-                norb_frozen == 0 or norb_frozen is None
-            ), "cc has no frozen attribute, staging frozen must be 0."
-            norb_frozen = 0
-        elif norb_frozen is None:
-            norb_frozen = cc.frozen
-        elif isinstance(cc.frozen, int) or isinstance(cc.frozen, (tuple, list, np.ndarray)):
-            assert cc.frozen == norb_frozen, "cc.frozen and staging frozen must be equal."
+        frozen = _stage_frozen(frozen)
+        if hasattr(cc, "frozen"):
+            cc_frozen = _stage_frozen(cc.frozen)
         else:
-            raise ValueError(f"Unexpected type '{type(cc.frozen)}' for cc.frozen.")
+            cc_frozen = None
 
-        mf = StagedMf(mf, norb_frozen)
+        if frozen is None and cc_frozen is None:
+            afqmc_frozen = 0
+            trial_frozen = 0
+        elif frozen is None:
+            afqmc_frozen = 0
+            trial_frozen = cc_frozen
+        else:
+            afqmc_frozen = frozen
+            trial_frozen = cc_frozen
+
+        assert isinstance(afqmc_frozen, (int, np.ndarray))
+        assert isinstance(trial_frozen, (int, np.ndarray))
+
+        if isinstance(trial_frozen, np.ndarray) and kind != "ccsd":
+            raise NotImplementedError(
+                "List-valued cc.frozen is currently supported only for restricted CCSD staging."
+            )
+
+        mf = StagedMf(mf, frozen)
 
         object.__setattr__(self, "cc", cc)
         object.__setattr__(self, "mf", mf)
         object.__setattr__(self, "kind", kind)
-        object.__setattr__(self, "norb_frozen", norb_frozen)
+        object.__setattr__(self, "afqmc_frozen", afqmc_frozen)
+        object.__setattr__(self, "trial_frozen", trial_frozen)
 
     def __getattr__(self, name):
         if name in StagedCc._delegate:
@@ -293,9 +455,10 @@ class StagedMf:
     _delegate = {"mo_coeff", "mol", "nelec", "get_ovlp", "energy_nuc", "get_hcore"}
     kind: str  # "rhf", "rohf", "uhf", ghf
     mf: Any  # Python SCF object
-    norb_frozen: int | ArrayLike
+    trial_frozen: int | NDArray
+    afqmc_frozen: int | NDArray
 
-    def __init__(self, mf: Any, norb_frozen: int | ArrayLike | None):
+    def __init__(self, mf: Any, frozen: int | ArrayLike | None):
         from pyscf.scf.ghf import GHF
         from pyscf.scf.hf import RHF
         from pyscf.scf.rohf import ROHF
@@ -305,9 +468,9 @@ class StagedMf:
             raise TypeError(f"Unsupported object type: {type(mf)}")
 
         # if not hasattr(mf, "mol"):
-        #    raise TypeError("SCF-like object missing mol reference to underlying mol object.")
+        #   raise TypeError("SCF-like object missing mol reference to underlying mol object.")
         # else:
-        #    mol = mf.mol
+        #   mol = mf.mol
 
         if not hasattr(mf, "mo_coeff"):
             raise ValueError("MO coefficients not found; did you run mf.kernel()?")
@@ -321,27 +484,27 @@ class StagedMf:
         elif isinstance(mf, GHF):
             kind = "ghf"
 
-        # TODO: I will add error messages
-        if norb_frozen is not None:
-            assert isinstance(norb_frozen, int) or isinstance(
-                norb_frozen, (list, tuple, np.ndarray)
-            )
-            if isinstance(norb_frozen, (list, tuple, np.ndarray)):
-                norb_frozen = np.array(norb_frozen, dtype=int)
-                if norb_frozen.size > 0:
-                    assert len(norb_frozen) < mf.mo_coeff.shape[-1]
-                    assert min(norb_frozen) >= 0
-                    assert max(norb_frozen) < mf.mo_coeff.shape[-1]
+        frozen = _stage_frozen(frozen)
 
-            if isinstance(norb_frozen, int):
-                assert norb_frozen >= 0
-                assert norb_frozen < mf.mo_coeff.shape[-1]
+        if isinstance(frozen, np.ndarray):
+            if frozen.size > 0:
+                assert frozen.size < mf.mo_coeff.shape[-1]
+                assert np.min(frozen) >= 0
+                assert np.max(frozen) < mf.mo_coeff.shape[-1]
+        elif isinstance(frozen, int):
+            assert frozen < mf.mo_coeff.shape[-1]
+            assert frozen >= 0
+        elif frozen is None:
+            frozen = 0
         else:
-            norb_frozen = 0
+            raise TypeError(
+                f"Expected a type int | np.ndarray | None, but received '{type(frozen)}'."
+            )
 
         object.__setattr__(self, "mf", mf)
         object.__setattr__(self, "kind", kind)
-        object.__setattr__(self, "norb_frozen", norb_frozen)
+        object.__setattr__(self, "afqmc_frozen", frozen)
+        object.__setattr__(self, "trial_frozen", 0)
 
     @property
     def norb(self) -> int:
@@ -370,9 +533,10 @@ class StagedMfOrCc:
     source: str  # "cc", "mf"
     mf_or_cc: Any  # StagedMf or StagedCc
     mf: StagedMf
-    norb_frozen: int | ArrayLike
+    afqmc_frozen: int | NDArray
+    trial_frozen: int | NDArray
 
-    def __init__(self, mf_or_cc: Any, norb_frozen: int | ArrayLike | None):
+    def __init__(self, mf_or_cc: Any, frozen: int | ArrayLike | None):
         from pyscf.cc.ccsd import CCSD
         from pyscf.cc.gccsd import GCCSD
         from pyscf.cc.uccsd import UCCSD
@@ -382,11 +546,11 @@ class StagedMfOrCc:
         from pyscf.scf.uhf import UHF
 
         if isinstance(mf_or_cc, (CCSD, UCCSD, GCCSD)):
-            mf_or_cc = StagedCc(mf_or_cc, norb_frozen)
+            mf_or_cc = StagedCc(mf_or_cc, frozen)
             mf = mf_or_cc.mf
             source = "cc"
         elif isinstance(mf_or_cc, (RHF, ROHF, UHF, GHF)):
-            mf_or_cc = StagedMf(mf_or_cc, norb_frozen)
+            mf_or_cc = StagedMf(mf_or_cc, frozen)
             mf = mf_or_cc
             source = "mf"
         else:
@@ -396,7 +560,8 @@ class StagedMfOrCc:
         object.__setattr__(self, "mf", mf)
         object.__setattr__(self, "source", source)
         object.__setattr__(self, "kind", mf_or_cc.kind)
-        object.__setattr__(self, "norb_frozen", mf_or_cc.norb_frozen)
+        object.__setattr__(self, "afqmc_frozen", mf_or_cc.afqmc_frozen)
+        object.__setattr__(self, "trial_frozen", mf_or_cc.trial_frozen)
 
     @property
     def norb(self) -> int:
@@ -425,7 +590,7 @@ class StagedMfOrCc:
 def stage(
     obj: Any,
     *,
-    norb_frozen: int | ArrayLike | None = None,
+    frozen: int | ArrayLike | None = None,
     chol_cut: float = 1e-5,
     cache: Union[str, Path] | None = None,
     overwrite: bool = False,
@@ -439,9 +604,12 @@ def stage(
     Args:
         obj:
             pyscf mf object (RHF/ROHF/UHF) or cc object (CCSD/UCCSD).
-        norb_frozen:
-            Number of lowest orbitals to freeze.
-            Inferred from cc.frozen if obj is a cc object.
+        frozen:
+            Number of lowest occupied orbitals removed from the AFQMC Hamiltonian.
+            For CC objects with integer ``cc.frozen``, this is inferred from ``cc.frozen``.
+            For restricted CCSD objects with list-valued ``cc.frozen``, trial-space frozen
+            occupied/virtual blocks are inferred from ``cc.frozen`` and ``frozen``
+            defaults to 0 unless set explicitly.
         chol_cut:
             Cholesky decomposition cutoff.
         cache:
@@ -465,24 +633,32 @@ def stage(
 
     t0 = time.time()
 
-    obj = StagedMfOrCc(obj, norb_frozen)
+    obj = StagedMfOrCc(obj, frozen)
     mol = obj.mol
 
     if ham is None:
+        t_ham = _stage_begin("building Hamiltonian")
         ham = _stage_ham_input(
             obj,
             chol_cut=chol_cut,
             verbose=verbose,
         )
+        _stage_end(
+            t_ham,
+            "Hamiltonian ready",
+            details=f"norb={ham.norb} nchol={ham.chol.shape[0]}",
+        )
 
     if trial is None:
+        t_trial = _stage_begin("building trial input")
         trial = _stage_trial_input(obj)
+        _stage_end(t_trial, "trial input ready", details=f"kind={trial.kind}")
 
     meta: Dict[str, Any] = {
         "format_version": STAGE_FORMAT_VERSION,
         "timestamp_unix": time.time(),
         "source_kind": obj.source,
-        "norb_frozen": obj.norb_frozen,
+        "frozen": obj.afqmc_frozen,
         "chol_cut": ham.chol_cut if ham is not None else chol_cut,
         "mol": {
             "nao": int(mol.nao),
@@ -514,7 +690,9 @@ def dump(staged: StagedInputs, path: Union[str, Path]) -> None:
         path: output file path
     """
     p = Path(path).expanduser().resolve()
+    t_dump = _stage_begin(f"writing staged inputs to {p}")
     _dump_h5(staged, p)
+    _stage_end(t_dump, "staged inputs written")
 
 
 def load(path: Union[str, Path]) -> StagedInputs:
@@ -528,7 +706,14 @@ def load(path: Union[str, Path]) -> StagedInputs:
         StagedInputs
     """
     p = Path(path).expanduser().resolve()
-    return _load_h5(p)
+    t_load = _stage_begin(f"loading staged inputs from {p}")
+    staged = _load_h5(p)
+    _stage_end(
+        t_load,
+        "staged inputs loaded",
+        details=f"norb={staged.ham.norb} nchol={staged.ham.chol.shape[0]} trial={staged.trial.kind}",
+    )
+    return staged
 
 
 def _is_cc_like(obj: Any) -> bool:
@@ -577,28 +762,18 @@ def _stage_ham_input(obj: StagedMfOrCc, *, chol_cut: float, verbose: bool) -> Ha
 
     # full space electron count
     nelec: Tuple[int, int] = (int(mol.nelec[0]), int(mol.nelec[1]))
-    norb_frozen = scf_obj.norb_frozen
+    norb_frozen = scf_obj.afqmc_frozen
 
     assert isinstance(norb_frozen, int)
 
     # mo Cholesky
-    nchol = int(chol_vec.shape[0])
     C = np.asarray(basis_coeff)
     if scf_obj.kind != "ghf":
         norb = int(basis_coeff.shape[1])
-        Cdag = C.conj().T
-        chol_ao = chol_vec.reshape(nchol, mol.nao, mol.nao)
-        tmp = Cdag @ chol_ao
-        chol = tmp @ C
+        chol = _rotate_chol_to_mo(chol_vec, C)
     else:
-        import scipy.linalg as la
-
         norb = basis_coeff.shape[1] // 2
-        chol = np.zeros((nchol, 2 * norb, 2 * norb), dtype=C.dtype)
-        for i in range(nchol):
-            chol_i = chol_vec[i].reshape(norb, norb)
-            bchol_i = la.block_diag(chol_i, chol_i)
-            chol[i] = C.T.conj() @ bchol_i @ C
+        chol = _rotate_chol_to_ghf_mo(chol_vec, C)
 
     # freeze core
     if norb_frozen > 0 and scf_obj.kind != "ghf":
@@ -622,7 +797,7 @@ def _stage_ham_input(obj: StagedMfOrCc, *, chol_cut: float, verbose: bool) -> Ha
 
         h0 = float(ecore)
         h1 = np.asarray(h1_eff)
-        chol = chol[:, i0:i1, i0:i1]
+        chol = np.array(chol[:, i0:i1, i0:i1], copy=True)
         norb = int(ncas)
         nelec = tuple(int(x) for x in mc.nelecas)  # type: ignore
     elif norb_frozen > 0 and scf_obj.kind == "ghf":
@@ -637,7 +812,7 @@ def _stage_ham_input(obj: StagedMfOrCc, *, chol_cut: float, verbose: bool) -> Ha
         nelec=nelec,
         norb=norb,
         chol_cut=float(chol_cut),
-        norb_frozen=norb_frozen,
+        frozen=norb_frozen,
         source_kind=obj.source,
         basis=ham_basis,
     )
@@ -667,12 +842,12 @@ def _stage_mf_input(obj: StagedMfOrCc) -> TrialInput:
 
     mol = obj.mol
     S = obj.get_ovlp(mol)
-    norb_frozen = obj.norb_frozen
+    frozen = obj.afqmc_frozen
 
     match obj.mf.kind:
         case "rhf" | "rohf" | "ghf":
             Ca = np.asarray(obj.mo_coeff)
-            mo = _mf_coeff_helper(Ca, Ca, S, norb_frozen)
+            mo = _mf_coeff_helper(Ca, Ca, S, frozen)
             data = {"mo": np.asarray(mo)}
 
         case "uhf":
@@ -680,8 +855,8 @@ def _stage_mf_input(obj: StagedMfOrCc) -> TrialInput:
             Cb = np.asarray(obj.mo_coeff[1])
 
             # basis is alpha MOs, represent alpha and beta orbitals in this basis
-            moa = _mf_coeff_helper(Ca, Ca, S, norb_frozen)
-            mob = _mf_coeff_helper(Ca, Cb, S, norb_frozen)
+            moa = _mf_coeff_helper(Ca, Ca, S, frozen)
+            mob = _mf_coeff_helper(Ca, Cb, S, frozen)
             data = {"mo_a": np.asarray(moa), "mo_b": np.asarray(mob)}
         case _:
             raise ValueError(f"Unreachable: '{obj.kind}'.")
@@ -689,30 +864,27 @@ def _stage_mf_input(obj: StagedMfOrCc) -> TrialInput:
     return TrialInput(
         kind=obj.kind,
         data=data,
-        norb_frozen=obj.norb_frozen,
+        frozen=frozen,
         source_kind=obj.source,
     )
 
 
 def _mf_coeff_helper(
-    Ca: np.ndarray,
-    Cb: np.ndarray,
-    S: np.ndarray,
-    norb_frozen: int | ArrayLike,
-) -> np.ndarray:
+    Ca: NDArray,
+    Cb: NDArray,
+    S: NDArray,
+    frozen: int | NDArray,
+) -> NDArray:
     q, r = np.linalg.qr(Ca.T @ S @ Cb)
     sgn = np.sign(np.diag(r))
     q = q * sgn[None, :]
-    if isinstance(norb_frozen, int):
-        q = q[norb_frozen:, norb_frozen:]
-    elif isinstance(norb_frozen, (tuple, list, np.ndarray)):
-        norb_frozen = np.asarray(norb_frozen, dtype=int)
-        idx = np.delete(np.arange(len(q)), norb_frozen)
+    if isinstance(frozen, int):
+        q = q[frozen:, frozen:]
+    elif isinstance(frozen, np.ndarray):
+        idx = np.delete(np.arange(len(q)), frozen)
         q = q[np.ix_(idx, idx)]
     else:
-        raise TypeError(
-            "norb_frozen must be an integer or an ArrayLike, but received '{type(norb_frozen)}'."
-        )
+        raise TypeError("frozen must be an integer or a np.ndarray, but received '{type(frozen)}'.")
 
     return q
 
@@ -721,18 +893,41 @@ def _stage_cisd_input(obj: StagedMfOrCc) -> TrialInput:
     if obj.kind != "ccsd":
         raise ValueError(f"Unreachable: '{obj.kind}'.")
 
-    t1 = obj.t1
-    t2 = obj.t2
+    t1_arr = np.asarray(obj.t1)
+    t2_arr = np.asarray(obj.t2)
+    nocc_t_core = 0
+    nvir_t_outer = 0
 
-    ci2 = np.asarray(t2) + np.einsum("ia,jb->ijab", np.asarray(t1), np.asarray(t1))
+    if isinstance(obj.trial_frozen, (np.ndarray)):
+        if obj.mol.nelec[0] != obj.mol.nelec[1]:
+            raise ValueError(
+                "List-valued cc.frozen is currently supported only for closed-shell restricted CCSD."
+            )
+
+        assert isinstance(obj.afqmc_frozen, int)
+
+        nocc_t_core, nvir_t_outer = _infer_restricted_trial_freeze_from_cc(
+            cc_frozen=obj.trial_frozen,
+            nmo_full=int(obj.mf.mo_coeff.shape[-1]),
+            nocc_full=int(obj.mol.nelectron // 2),
+            norb_frozen=int(obj.afqmc_frozen),
+            t1_shape=(int(t1_arr.shape[0]), int(t1_arr.shape[1])),
+        )
+
+    ci2 = t2_arr + np.einsum("ia,jb->ijab", t1_arr, t1_arr)
     ci2 = ci2.transpose(0, 2, 1, 3)  # (i,a,j,b) -> (i,j,a,b)
-    ci1 = np.asarray(t1)
+    ci1 = t1_arr
 
-    data = {"ci1": ci1, "ci2": ci2}
+    data = {
+        "ci1": ci1,
+        "ci2": ci2,
+        "nocc_t_core": np.array(nocc_t_core, dtype=np.int64),
+        "nvir_t_outer": np.array(nvir_t_outer, dtype=np.int64),
+    }
     return TrialInput(
         kind="cisd",
         data=data,
-        norb_frozen=obj.norb_frozen,
+        frozen=obj.trial_frozen,
         source_kind=obj.source,
     )
 
@@ -772,7 +967,7 @@ def _stage_ucisd_input(obj: StagedMfOrCc) -> TrialInput:
     return TrialInput(
         kind="ucisd",
         data=data,
-        norb_frozen=obj.norb_frozen,
+        frozen=obj.trial_frozen,
         source_kind=obj.source,
     )
 
@@ -799,7 +994,7 @@ def _stage_gcisd_input(obj: StagedMfOrCc) -> TrialInput:
     return TrialInput(
         kind="gcisd",
         data=data,
-        norb_frozen=obj.norb_frozen,
+        frozen=obj.trial_frozen,
         source_kind=obj.source,
     )
 
@@ -816,13 +1011,13 @@ def _dump_h5(staged: StagedInputs, path: Path) -> None:
         gham.create_dataset("nelec", data=np.array(staged.ham.nelec, dtype=np.int64))
         gham.attrs["norb"] = staged.ham.norb
         gham.attrs["chol_cut"] = staged.ham.chol_cut
-        gham.attrs["norb_frozen"] = staged.ham.norb_frozen
+        gham.attrs["frozen"] = staged.ham.frozen
         gham.attrs["source_kind"] = staged.ham.source_kind
         gham.attrs["basis"] = staged.ham.basis
 
         gtr = f.create_group("trial")
         gtr.attrs["kind"] = staged.trial.kind
-        gtr.attrs["norb_frozen"] = staged.trial.norb_frozen
+        gtr.attrs["frozen"] = staged.trial.frozen
         gtr.attrs["source_kind"] = staged.trial.source_kind
         gdata = gtr.create_group("data")
         for k, v in staged.trial.data.items():
@@ -843,6 +1038,7 @@ def _load_h5(path: Path) -> StagedInputs:
     with h5py.File(path, "r") as f:
         meta = json.loads(_to_json_str(f.attrs["meta_json"]))
 
+        t_ham = _stage_begin("reading Hamiltonian from cache")
         gham: Any = f["ham"]
         ham = HamInput(
             h0=float(np.array(gham["h0"]).item()),
@@ -851,20 +1047,25 @@ def _load_h5(path: Path) -> StagedInputs:
             nelec=(int(np.array(gham["nelec"])[0]), int(np.array(gham["nelec"])[1])),
             norb=int(gham.attrs["norb"]),
             chol_cut=float(gham.attrs["chol_cut"]),
-            norb_frozen=int(gham.attrs["norb_frozen"]),
+            frozen=int(gham.attrs["frozen"]),
             source_kind=str(gham.attrs["source_kind"]),
             basis=cast(HamBasis, str(gham.attrs["basis"])),
         )
+        _stage_end(
+            t_ham, "Hamiltonian loaded", details=f"norb={ham.norb} nchol={ham.chol.shape[0]}"
+        )
 
+        t_trial = _stage_begin("reading trial input from cache")
         gtr: Any = f["trial"]
         gdata = gtr["data"]
         trial_data = {k: np.array(gdata[k]) for k in gdata.keys()}
         trial = TrialInput(
             kind=str(gtr.attrs["kind"]),
             data=trial_data,
-            norb_frozen=int(gtr.attrs["norb_frozen"]),
+            frozen=int(gtr.attrs["frozen"]),
             source_kind=str(gtr.attrs["source_kind"]),
         )
+        _stage_end(t_trial, "trial input loaded", details=f"kind={trial.kind}")
 
         return StagedInputs(ham=ham, trial=trial, meta=meta)
 
@@ -872,27 +1073,27 @@ def _load_h5(path: Path) -> StagedInputs:
 def build_ham_lno(
     obj: Any,
     *,
-    norb_frozen: ArrayLike,
+    frozen: np.ndarray,
     chol_cut: float,
 ) -> HamInput:
     from pyscf import mcscf, ao2mo
 
-    obj = StagedMfOrCc(obj, norb_frozen)
+    obj = StagedMfOrCc(obj, frozen)
     mf = obj.mf.mf
     mol = mf.mol
 
     norb = obj.norb
-    norb_frozen = np.array(obj.norb_frozen)
+    frozen = obj.afqmc_frozen
     basis_coeff = mf.mo_coeff
 
-    nelec_frozen = 2 * np.sum(norb_frozen < mol.nelec[0])
-    nact = basis_coeff.shape[1] - norb_frozen.size
+    nelec_frozen = 2 * np.sum(frozen < mol.nelec[0])
+    nact = basis_coeff.shape[1] - frozen.size
     nelec_act = mol.nelectron - nelec_frozen
     mc = mcscf.CASSCF(mf, nact, nelec_act)
-    mc.frozen = norb_frozen  # type: ignore
+    mc.frozen = frozen  # type: ignore
     nelec = mc.nelecas  # type: ignore
     h1, h0 = mc.get_h1eff()  # type: ignore
-    act = [i for i in range(norb) if i not in norb_frozen]
+    act = [i for i in range(norb) if i not in frozen]
     e = np.asarray(ao2mo.kernel(mf.mol, mf.mo_coeff[:, act]))  # , compact=False)
     chol = modified_cholesky(e, max_error=chol_cut)
     chol = chol.reshape((-1, nact, nact))
@@ -904,7 +1105,7 @@ def build_ham_lno(
         nelec=nelec,
         norb=nact,
         chol_cut=float(chol_cut),
-        norb_frozen=norb_frozen,
+        frozen=frozen,
         source_kind=obj.source,
         basis="restricted",
     )

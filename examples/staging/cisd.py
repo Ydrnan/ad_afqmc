@@ -1,6 +1,8 @@
 from pyscf import cc, gto, scf
 
-from ad_afqmc_prototype.afqmc import Afqmc
+from ad_afqmc_prototype.afqmc import AFQMC
+
+STAGED_PATH = "h2o_afqmc.h5"
 
 mol = gto.M(
     atom="""
@@ -16,14 +18,10 @@ mf = scf.RHF(mol)
 mf.kernel()
 
 mycc = cc.CCSD(mf)
-mycc.frozen = 1  # freeze O 1s core
+mycc.frozen = 1
 mycc.kernel()
-et = mycc.ccsd_t()  # for comparison
-print(f"CCSD(T) total energy: {mycc.e_tot + et}")
 
-af = Afqmc(mycc)
-af.n_walkers = 100
-af.n_eql_blocks = 10
-af.n_blocks = 100
-af.seed = 548280
-mean, err = af.kernel()
+af = AFQMC(mycc)
+af.save_staged(STAGED_PATH)
+
+print(f"Wrote staged AFQMC inputs with a CISD trial to {STAGED_PATH}.")

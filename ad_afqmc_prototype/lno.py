@@ -114,7 +114,7 @@ def impurity_solve(
                 mo_coeff=mo_coeff,
                 norb_act=(nactocc + nactvir),
                 nelec_act=nactocc * 2,
-                norb_frozen=frozen,
+                frozen=frozen,
                 n_walkers=n_walkers,
                 nblocks=n_blocks,
                 seed=seed,

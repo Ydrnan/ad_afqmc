@@ -35,7 +35,7 @@ mf = mf()  # type: ignore
 
 
 @pytest.mark.parametrize(
-    "mf, e_ref, err_ref,norb_frozen",
+    "mf, e_ref, err_ref, norb_frozen",
     [
         (mf, -0.06714345, 0.01170026, 0),
         (mf, -0.04946941, 0.00817172, 1),
@@ -43,7 +43,7 @@ mf = mf()  # type: ignore
 )
 def test_calc_rhf(mf, params, e_ref, err_ref, norb_frozen):
     mo_coeff = mf.mo_coeff
-    orbs_frozen = [i for i in range(norb_frozen)]
+    orbs_frozen = np.array([i for i in range(norb_frozen)])
     norb_act = mf.mo_coeff.shape[1] - norb_frozen
     nactocc = mf.mol.nelectron // 2 - norb_frozen
     prjlo = np.array([[0] for i in range(nactocc - 1)] + [[1]])
@@ -53,7 +53,7 @@ def test_calc_rhf(mf, params, e_ref, err_ref, norb_frozen):
         mo_coeff=mo_coeff,
         norb_act=norb_act,
         nelec_act=nactocc * 2,
-        norb_frozen=orbs_frozen,
+        frozen=orbs_frozen,
         n_walkers=params.n_walkers,
         nblocks=params.n_blocks,
         seed=params.seed,

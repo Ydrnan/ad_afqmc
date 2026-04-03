@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, NamedTuple, Protocol
 
 import jax
+import numpy as np
 from jax.sharding import Mesh
 
 from numpy.typing import NDArray
 
 from ..core.ops import MeasOps, TrialOps
 from ..core.system import System
+
+
+def _random_seed() -> int:
+    return int(np.random.randint(0, int(1e6)))
 
 
 class PropState(NamedTuple):
@@ -30,7 +35,7 @@ class QmcParamsBase:
     n_prop_steps: int = 50
     n_blocks: int = 200
     n_walkers: int = 200
-    seed: int = 42
+    seed: int = field(default_factory=_random_seed)
 
 
 @dataclass(frozen=True)

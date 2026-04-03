@@ -1,9 +1,5 @@
 from pyscf import cc, gto, scf
 
-from ad_afqmc_prototype import config
-
-config.configure_once()
-
 from ad_afqmc_prototype.afqmc import Afqmc
 
 mol = gto.M(
@@ -28,5 +24,5 @@ mf.stability()
 mycc = cc.UCCSD(mf)
 mycc.kernel()
 
-afqmc = Afqmc(mycc)
-mean, err = afqmc.kernel()
+af = Afqmc(mycc)
+mean, err = af.kernel()

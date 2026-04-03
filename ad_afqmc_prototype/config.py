@@ -18,6 +18,53 @@ def is_jupyter_notebook() -> bool:
         return False
 
 
+def _parse_visible_devices(value: str | None) -> int | None:
+    if value is None:
+        return None
+
+    text = value.strip()
+    if text == "":
+        return 0
+
+    lowered = text.lower()
+    if lowered in {"-1", "none", "novisibledevices"}:
+        return 0
+
+    return len([item for item in text.split(",") if item.strip()])
+
+
+def visible_gpu_count() -> int:
+    """
+    Number of GPUs visible to the current process before JAX initializes.
+
+    Preference order mirrors common CUDA/ROCm launcher conventions.
+    If no visibility env var is set, fall back to counting NVIDIA GPUs via
+    `nvidia-smi -L`; otherwise return 0 if detection is unavailable.
+    """
+    for name in ("ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES"):
+        count = _parse_visible_devices(os.getenv(name))
+        if count is not None:
+            return count
+
+    import shutil
+    import subprocess
+
+    if shutil.which("nvidia-smi"):
+        try:
+            r = subprocess.run(
+                ["nvidia-smi", "-L"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if r.returncode == 0:
+                return sum(1 for line in r.stdout.splitlines() if "GPU" in line)
+        except Exception:
+            pass
+
+    return 0
+
+
 @dataclass
 class AfqmcConfig:
     """
@@ -85,22 +132,8 @@ def configure_once(
 
 def _detect_gpu() -> bool:
     """Detect GPU hardware without importing JAX (NVIDIA or AMD)."""
-    import shutil
-    import subprocess
-
-    # NVIDIA: check nvidia-smi
-    if shutil.which("nvidia-smi"):
-        try:
-            r = subprocess.run(
-                ["nvidia-smi", "-L"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if r.returncode == 0 and "GPU" in r.stdout:
-                return True
-        except Exception:
-            pass
+    if visible_gpu_count() > 0:
+        return True
 
     # AMD ROCm: /dev/kfd is the kernel fusion driver
     if os.path.exists("/dev/kfd"):
@@ -138,8 +171,10 @@ def setup_jax(
             os.environ.setdefault("NVIDIA_TF32_OVERRIDE", "0")
         if use_gpu:
             os.environ.setdefault("JAX_PLATFORM_NAME", "gpu")
-            os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
-            os.environ.setdefault("XLA_PYTHON_CLIENT_ALLOCATOR", "platform")
+            os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", "0.9")
+            #os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+            #if visible_gpu_count() <= 1:
+            #   os.environ.setdefault("XLA_PYTHON_CLIENT_ALLOCATOR", "platform")
         else:
             os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")
 

@@ -1,9 +1,5 @@
 from pyscf import cc, gto, scf
 
-from ad_afqmc_prototype import config
-
-config.configure_once()
-
 from ad_afqmc_prototype.afqmc import Afqmc
 
 mol = gto.M(
@@ -29,8 +25,8 @@ mycc.kernel()
 et = mycc.ccsd_t()  # for comparison
 print(f"CCSD(T) total energy: {mycc.e_tot + et}")
 
-afqmc = Afqmc(mycc)
-afqmc.n_walkers = 100  # number of walkers
-afqmc.n_eql_blocks = 10  # number of equilibration blocks
-afqmc.n_blocks = 100  # number of sampling blocks
-mean, err = afqmc.kernel()
+af = Afqmc(mycc)
+af.n_walkers = 100
+af.n_eql_blocks = 10
+af.n_blocks = 100
+mean, err = af.kernel()
