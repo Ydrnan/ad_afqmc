@@ -10,6 +10,7 @@ from datetime import datetime
 from functools import partial
 from importlib import metadata
 from pathlib import Path
+from typing import Any
 
 print = partial(print, flush=True)
 
@@ -143,7 +144,7 @@ def _package_version(name: str) -> str | None:
         return None
 
 
-def _summarize_jax_devices(devices: list[object]) -> tuple[str, ...]:
+def _summarize_jax_devices(devices: list[Any]) -> tuple[str, ...]:
     groups = Counter()
     for device in devices:
         platform_name = getattr(device, "platform", "unknown")
