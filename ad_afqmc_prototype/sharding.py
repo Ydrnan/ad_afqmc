@@ -133,7 +133,7 @@ def shard_model_axis(
                 (padded_n_chol, *x.shape[1:]),
                 sharding,
                 _callback,
-                dtype=out_dtype,
+                dtype=out_dtype,  # type: ignore
             )
 
     n_model = _mesh_axis_size(mesh, "model")
