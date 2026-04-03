@@ -172,9 +172,6 @@ def setup_jax(
         if use_gpu:
             os.environ.setdefault("JAX_PLATFORM_NAME", "gpu")
             os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", "0.9")
-            #os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
-            #if visible_gpu_count() <= 1:
-            #   os.environ.setdefault("XLA_PYTHON_CLIENT_ALLOCATOR", "platform")
         else:
             os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")
 
