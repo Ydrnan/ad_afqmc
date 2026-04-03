@@ -320,74 +320,101 @@ def clean_pt2ccsd(ept_sp, wt_sp, t2_sp, e0_sp, e1_sp, zeta=20):
     d_med = jnp.where(d_med == 0, 1e-10, d_med)
     z = d/d_med
     mask = z < zeta
-    print(f'the outliers block zeta {z[~mask]} | energy {ept_sp[~mask]} weight(real) {wt_sp.real[~mask]}')
+    print(f"Remove outlier blocks zeta {z[~mask]} \n"
+          f"                    energy {ept_sp[~mask]} \n" 
+          f"                    weight {wt_sp.real[~mask]} ")
 
     wt_clean = wt_sp[mask]
     t2_clean = t2_sp[mask]
     e0_clean = e0_sp[mask]
     e1_clean = e1_sp[mask]
-    # ept_clean = ept_sp[mask]
-
-    # print(f'remove outliers in AFQMC/pt2CCSD sampling  {len(wt_sp)-len(wt_clean)}')
 
     return (wt_clean, t2_clean, e0_clean, e1_clean)
 
-def pt2ccsd_blocking(h0, weights, t2_sp, e0_sp, e1_sp, printQ=False):
+def pt2ccsd_blocking(h0, weights, t2_sp, e0_sp, e1_sp, printQ=False,
+                     min_blocks=5, plateau_window=2, plateau_tol=0.04):
     nsample = len(weights)
-    max_size = nsample // 10
-    block_errs = [] # jnp.zeros(max_size)
-    if printQ:
-        print('Performing Blocking Analysis for AFQMC/pt2CCSD energy...')
-        print('blk_SZ  Nblk  Nsmp  Energy  Error')
-    for i, block_size in enumerate(range(1,max_size+1)):
+    max_size = max(1, nsample // min_blocks)
+
+    block_errs = []
+    block_means = []
+    block_sizes = []
+
+    for block_size in range(1, max_size + 1):
         n_blocks = nsample // block_size
+        if n_blocks < min_blocks:
+            break
 
         wt_truncated = weights[:n_blocks * block_size]
-        # t1_truncated = t1_clean[:n_blocks * block_size]
         t2_truncated = t2_sp[:n_blocks * block_size]
         e0_truncated = e0_sp[:n_blocks * block_size]
         e1_truncated = e1_sp[:n_blocks * block_size]
 
-        # wt_t1 = wt_truncated * t1_truncated
         wt_t2 = wt_truncated * t2_truncated
         wt_e0 = wt_truncated * e0_truncated
         wt_e1 = wt_truncated * e1_truncated
 
         wt = wt_truncated.reshape(n_blocks, block_size)
-        # wt_t1 = wt_t1.reshape(n_blocks, block_size)
         wt_t2 = wt_t2.reshape(n_blocks, block_size)
         wt_e0 = wt_e0.reshape(n_blocks, block_size)
         wt_e1 = wt_e1.reshape(n_blocks, block_size)
 
         block_wt = jnp.sum(wt, axis=1)
-        # block_t1 = np.sum(wt_t1, axis=1)# / block_wt
         block_t2 = jnp.sum(wt_t2, axis=1) / block_wt
         block_e0 = jnp.sum(wt_e0, axis=1) / block_wt
         block_e1 = jnp.sum(wt_e1, axis=1) / block_wt
 
-        # the block energy is to see that the blocking gets rid of bias but don't use it
-        block_energy = (h0 + block_e0 + block_e1 - block_t2*block_e0).real
+        block_energy = (h0 + block_e0 + block_e1 - block_t2 * block_e0).real
         block_mean = jnp.mean(block_energy)
-        block_error = jnp.std(block_energy, ddof=1) / np.sqrt(n_blocks)
-        if printQ:
-            print(f' {block_size:3d}  {n_blocks:3d}  {block_size*n_blocks:4d}  {block_mean:.6f}  {block_error:.6f}')
-        # block_size[i] = b
-        # energy[i] = block_mean
+        block_error = jnp.std(block_energy, ddof=1) / jnp.sqrt(n_blocks)
+
+        block_sizes.append(block_size)
+        block_means.append(block_mean)
         block_errs.append(block_error)
-    
+
+    # --- Plateau detection ---
+    errs = jnp.array(block_errs)
+    plateau_idx = None
+
+    if len(errs) >= plateau_window + 1:
+        for i in range(1, len(errs) - plateau_window + 1):
+            window = errs[i:i + plateau_window]
+            rel_changes = jnp.abs(jnp.diff(window) / window[:-1])
+            if jnp.all(rel_changes < plateau_tol):
+                plateau_idx = i
+                break
+
+    if plateau_idx is not None:
+        err = jnp.mean(errs[plateau_idx:plateau_idx + plateau_window])
+    else:
+        err = errs.max()
+
+    # --- Overall energy ---
     wt_avg = jnp.mean(weights)
     t2_avg = jnp.mean(weights * t2_sp) / wt_avg
     e0_avg = jnp.mean(weights * e0_sp) / wt_avg
     e1_avg = jnp.mean(weights * e1_sp) / wt_avg
-    energy_avg = h0 + e0_avg + e1_avg - t2_avg*e0_avg
+    energy_avg = h0 + e0_avg + e1_avg - t2_avg * e0_avg
 
-    find_err = False
-    for i, err in enumerate(block_errs):
-        if jnp.abs((err - block_errs[i-1]) / err) < 0.04:
-            find_err = True
-            break
+    # --- Printing ---
+    if printQ:
+        print('Performing Blocking Analysis for AFQMC/pt2CCSD energy...')
+        print(f"{'Bsz':>4s}  {'NB':>4s}  {'Nsp':>4s}  {'Energy':>11s}  {'Error':>8s}")
 
-    if not find_err:
-        err = jnp.array(block_errs).max()
+        if plateau_idx is not None:
+            print_end = min(len(block_errs), plateau_idx + plateau_window + 3)
+        else:
+            print_end = len(block_errs)
+
+        for i in range(print_end):
+            bs = block_sizes[i]
+            nb = nsample // bs
+            marker = '  <--' if (plateau_idx is not None and i == plateau_idx) else ''
+            print(f'{bs:4d}  {nb:4d}  {bs*nb:4d}  {block_means[i]:11.6f}  {block_errs[i]:8.6f}{marker}')
+
+        if plateau_idx is not None:
+            print(f'Plateau found at block size {block_sizes[plateau_idx]}, error = {err.real:.6f}')
+        else:
+            print(f'No plateau found, using max error = {err.real:.6f}')
 
     return energy_avg.real, err.real
