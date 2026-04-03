@@ -1033,7 +1033,7 @@ def _stage_pt2ccsd_input(obj):
     return TrialInput(
         kind="pt2ccsd",
         data=data,
-        norb_frozen=obj.norb_frozen,
+        frozen=obj.trial_frozen,
         source_kind=obj.source,
     )
 

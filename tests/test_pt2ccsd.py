@@ -65,7 +65,7 @@ def h8_system():
     )
 
     # Trial wavefunction (PT2-CCSD)
-    trial_obj = StagedMfOrCc(mycc, norb_frozen=None)
+    trial_obj = StagedMfOrCc(mycc, frozen=None)
     staged_trial = _stage_pt2ccsd_input(trial_obj)
     trial_data = Pt2ccsdTrial(
         mo_t=jnp.array(staged_trial.data["mo_t"]),

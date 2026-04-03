@@ -123,7 +123,7 @@ guide_data = RhfTrial(
 # t2 amplitudes from the CCSD object and stores them in a StagedInputs.
 # Pt2ccsdTrial is the low-level JAX array container for the trial.
 
-trial_obj = StagedMfOrCc(mycc, norb_frozen=None)
+trial_obj = StagedMfOrCc(mycc, frozen=None)
 staged_trial = _stage_pt2ccsd_input(trial_obj)
 
 trial_data = Pt2ccsdTrial(
