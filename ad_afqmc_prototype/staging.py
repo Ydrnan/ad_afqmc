@@ -400,20 +400,14 @@ class StagedCc:
             kind = "gccsd"
 
         frozen = _stage_frozen(frozen)
-        if hasattr(cc, "frozen"):
-            cc_frozen = _stage_frozen(cc.frozen)
-        else:
-            cc_frozen = None
+        cc_frozen = _stage_frozen(cc.frozen)
 
         if frozen is None and cc_frozen is None:
             afqmc_frozen = 0
             trial_frozen = 0
-        elif frozen is None:
-            afqmc_frozen = 0
-            trial_frozen = cc_frozen
         else:
-            afqmc_frozen = frozen
-            trial_frozen = cc_frozen
+            afqmc_frozen = frozen if frozen is not None else 0
+            trial_frozen = cc_frozen if cc_frozen is not None else 0
 
         assert isinstance(afqmc_frozen, (int, np.ndarray))
         assert isinstance(trial_frozen, (int, np.ndarray))
