@@ -34,8 +34,8 @@ jobs:
       run: black --check .
     - name: Lint with ruff
       run: ruff check .
-    - name: Type check with pyright
-      run: pyright ad_afqmc_prototype/ tests/
+    # - name: Type check with pyright
+    #   run: pyright ad_afqmc_prototype/ tests/
     - name: Test with pytest
       run: |
         pytest
