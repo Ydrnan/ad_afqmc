@@ -249,20 +249,8 @@ def block_mixed(
     trial_t2_block = jnp.sum(trial_weights * trial_t2s) / trial_w_block
     trial_e0_block = jnp.sum(trial_weights * trial_e0s) / trial_w_block
     trial_e1_block = jnp.sum(trial_weights * trial_e1s) / trial_w_block
-    # trial_e_block = jnp.sum(trial_weights * trial_e_samples) / trial_w_sum
-    # trial_e_parts_block = jnp.sum(trial_weights[:, None] * trial_e_parts, axis=0) / trial_w_block
-    # trial_t2_block, trial_e0_block, trial_e1_block = trial_e_parts_block
 
     obs_samples: dict[str, jax.Array] = {}
-    # for name in observable_names:
-    #     kernel = meas_ops.require_observable(name)
-    #     samples = wk.vmap_chunked(kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None))(
-    #         state.walkers, ham_data, guide_meas_ctx, guide_data
-    #     )
-    #     w_shape = (weights.shape[0],) + (1,) * max(samples.ndim - 1, 0)
-    #     num = jnp.sum(weights.reshape(w_shape) * samples, axis=0)
-    #     zero = jnp.zeros_like(num)
-    #     obs_samples[name] = jnp.where(wg_sum == 0, zero, num / w_sum_safe)
 
     # performing SR at the end of Block propagation and measurement (Guide)
     key, subkey = jax.random.split(state.rng_key)

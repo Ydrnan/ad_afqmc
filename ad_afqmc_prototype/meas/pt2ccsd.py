@@ -6,10 +6,9 @@ import jax
 import jax.numpy as jnp
 from jax import lax, tree_util
 
-# from ..core.levels import LevelPack, LevelSpec
-from ..core.ops import MeasOps, k_energy  # , k_force_bias, o_rdm1
+from ..core.ops import MeasOps, k_energy
 from ..core.system import System
-from ..ham.chol import HamChol  # , slice_ham_level
+from ..ham.chol import HamChol
 from ..trial.pt2ccsd import Pt2ccsdTrial
 from ..trial.pt2ccsd import overlap_r
 from .. import walkers as wk
@@ -47,14 +46,6 @@ def build_meas_ctx(
     if ham_data.basis != "restricted":
         raise ValueError("pt2CCSD MeasOps currently assumes HamChol.basis == 'restricted'.")
 
-    # chol = ham_data.chol  # (n_chol, norb, norb)
-    # nocc = trial_data.nocc
-    # rot_chol = chol[:, :nocc, :]  # (n_chol, nocc, norb)
-    # cH = trial_data.mo_coeff.conj().T  # (nocc, norb)
-    # rot_h1 = cH @ ham_data.h1  # (nocc, norb)
-    # rot_chol = jnp.einsum("pi,gij->gpj", cH, ham_data.chol, optimize="optimal")
-    # rot_chol_flat = rot_chol.reshape(rot_chol.shape[0], -1)
-
     return Pt2ccsdMeasCtx(cfg=cfg)
 
 
@@ -79,10 +70,8 @@ def energy_kernel_rw_rh(
     green = _greens_restricted(walker, mo_t)  # (norb, norb)
     greenp = _greenp_from_green(green, nocc)  # (norb, nvir)
 
-    # h0 = ham_data.h0
     h1 = ham_data.h1
     chol = ham_data.chol
-    # rot_chol = meas_ctx.rot_chol
 
     hg = jnp.einsum("pq,pq->", h1, green, optimize="optimal")
     e1_0 = 2 * hg
@@ -158,7 +147,6 @@ def make_pt2ccsd_meas_ops(
         overlap=overlap_r,
         build_meas_ctx=lambda ham_data, trial_data: build_meas_ctx(ham_data, trial_data, cfg),
         kernels={k_energy: energy_kernel_rw_rh},
-        # observables={o_rdm1: rdm1_kernel_rw},
     )
 
 
