@@ -114,7 +114,7 @@ def make_run_mixed_blocks(
     *,
     mixed_block_fn: MixedBlockFn,
     sys: System,
-    params: QmcParamsBase,
+    params: QmcParams,
     guide_ops: TrialOps,
     guide_meas_ops: MeasOps,
     guide_prop_ops: PropOps,
@@ -456,6 +456,7 @@ def run_mixed_qmc(
             mesh=mesh,
         )
 
+    assert trial_meas_ctx is not None
     trial_energy0, trial_weights0 = get_init_pt2trial_energy(
         init_state=state,
         ham_data=ham_data,
@@ -601,7 +602,7 @@ def run_mixed_qmc(
     trial_block_e0_sp = []
     trial_block_e1_sp = []
 
-    block_obs_sp = {name: [] for name in observable_names}
+    # block_obs_sp = {name: [] for name in observable_names}
     if print_every:
         print(
             f"{'':4s}{'block':>9s}  {'Guide_E_avg':>14s}  {'Guide_E_err':>10s}  {'Guide_W':>12s}  "
@@ -716,7 +717,7 @@ def run_mixed_qmc(
     # trial_block_t2_sp = trial_data_clean[:, 2]
     # trial_block_e0_sp = trial_data_clean[:, 3]
     # trial_block_e1_sp = trial_data_clean[:, 4]
-    print(f"Clean AFQMC/pt2CCSD Observation...")
+    print("Clean AFQMC/pt2CCSD Observation...")
     (
         trial_block_w_sp_clean,
         trial_block_t2_sp_clean,

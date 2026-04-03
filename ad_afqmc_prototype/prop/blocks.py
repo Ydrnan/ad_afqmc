@@ -235,9 +235,10 @@ def block_mixed(
 
     # measuing with respect to trial
     trial_e_kernel = trial_meas_ops.require_kernel(k_energy)
-    trial_t2s, trial_e0s, trial_e1s = wk.vmap_chunked(
+    pt2results = wk.vmap_chunked(
         trial_e_kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None)
     )(state.walkers, ham_data, trial_meas_ctx, trial_data)
+    trial_t2s, trial_e0s, trial_e1s = pt2results[:, 0], pt2results[:, 1], pt2results[:, 2]
     trial_overlaps = wk.vmap_chunked(
         trial_meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
     )(walkers_new, trial_data)

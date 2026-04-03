@@ -6,7 +6,6 @@ import jax
 import jax.numpy as jnp
 from jax import tree_util
 
-from ..core.ops import TrialOps
 from ..core.system import System
 
 

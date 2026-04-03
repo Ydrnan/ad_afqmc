@@ -132,7 +132,7 @@ def energy_kernel_rw_rh(
     e0 = e1_0 + e2_0  # * t1 # <exp(T1)HF|h1+h2|walker>/<exp(T1)HF|walker>
     e1 = e1_2 + e2_2  # * t1 # <exp(T1)HF|T2 (h1+h2)|walker>/<exp(T1)HF|walker>
 
-    return t2, e0, e1
+    return jnp.stack([t2, e0, e1])
 
 
 def make_pt2ccsd_meas_ops(
@@ -173,10 +173,10 @@ def get_init_pt2trial_energy(
 
     walker_0 = wk.take_walkers(init_state.walkers, jnp.array([0]))
     trial_e_kernel = trial_meas_ops.require_kernel(k_energy)
-    t2, e0, e1 = wk.vmap_chunked(trial_e_kernel, n_chunks=1, in_axes=(0, None, None, None))(
+    pt2results = wk.vmap_chunked(trial_e_kernel, n_chunks=1, in_axes=(0, None, None, None))(
         walker_0, ham_data, trial_meas_ctx, trial_data
     )
-
+    t2, e0, e1 = pt2results[:, 0], pt2results[:, 1], pt2results[:, 2]
     trial_overlap = wk.vmap_chunked(
         trial_meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
     )(walker_0, trial_data)
