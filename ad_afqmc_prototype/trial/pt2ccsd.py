@@ -9,6 +9,7 @@ from jax import tree_util
 from ..core.ops import TrialOps
 from ..core.system import System
 
+
 @tree_util.register_pytree_node_class
 @dataclass(frozen=True)
 class Pt2ccsdTrial:
@@ -21,8 +22,8 @@ class Pt2ccsdTrial:
       t2: (nocc, nvir, nocc, nvir)         doubles amplitudess t2_{i a j b} in mo basis
     """
 
-    mo_t: jax.Array # (norb, nocc)
-    t2: jax.Array # (norb, nvir, norb, nvir)
+    mo_t: jax.Array  # (norb, nocc)
+    t2: jax.Array  # (norb, nvir, norb, nvir)
 
     @property
     def nocc(self) -> int:
@@ -45,13 +46,15 @@ class Pt2ccsdTrial:
     def tree_unflatten(cls, aux, children):
         mo_t, t2 = children
         return cls(
-            mo_t = mo_t,
-            t2 = t2,
+            mo_t=mo_t,
+            t2=t2,
         )
+
 
 def overlap_r(walker: jax.Array, trial_data: Pt2ccsdTrial) -> jax.Array:
     # <exp(T1)HF|walker>
-    return jnp.linalg.det(trial_data.mo_t.T.conj() @ walker)**2
+    return jnp.linalg.det(trial_data.mo_t.T.conj() @ walker) ** 2
+
 
 def make_pt2ccsd_trial_data(data: dict, sys: System) -> Pt2ccsdTrial:
     mo_t = jnp.asarray(data["mo_t"])[:, : sys.nup]

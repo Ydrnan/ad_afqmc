@@ -3,7 +3,7 @@ Example: a manual setup of AFQMC/pt2CCSD energy for 8 non-interacting H2 dimers
 ================================================================================
 
 This script demonstrates how to run an AFQMC calculation using pt2CCSD
-trial wavefunction manually, without a high-level driver object.  
+trial wavefunction manually, without a high-level driver object.
 AFQMC/pt2CCSD uses a perturbative CCSD wavefunction as the trial while the
 guide (propagation) wavefunction remains at the RHF wavefunction.
 
@@ -20,6 +20,7 @@ pt2CCSD (unlike Afqmc for CISD).  All setup steps are therefore explicit here.
 """
 
 from ad_afqmc_prototype import config
+
 config.configure_once()
 
 import jax.numpy as jnp
@@ -48,12 +49,12 @@ from ad_afqmc_prototype.trial.rhf import RhfTrial, make_rhf_trial_ops
 # inter-dimer separation d (Bohr).  The large separation makes this a
 # weakly interacting cluster model, useful for benchmarking.
 
-a    = 2      # intra-dimer bond length (Bohr)
-d    = 100    # centre-to-centre distance between dimers (Bohr)
-na   = 2      # atoms per monomer (H2)
-nc   = 8      # number of monomers
+a = 2  # intra-dimer bond length (Bohr)
+d = 100  # centre-to-centre distance between dimers (Bohr)
+na = 2  # atoms per monomer (H2)
+nc = 8  # number of monomers
 elmt = "H"
-unit = "b"    # length unit: Bohr
+unit = "b"  # length unit: Bohr
 basis = "sto6g"
 
 atoms = ""
@@ -122,7 +123,7 @@ guide_data = RhfTrial(
 # t2 amplitudes from the CCSD object and stores them in a StagedInputs.
 # Pt2ccsdTrial is the low-level JAX array container for the trial.
 
-trial_obj    = StagedMfOrCc(mycc, norb_frozen=None)
+trial_obj = StagedMfOrCc(mycc, norb_frozen=None)
 staged_trial = _stage_pt2ccsd_input(trial_obj)
 
 trial_data = Pt2ccsdTrial(
@@ -138,7 +139,7 @@ trial_data = Pt2ccsdTrial(
 # memory_mode="low" (currently doesn't matter in pt2CCSD trial)
 # recomputing them on the fly — preferred for large systems.
 
-trial_cfg      = Pt2ccsdMeasCfg(memory_mode="low")
+trial_cfg = Pt2ccsdMeasCfg(memory_mode="low")
 trial_meas_ctx = build_meas_ctx(ham_data, trial_data, trial_cfg)
 
 # =============================================================================
@@ -155,7 +156,7 @@ trial_meas_ctx = build_meas_ctx(ham_data, trial_data, trial_cfg)
 # mixed_precision=False uses float64 throughout; set True for float32
 # intermediates (faster on GPU, slightly less accurate).
 
-guide_ops      = make_rhf_trial_ops(sys)
+guide_ops = make_rhf_trial_ops(sys)
 guide_meas_ops = make_rhf_meas_ops(sys)
 guide_prop_ops = make_prop_ops(ham_data.basis, sys.walker_kind)
 trial_meas_ops = make_pt2ccsd_meas_ops(sys, mixed_precision=False)
@@ -170,17 +171,21 @@ trial_meas_ops = make_pt2ccsd_meas_ops(sys, mixed_precision=False)
 # n_blocks    : production blocks used for averaging
 
 params = QmcParams(
-    dt           = 0.005,
-    n_walkers    = 200,
-    n_prop_steps = 50,
-    n_blocks     = 200,
-    n_eql_blocks = 40,
-    seed         = 17,
+    dt=0.005,
+    n_walkers=200,
+    n_prop_steps=50,
+    n_blocks=200,
+    n_eql_blocks=40,
+    seed=17,
 )
 
 print(f"\ndt={params.dt}  n_walkers={params.n_walkers}  n_prop_steps={params.n_prop_steps}")
-print(f"Equilibration imaginary time : {params.n_eql_blocks * params.n_prop_steps * params.dt:.2f} a.u.")
-print(f"Sampling imaginary time      : {params.n_blocks    * params.n_prop_steps * params.dt:.2f} a.u.\n")
+print(
+    f"Equilibration imaginary time : {params.n_eql_blocks * params.n_prop_steps * params.dt:.2f} a.u."
+)
+print(
+    f"Sampling imaginary time      : {params.n_blocks    * params.n_prop_steps * params.dt:.2f} a.u.\n"
+)
 
 # =============================================================================
 # Section 8: Run AFQMC
@@ -190,16 +195,16 @@ print(f"Sampling imaginary time      : {params.n_blocks    * params.n_prop_steps
 # containing per-block energies and weights for both the guide and the trial.
 
 mixed_samples = run_mixed_qmc(
-    sys            = sys,
-    params         = params,
-    ham_data       = ham_data,
-    guide_data     = guide_data,
-    guide_ops      = guide_ops,
-    guide_prop_ops = guide_prop_ops,
-    guide_meas_ops = guide_meas_ops,
-    trial_data     = trial_data,
-    trial_meas_ops = trial_meas_ops,
-    mix_block_fn   = block_mixed,
+    sys=sys,
+    params=params,
+    ham_data=ham_data,
+    guide_data=guide_data,
+    guide_ops=guide_ops,
+    guide_prop_ops=guide_prop_ops,
+    guide_meas_ops=guide_meas_ops,
+    trial_data=trial_data,
+    trial_meas_ops=trial_meas_ops,
+    mix_block_fn=block_mixed,
 )
 
 # =============================================================================
@@ -209,6 +214,10 @@ mixed_samples = run_mixed_qmc(
 # internally and prints a summary.  The final values are also available on
 # the returned object for downstream use.
 
-print(f"\nGuide  (AFQMC/RHF)    : {mixed_samples.guide_mean_energy.real:.6f} +/- {mixed_samples.guide_stderr_energy.real:.6f} Ha")
-print(f"Trial  (AFQMC/pt2CCSD): {mixed_samples.trial_mean_energy.real:.6f} +/- {mixed_samples.trial_stderr_energy.real:.6f} Ha")
+print(
+    f"\nGuide  (AFQMC/RHF)    : {mixed_samples.guide_mean_energy.real:.6f} +/- {mixed_samples.guide_stderr_energy.real:.6f} Ha"
+)
+print(
+    f"Trial  (AFQMC/pt2CCSD): {mixed_samples.trial_mean_energy.real:.6f} +/- {mixed_samples.trial_stderr_energy.real:.6f} Ha"
+)
 print(f"Reference (CCSD)       : {mycc.e_tot:.6f} Ha")

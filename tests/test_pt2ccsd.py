@@ -1,4 +1,5 @@
 from ad_afqmc_prototype import config
+
 config.configure_once()
 
 import jax.numpy as jnp
@@ -17,10 +18,10 @@ from ad_afqmc_prototype.core.system import System
 from ad_afqmc_prototype.trial.pt2ccsd import Pt2ccsdTrial
 from ad_afqmc_prototype.trial.rhf import RhfTrial, make_rhf_trial_ops
 
-
 # ---------------------------------------------------------------------------
 # Module-level fixtures — built once for the whole test file
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="module")
 def h8_system():
@@ -29,8 +30,8 @@ def h8_system():
     Returns a dict containing the pyscf objects and all pre-built ad_afqmc
     inputs so each parametrised test can reuse them without re-running SCF/CC.
     """
-    a = 2       # bond length inside each H2 dimer (Bohr)
-    d = 100     # centre-to-centre distance between dimers (Bohr)
+    a = 2  # bond length inside each H2 dimer (Bohr)
+    d = 100  # centre-to-centre distance between dimers (Bohr)
     unit = "b"
     na, nc = 2, 8
     elmt, basis = "H", "sto6g"
@@ -72,11 +73,11 @@ def h8_system():
     )
 
     # Measurement context (built once; seed-independent)
-    trial_cfg      = Pt2ccsdMeasCfg(memory_mode="low")
+    trial_cfg = Pt2ccsdMeasCfg(memory_mode="low")
     trial_meas_ctx = build_meas_ctx(ham_data, trial_data, trial_cfg)
 
     # Operator factories
-    guide_ops      = make_rhf_trial_ops(sys)
+    guide_ops = make_rhf_trial_ops(sys)
     guide_meas_ops = make_rhf_meas_ops(sys)
     guide_prop_ops = make_prop_ops(ham_data.basis, sys.walker_kind)
     trial_meas_ops = make_pt2ccsd_meas_ops(sys, mixed_precision=False)
@@ -102,16 +103,17 @@ def h8_system():
 # ---------------------------------------------------------------------------
 
 _REFERENCES = {
-    1: (-8.771210912150202, 0.0002802273203235753), # the errors are artifially small
-    2: (-8.769501242545516, 0.0001545791982688015), # because the prop_steps are small
-    3: (-8.769769708305297, 0.0001204835908861157), # the samples are hight correlated
-    4: (-8.771395845249032, 0.0004370850562308357), # just for testing 
+    1: (-8.771210912150202, 0.0002802273203235753),  # the errors are artifially small
+    2: (-8.769501242545516, 0.0001545791982688015),  # because the prop_steps are small
+    3: (-8.769769708305297, 0.0001204835908861157),  # the samples are hight correlated
+    4: (-8.771395845249032, 0.0004370850562308357),  # just for testing
 }
 
 
 # ---------------------------------------------------------------------------
 # Parametrised test — one run per seed
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("seed", [1, 2, 3, 4])
 def test_pt2ccsd_energy_matches_reference(h8_system, seed):
@@ -126,36 +128,35 @@ def test_pt2ccsd_energy_matches_reference(h8_system, seed):
     e_ref, err_ref = _REFERENCES[seed]
 
     params = QmcParams(
-        dt           = 0.005,
-        n_walkers    = 1,
-        n_prop_steps = 1,
-        n_blocks     = 50,
-        n_eql_blocks = 1,
-        seed         = seed,
+        dt=0.005,
+        n_walkers=1,
+        n_prop_steps=1,
+        n_blocks=50,
+        n_eql_blocks=1,
+        seed=seed,
     )
 
     result = run_mixed_qmc(
-        sys            = s["sys"],
-        params         = params,
-        ham_data       = s["ham_data"],
-        guide_data     = s["guide_data"],
-        guide_ops      = s["guide_ops"],
-        guide_prop_ops = s["guide_prop_ops"],
-        guide_meas_ops = s["guide_meas_ops"],
-        trial_data     = s["trial_data"],
-        trial_meas_ops = s["trial_meas_ops"],
-        mix_block_fn   = block_mixed,
+        sys=s["sys"],
+        params=params,
+        ham_data=s["ham_data"],
+        guide_data=s["guide_data"],
+        guide_ops=s["guide_ops"],
+        guide_prop_ops=s["guide_prop_ops"],
+        guide_meas_ops=s["guide_meas_ops"],
+        trial_data=s["trial_data"],
+        trial_meas_ops=s["trial_meas_ops"],
+        mix_block_fn=block_mixed,
     )
 
     e_mean = float(result.trial_mean_energy.real)
-    e_err  = float(result.trial_stderr_energy.real)
+    e_err = float(result.trial_stderr_energy.real)
 
     print(f"seed={seed}  E={e_mean:.6f}  err={e_err:.6f}  ref={e_ref:.6f} +/- {err_ref:.6f}")
 
     # Reference values are stored to 6 decimal places; match to that precision
     assert jnp.isclose(jnp.array(e_mean), jnp.array(e_ref), atol=1e-6), (
-        f"seed={seed}: energy {e_mean:.6f} != reference {e_ref:.6f} "
-        f"(diff={e_mean - e_ref:.2e})"
+        f"seed={seed}: energy {e_mean:.6f} != reference {e_ref:.6f} " f"(diff={e_mean - e_ref:.2e})"
     )
     assert jnp.isclose(jnp.array(e_err), jnp.array(err_ref), atol=1e-6), (
         f"seed={seed}: error {e_err:.6f} != reference {err_ref:.6f} "

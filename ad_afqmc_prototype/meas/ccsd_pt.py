@@ -20,13 +20,11 @@ force_bias_kernel_r = force_bias_kernel_r
 # force_bias_kernel_u = force_bias_kernel_u
 # force_bias_kernel_g = force_bias_kernel_g
 
+
 def energy_kernel_r(
-        walker: jax.Array,
-        ham_data: HamChol, 
-        meas_ctx: CCSDpTMeasCtx,
-        trial_data: CCSDpT_Trial
-        ) -> jax.Array:
-    
+    walker: jax.Array, ham_data: HamChol, meas_ctx: CCSDpTMeasCtx, trial_data: CCSDpT_Trial
+) -> jax.Array:
+
     nocc = trial_data.nocc
     t1, t2 = trial_data.t1, trial_data.t2
     chol = ham_data.chol
@@ -106,11 +104,12 @@ def energy_kernel_r(
 
     e2_2 = e2_2_1 + e2_2_2 + e2_2_3
 
-    e0 = h0 + e1_0 + e2_0 # h0 + <psi|(h1+h2)|phi>/<psi|phi>
-    t = 2 * t1g + gt2g # <psi|(t1+t2)|phi>/<psi|phi>
-    te = e1_1 + e1_2 + e2_1 + e2_2 # <psi|(t1+t2)(h1+h2)|phi>/<psi|phi>
+    e0 = h0 + e1_0 + e2_0  # h0 + <psi|(h1+h2)|phi>/<psi|phi>
+    t = 2 * t1g + gt2g  # <psi|(t1+t2)|phi>/<psi|phi>
+    te = e1_1 + e1_2 + e2_1 + e2_2  # <psi|(t1+t2)(h1+h2)|phi>/<psi|phi>
 
     return [e0, t, te]
+
 
 @dataclass(frozen=True)
 class CCSDpTMeasCfg:
@@ -119,6 +118,7 @@ class CCSDpTMeasCfg:
     mixed_complex_dtype: jnp.dtype = jnp.complex128
     mixed_real_dtype_testing: jnp.dtype = jnp.float32
     mixed_complex_dtype_testing: jnp.dtype = jnp.complex64
+
 
 @tree_util.register_pytree_node_class
 @dataclass(frozen=True)
@@ -138,6 +138,7 @@ class CCSDpTMeasCtx:
         rot_chol, lt1 = children
         return cls(rot_chol=rot_chol, lt1=lt1, cfg=cfg)
 
+
 def build_meas_ctx(
     ham_data: HamChol, trial_data: CCSDpT_Trial, cfg: CCSDpTMeasCfg = CCSDpTMeasCfg()
 ) -> CCSDpTMeasCtx:
@@ -149,7 +150,7 @@ def build_meas_ctx(
         chol[:, :, nocc:],
         trial_data.t1,
         optimize="optimal",
-        )  # (n_chol, norb, nocc)
+    )  # (n_chol, norb, nocc)
     return CCSDpTMeasCtx(rot_chol=rot_chol, lt1=lt1, cfg=cfg)
 
 
@@ -174,8 +175,6 @@ def make_ccsd_pt_meas_ops(
 
     return MeasOps(
         overlap=overlap_r,
-        build_meas_ctx=lambda ham_data, trial_data: build_meas_ctx(
-            ham_data, trial_data, cfg
-        ),
+        build_meas_ctx=lambda ham_data, trial_data: build_meas_ctx(ham_data, trial_data, cfg),
         kernels={k_force_bias: force_bias_kernel_r, k_energy: energy_kernel_r},
     )

@@ -963,11 +963,12 @@ def _stage_gcisd_input(obj: StagedMfOrCc) -> TrialInput:
         source_kind=obj.source,
     )
 
+
 def _stage_pt2ccsd_input(obj):
     # TODO obj.kind is frozen... figure out how to assign more flexible trial
     # if obj.kind != "pt2ccsd":
     #     raise ValueError(f"Unreachable: '{obj.kind}'.")
-    
+
     t1 = obj.t1
     t2 = obj.t2
     nocc, nvir = t1.shape
@@ -975,7 +976,7 @@ def _stage_pt2ccsd_input(obj):
 
     t1 = np.asarray(t1)
     t2 = np.asarray(t2)
-    t2 = t2.transpose(0, 2, 1, 3) # (i,j,a,b) -> (i,a,j,b)
+    t2 = t2.transpose(0, 2, 1, 3)  # (i,j,a,b) -> (i,a,j,b)
 
     def _thouless(init_slater, t1):
         # Thouless transformation: |psi'> = exp(t1_ia a+ i)|psi>
@@ -987,8 +988,8 @@ def _stage_pt2ccsd_input(obj):
         exp_t1[:nocc, nocc:] = t1
         # exp_t1 = jsp.linalg.expm(t1_full)
         return exp_t1.T @ init_slater
-    
-    mo_coeff = np.eye(norb, dtype=np.float64)[:,:nocc]
+
+    mo_coeff = np.eye(norb, dtype=np.float64)[:, :nocc]
     mo_t = _thouless(mo_coeff, t1)
 
     data = {"mo_t": mo_t, "t2": t2}
@@ -998,6 +999,7 @@ def _stage_pt2ccsd_input(obj):
         norb_frozen=obj.norb_frozen,
         source_kind=obj.source,
     )
+
 
 def _dump_h5(staged: StagedInputs, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

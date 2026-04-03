@@ -15,7 +15,14 @@ from .core.ops import MeasOps, TrialOps
 from .core.system import System
 from .prop.blocks import BlockFn, MixedBlockFn
 from .prop.types import PropOps, PropState, QmcParamsBase, QmcParams, QmcParamsFp
-from .stat_utils import blocking_analysis_ratio, jackknife_ratios, rebin_observable, reject_outliers, pt2ccsd_blocking, clean_pt2ccsd
+from .stat_utils import (
+    blocking_analysis_ratio,
+    jackknife_ratios,
+    rebin_observable,
+    reject_outliers,
+    pt2ccsd_blocking,
+    clean_pt2ccsd,
+)
 from .walkers import stochastic_reconfiguration
 from .meas.pt2ccsd import get_init_pt2trial_energy
 
@@ -135,19 +142,19 @@ def make_run_mixed_blocks(
         def one_block(state, _):
             state, obs = mixed_block_fn(
                 state,
-                sys              = sys,
-                params           = params,
-                ham_data         = ham_data,
-                guide_data       = guide_data,
-                guide_ops        = guide_ops,
-                guide_meas_ops   = guide_meas_ops,
-                guide_meas_ctx   = guide_meas_ctx,
-                guide_prop_ops   = guide_prop_ops,
-                guide_prop_ctx   = guide_prop_ctx,
-                trial_data       = trial_data,
-                trial_meas_ops   = trial_meas_ops,
-                trial_meas_ctx   = trial_meas_ctx,
-                observable_names = observable_names,
+                sys=sys,
+                params=params,
+                ham_data=ham_data,
+                guide_data=guide_data,
+                guide_ops=guide_ops,
+                guide_meas_ops=guide_meas_ops,
+                guide_meas_ctx=guide_meas_ctx,
+                guide_prop_ops=guide_prop_ops,
+                guide_prop_ctx=guide_prop_ctx,
+                trial_data=trial_data,
+                trial_meas_ops=trial_meas_ops,
+                trial_meas_ctx=trial_meas_ctx,
+                observable_names=observable_names,
             )
             obs_tuple = tuple(obs.observables[name] for name in observable_names)
             return state, (obs.scalars, obs_tuple)
@@ -440,23 +447,23 @@ def run_mixed_qmc(
 
     if state is None:
         state = guide_prop_ops.init_prop_state(
-            sys        = sys,
-            ham_data   = ham_data,
-            trial_ops  = guide_ops,
-            trial_data = guide_data,
-            meas_ops   = guide_meas_ops,
-            params     = params,
-            mesh       = mesh,
+            sys=sys,
+            ham_data=ham_data,
+            trial_ops=guide_ops,
+            trial_data=guide_data,
+            meas_ops=guide_meas_ops,
+            params=params,
+            mesh=mesh,
         )
 
     trial_energy0, trial_weights0 = get_init_pt2trial_energy(
-        init_state     = state, 
-        ham_data       = ham_data, 
-        trial_data     = trial_data,
-        trial_meas_ops = trial_meas_ops, 
-        trial_meas_ctx = trial_meas_ctx, 
-        params         = params,
-        )
+        init_state=state,
+        ham_data=ham_data,
+        trial_data=trial_data,
+        trial_meas_ops=trial_meas_ops,
+        trial_meas_ctx=trial_meas_ctx,
+        params=params,
+    )
 
     if mesh is None or mesh.size == 1:
         mix_block_fn_sr = mix_block_fn
@@ -466,14 +473,14 @@ def run_mixed_qmc(
         mix_block_fn_sr = partial(mix_block_fn, sr_fn=sr_sharded)
 
     run_blocks = make_run_mixed_blocks(
-        mixed_block_fn   = mix_block_fn_sr,
-        sys              = sys,
-        params           = params,
-        guide_ops        = guide_ops,
-        guide_meas_ops   = guide_meas_ops,
-        guide_prop_ops   = guide_prop_ops,
-        trial_meas_ops   = trial_meas_ops,
-        observable_names = observable_names,
+        mixed_block_fn=mix_block_fn_sr,
+        sys=sys,
+        params=params,
+        guide_ops=guide_ops,
+        guide_meas_ops=guide_meas_ops,
+        guide_prop_ops=guide_prop_ops,
+        trial_meas_ops=trial_meas_ops,
+        observable_names=observable_names,
     )
 
     t0 = time.perf_counter()
@@ -520,13 +527,13 @@ def run_mixed_qmc(
         n = min(chunk, params.n_eql_blocks - start)
         state, scalars_chunk, obs_chunk = run_blocks(
             state,
-            ham_data       = ham_data,
-            guide_data     = guide_data,
-            guide_meas_ctx = guide_meas_ctx,
-            guide_prop_ctx = guide_prop_ctx,
-            trial_data     = trial_data,
-            trial_meas_ctx = trial_meas_ctx,
-            n_blocks       = n,
+            ham_data=ham_data,
+            guide_data=guide_data,
+            guide_meas_ctx=guide_meas_ctx,
+            guide_prop_ctx=guide_prop_ctx,
+            trial_data=trial_data,
+            trial_meas_ctx=trial_meas_ctx,
+            n_blocks=n,
         )
         # guide
         guide_block_e_eq.extend(scalars_chunk["guide_energy"].tolist())
@@ -550,8 +557,12 @@ def run_mixed_qmc(
         trial_t2_chunk_avg = jnp.mean(trial_w_chunk * trial_t2_chunk) / trial_w_chunk_avg
         trial_e0_chunk_avg = jnp.mean(trial_w_chunk * trial_e0_chunk) / trial_w_chunk_avg
         trial_e1_chunk_avg = jnp.mean(trial_w_chunk * trial_e1_chunk) / trial_w_chunk_avg
-        pt2trial_energy_avg = ham_data.h0 + trial_e0_chunk_avg \
-            + trial_e1_chunk_avg - trial_t2_chunk_avg * trial_e0_chunk_avg
+        pt2trial_energy_avg = (
+            ham_data.h0
+            + trial_e0_chunk_avg
+            + trial_e1_chunk_avg
+            - trial_t2_chunk_avg * trial_e0_chunk_avg
+        )
         elapsed = time.perf_counter() - t0
         print(
             f"[eql {start + n:4d}/{params.n_eql_blocks}]  "
@@ -563,7 +574,7 @@ def run_mixed_qmc(
             f"{int(state.node_encounters):10d}  "
             f"{elapsed:8.1f}"
         )
-        
+
     guide_block_w_eq = jnp.asarray(guide_block_w_eq)
     guide_block_e_eq = jnp.asarray(guide_block_e_eq)
 
@@ -602,13 +613,13 @@ def run_mixed_qmc(
         n = min(chunk, params.n_blocks - start)
         state, scalars_chunk, obs_chunk = run_blocks(
             state,
-            ham_data       = ham_data,
-            guide_data     = guide_data,
-            guide_meas_ctx = guide_meas_ctx,
-            guide_prop_ctx = guide_prop_ctx,
-            trial_data     = trial_data,
-            trial_meas_ctx = trial_meas_ctx,
-            n_blocks       = n,
+            ham_data=ham_data,
+            guide_data=guide_data,
+            guide_meas_ctx=guide_meas_ctx,
+            guide_prop_ctx=guide_prop_ctx,
+            trial_data=trial_data,
+            trial_meas_ctx=trial_meas_ctx,
+            n_blocks=n,
         )
         # guide
         # guide_w_chunk = scalars_chunk["guide_weight"]
@@ -639,13 +650,14 @@ def run_mixed_qmc(
         # trial_e1_avg = jnp.mean(jnp.asarray(trial_block_w_sp) * jnp.asarray(trial_block_e1_sp)) / trial_w_avg
         # trial_e_avg = ham_data.h0 + trial_e0_avg + trial_e1_avg - trial_t2_avg * trial_e0_avg
         trial_e_avg, trial_error = pt2ccsd_blocking(
-            ham_data.h0, 
-            jnp.asarray(trial_block_w_sp), 
+            ham_data.h0,
+            jnp.asarray(trial_block_w_sp),
             jnp.asarray(trial_block_t2_sp),
-            jnp.asarray(trial_block_e0_sp), 
-            jnp.asarray(trial_block_e1_sp), 
-            printQ=False)
-        
+            jnp.asarray(trial_block_e0_sp),
+            jnp.asarray(trial_block_e1_sp),
+            printQ=False,
+        )
+
         print(
             f"[blk {start + n:4d}/{params.n_blocks}]  "
             f"{guide_mu:14.10f}  "
@@ -661,19 +673,24 @@ def run_mixed_qmc(
         if guide_se is not None and guide_se <= target_error and target_error > 0.0:
             print(f"\nTarget error {target_error:.3e} reached at block {start + n}.")
             break
-    
+
     # Guide
     guide_block_w_sp = jnp.asarray(guide_block_w_sp)
     guide_block_e_sp = jnp.asarray(guide_block_e_sp)
-    guide_block_w_all = jnp.concatenate([guide_block_w_eq, guide_block_w_sp]) # return both eql and sampling
+    guide_block_w_all = jnp.concatenate(
+        [guide_block_w_eq, guide_block_w_sp]
+    )  # return both eql and sampling
     guide_block_e_all = jnp.concatenate([guide_block_e_eq, guide_block_e_sp])
     guide_data_clean, guide_keep_mask = reject_outliers(
-        jnp.column_stack((guide_block_e_sp, guide_block_w_sp)), obs=0)
-    print(f"\nRejected {guide_block_e_sp.shape[0] - guide_data_clean.shape[0]} guiding outlier blocks.")
+        jnp.column_stack((guide_block_e_sp, guide_block_w_sp)), obs=0
+    )
+    print(
+        f"\nRejected {guide_block_e_sp.shape[0] - guide_data_clean.shape[0]} guiding outlier blocks."
+    )
     guide_block_e_sp = jnp.asarray(guide_data_clean[:, 0])
     guide_block_w_sp = jnp.asarray(guide_data_clean[:, 1])
     guide_keep_mask = jnp.asarray(guide_keep_mask)
-    
+
     # Trial
     trial_block_w_sp = jnp.asarray(trial_block_w_sp)
     trial_block_t2_sp = jnp.asarray(trial_block_t2_sp)
@@ -683,12 +700,13 @@ def run_mixed_qmc(
     trial_block_t2_all = jnp.concatenate([trial_block_t2_eq, trial_block_t2_sp])
     trial_block_e0_all = jnp.concatenate([trial_block_e0_eq, trial_block_e0_sp])
     trial_block_e1_all = jnp.concatenate([trial_block_e1_eq, trial_block_e1_sp])
-    # esmitate of pt2ccsd energy sample, biased 
-    trial_block_e_sp = ham_data.h0 + trial_block_e0_sp \
-        + trial_block_e1_sp - trial_block_t2_sp * trial_block_e0_sp
+    # esmitate of pt2ccsd energy sample, biased
+    trial_block_e_sp = (
+        ham_data.h0 + trial_block_e0_sp + trial_block_e1_sp - trial_block_t2_sp * trial_block_e0_sp
+    )
     # trial_data_clean, trial_keep_mask = reject_outliers(
-    #     jnp.column_stack((trial_block_e_sp.real, 
-    #                       trial_block_w_sp, 
+    #     jnp.column_stack((trial_block_e_sp.real,
+    #                       trial_block_w_sp,
     #                       trial_block_t2_sp,
     #                       trial_block_e0_sp,
     #                       trial_block_e1_sp)),
@@ -698,46 +716,51 @@ def run_mixed_qmc(
     # trial_block_t2_sp = trial_data_clean[:, 2]
     # trial_block_e0_sp = trial_data_clean[:, 3]
     # trial_block_e1_sp = trial_data_clean[:, 4]
-    print(f'Clean AFQMC/pt2CCSD Observation...')
-    (trial_block_w_sp_clean, 
-     trial_block_t2_sp_clean, 
-     trial_block_e0_sp_clean, 
-     trial_block_e1_sp_clean) = clean_pt2ccsd(
-                                        trial_block_e_sp.real, 
-                                        trial_block_w_sp, 
-                                        trial_block_t2_sp, 
-                                        trial_block_e0_sp, 
-                                        trial_block_e1_sp, 
-                                        zeta=20
-                                        )
+    print(f"Clean AFQMC/pt2CCSD Observation...")
+    (
+        trial_block_w_sp_clean,
+        trial_block_t2_sp_clean,
+        trial_block_e0_sp_clean,
+        trial_block_e1_sp_clean,
+    ) = clean_pt2ccsd(
+        trial_block_e_sp.real,
+        trial_block_w_sp,
+        trial_block_t2_sp,
+        trial_block_e0_sp,
+        trial_block_e1_sp,
+        zeta=20,
+    )
 
-    print(f"\nRejected {len(trial_block_w_sp) - len(trial_block_w_sp_clean)} AFQMC/pt2CCSD outlier blocks.")
+    print(
+        f"\nRejected {len(trial_block_w_sp) - len(trial_block_w_sp_clean)} AFQMC/pt2CCSD outlier blocks."
+    )
 
     print("\nFinal blocking analysis:")
     guide_stats = blocking_analysis_ratio(guide_block_e_sp, guide_block_w_sp, print_q=True)
     guide_e_mean, guide_e_err = guide_stats["mu"], guide_stats["se_star"]
 
     trial_e_mean, trial_e_err = pt2ccsd_blocking(
-        ham_data.h0, 
-        trial_block_w_sp_clean, 
+        ham_data.h0,
+        trial_block_w_sp_clean,
         trial_block_t2_sp_clean,
-        trial_block_e0_sp_clean, 
-        trial_block_e1_sp_clean, 
-        printQ=True)
-    
-    print(f'AFQMC/pt2CCSD energy = {trial_e_mean.real:.6f} +/- {trial_e_err.real:.6f} (1-sigma)')
+        trial_block_e0_sp_clean,
+        trial_block_e1_sp_clean,
+        printQ=True,
+    )
+
+    print(f"AFQMC/pt2CCSD energy = {trial_e_mean.real:.6f} +/- {trial_e_err.real:.6f} (1-sigma)")
 
     return MixedQmcResult(
-        guide_mean_energy    = guide_e_mean,
-        guide_stderr_energy  = guide_e_err,
-        guide_block_energies = guide_block_e_all,
-        guide_block_weights  = guide_block_w_all,
-        trial_mean_energy    = trial_e_mean,
-        trial_stderr_energy  = trial_e_err,
-        trial_block_weights  = trial_block_w_all,
-        trial_block_t2s      = trial_block_t2_all,
-        trial_block_e0s      = trial_block_e0_all,
-        trial_block_e1s      = trial_block_e1_all,
+        guide_mean_energy=guide_e_mean,
+        guide_stderr_energy=guide_e_err,
+        guide_block_energies=guide_block_e_all,
+        guide_block_weights=guide_block_w_all,
+        trial_mean_energy=trial_e_mean,
+        trial_stderr_energy=trial_e_err,
+        trial_block_weights=trial_block_w_all,
+        trial_block_t2s=trial_block_t2_all,
+        trial_block_e0s=trial_block_e0_all,
+        trial_block_e1s=trial_block_e1_all,
         # block_observables=block_obs_all,
         # observable_means=obs_means,
         # observable_stderrs=obs_stderrs,

@@ -176,21 +176,21 @@ def block_mixed(
     """
     Block function for mixed sampling -- Trial =! Guide
     propagation(Guide) + measurement(Trial)
-    currently only support pt2CCSD trial 
+    currently only support pt2CCSD trial
     TODO generalize the output of trial kernel to multiple variable
-         without saving each term according to their names 
+         without saving each term according to their names
     """
 
-    # propagation is guided with the guiding wavefunction 
+    # propagation is guided with the guiding wavefunction
     step = lambda st: guide_prop_ops.step(
         st,
-        params     = params,
-        ham_data   = ham_data,
-        trial_data = guide_data,
-        trial_ops  = guide_ops,
-        meas_ops   = guide_meas_ops,
-        prop_ctx   = guide_prop_ctx,
-        meas_ctx   = guide_meas_ctx,
+        params=params,
+        ham_data=ham_data,
+        trial_data=guide_data,
+        trial_ops=guide_ops,
+        meas_ops=guide_meas_ops,
+        prop_ctx=guide_prop_ctx,
+        meas_ctx=guide_meas_ctx,
     )
 
     def _scan_step(carry: PropState, _x: Any):
@@ -200,22 +200,26 @@ def block_mixed(
     state, _ = lax.scan(_scan_step, state, xs=None, length=params.n_prop_steps)
 
     walkers_new = wk.orthonormalize(state.walkers, sys.walker_kind)
-    guide_overlaps = wk.vmap_chunked(guide_meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None))(
-        walkers_new, guide_data
-    )
+    guide_overlaps = wk.vmap_chunked(
+        guide_meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
+    )(walkers_new, guide_data)
     state = state._replace(walkers=walkers_new, overlaps=guide_overlaps)
 
     # some measurements with the guiding wavefunction if necessary
     guide_e_kernel = guide_meas_ops.require_kernel(k_energy)
-    guide_e_samples = wk.vmap_chunked(guide_e_kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None))(
+    guide_e_samples = wk.vmap_chunked(
+        guide_e_kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None)
+    )(
         state.walkers, ham_data, guide_meas_ctx, guide_data
-    ) # local energy with respect to the guiding wavefunction = <guide|H|walker>/<guide|walker>
+    )  # local energy with respect to the guiding wavefunction = <guide|H|walker>/<guide|walker>
     guide_e_samples = jnp.real(guide_e_samples)
 
     thresh = jnp.sqrt(2.0 / jnp.asarray(params.dt))
     e_ref = state.e_estimate
     is_nan = ~jnp.isfinite(guide_e_samples)
-    guide_e_samples = jnp.where(is_nan | (jnp.abs(guide_e_samples - e_ref) > thresh), e_ref, guide_e_samples)
+    guide_e_samples = jnp.where(
+        is_nan | (jnp.abs(guide_e_samples - e_ref) > thresh), e_ref, guide_e_samples
+    )
 
     guide_weights = jnp.where(is_nan, 0.0, state.weights)
     guide_w_block = jnp.sum(guide_weights)
@@ -232,13 +236,14 @@ def block_mixed(
     # measuing with respect to trial
     trial_e_kernel = trial_meas_ops.require_kernel(k_energy)
     trial_t2s, trial_e0s, trial_e1s = wk.vmap_chunked(
-        trial_e_kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None))(
-        state.walkers, ham_data, trial_meas_ctx, trial_data
-    )
-    trial_overlaps = wk.vmap_chunked(trial_meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None))(
-        walkers_new, trial_data
-    )
-    trial_weights = guide_weights * trial_overlaps / guide_overlaps # w_trial = w_guide * <G|walker>/<T|walker>
+        trial_e_kernel, n_chunks=params.n_chunks, in_axes=(0, None, None, None)
+    )(state.walkers, ham_data, trial_meas_ctx, trial_data)
+    trial_overlaps = wk.vmap_chunked(
+        trial_meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
+    )(walkers_new, trial_data)
+    trial_weights = (
+        guide_weights * trial_overlaps / guide_overlaps
+    )  # w_trial = w_guide * <G|walker>/<T|walker>
     trial_w_block = jnp.sum(trial_weights)
     trial_t2_block = jnp.sum(trial_weights * trial_t2s) / trial_w_block
     trial_e0_block = jnp.sum(trial_weights * trial_e0s) / trial_w_block
@@ -257,14 +262,14 @@ def block_mixed(
     #     num = jnp.sum(weights.reshape(w_shape) * samples, axis=0)
     #     zero = jnp.zeros_like(num)
     #     obs_samples[name] = jnp.where(wg_sum == 0, zero, num / w_sum_safe)
-    
+
     # performing SR at the end of Block propagation and measurement (Guide)
     key, subkey = jax.random.split(state.rng_key)
     zeta = jax.random.uniform(subkey)
     w_sr, weights_sr = sr_fn(state.walkers, state.weights, zeta, sys.walker_kind)
-    overlaps_sr = wk.vmap_chunked(guide_meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None))(
-        w_sr, guide_data
-    )
+    overlaps_sr = wk.vmap_chunked(
+        guide_meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None)
+    )(w_sr, guide_data)
     state = state._replace(
         walkers=w_sr,
         weights=weights_sr,
@@ -273,15 +278,15 @@ def block_mixed(
     )
 
     obs = BlockObs(
-        scalars = {
+        scalars={
             "guide_weight": guide_w_block,
             "guide_energy": guide_e_block,
             "trial_weight": trial_w_block,
-            "trial_t2"    : trial_t2_block,
-            "trial_e0"    : trial_e0_block,
-            "trial_e1"    : trial_e1_block,
-            },
-        observables = obs_samples,
+            "trial_t2": trial_t2_block,
+            "trial_e0": trial_e0_block,
+            "trial_e1": trial_e1_block,
+        },
+        observables=obs_samples,
     )
     return state, obs
 
