@@ -127,8 +127,8 @@ trial_obj = StagedMfOrCc(mycc, norb_frozen=None)
 staged_trial = _stage_pt2ccsd_input(trial_obj)
 
 trial_data = Pt2ccsdTrial(
-    mo_t=staged_trial.data["mo_t"],
-    t2=staged_trial.data["t2"],
+    mo_t=jnp.asarray(staged_trial.data["mo_t"]),
+    t2=jnp.asarray(staged_trial.data["t2"]),
 )
 
 # =============================================================================
