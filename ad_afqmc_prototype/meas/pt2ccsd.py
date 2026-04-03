@@ -49,18 +49,15 @@ def build_meas_ctx(
     return Pt2ccsdMeasCtx(cfg=cfg)
 
 
-# @jax.jit
 def _greens_restricted(walker: jax.Array, mo_t: jax.Array) -> jax.Array:
     return (walker @ (jnp.linalg.inv(mo_t.T @ walker)) @ mo_t.T).T
 
 
-# @jax.jit
 def _greenp_from_green(green: jax.Array, nocc: int) -> jax.Array:
     norb = green.shape[0]
     return (green - jnp.eye(norb))[:, nocc:]
 
 
-# @jax.jit
 def energy_kernel_rw_rh(
     walker: jax.Array, ham_data: HamChol, meas_ctx: Pt2ccsdMeasCtx, trial_data: Pt2ccsdTrial
 ) -> jax.Array:
