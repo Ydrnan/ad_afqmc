@@ -43,3 +43,7 @@ reportIncompatibleMethodOverride = false
 reportPrivateImportUsage = false
 reportMissingImports = false
 reportPossiblyUnboundVariable = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
