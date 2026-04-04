@@ -338,11 +338,7 @@ def _resolve_stage_frozen_arg(
     norb_frozen: int | None,
     frozen_orbitals: ArrayLike | None,
 ) -> int | ArrayLike | None:
-    if (
-        norb_frozen_core is not None
-        and norb_frozen is not None
-        and norb_frozen_core != norb_frozen
-    ):
+    if norb_frozen_core is not None and norb_frozen is not None and norb_frozen_core != norb_frozen:
         raise ValueError("norb_frozen_core and norb_frozen must match when both are passed.")
     core_frozen = norb_frozen_core if norb_frozen_core is not None else norb_frozen
     if core_frozen is not None and frozen_orbitals is not None:
@@ -497,7 +493,9 @@ class StagedCc:
                     raise ValueError("cc.frozen and staging frozen must be equal.")
                 afqmc_frozen = frozen
             else:
-                raise TypeError("Integer cc.frozen is incompatible with list-valued staging frozen.")
+                raise TypeError(
+                    "Integer cc.frozen is incompatible with list-valued staging frozen."
+                )
             trial_frozen = int(cc_frozen)
 
         if isinstance(trial_frozen, np.ndarray) and kind != "ccsd":
@@ -724,9 +722,7 @@ def stage(
 
     t0 = time.time()
 
-    resolved_frozen = _resolve_stage_frozen_arg(
-        norb_frozen_core, norb_frozen, frozen_orbitals
-    )
+    resolved_frozen = _resolve_stage_frozen_arg(norb_frozen_core, norb_frozen, frozen_orbitals)
     obj = StagedMfOrCc(obj, resolved_frozen)
     mol = obj.mol
 
@@ -1213,7 +1209,7 @@ def build_ham_lno(
     frozen_orbitals: ArrayLike,
     chol_cut: float,
 ) -> HamInput:
-    from pyscf import mcscf, ao2mo
+    from pyscf import ao2mo, mcscf
 
     obj = StagedMfOrCc(obj, 0)
     mf = obj.mf.mf
