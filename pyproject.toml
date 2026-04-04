@@ -3,12 +3,12 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ad_afqmc"
+name = "ad_afqmc_prototype"
 version = "0.1.0"
 description = "Differentiable Auxiliary-Field Quantum Monte Carlo"
 requires-python = ">=3.10"
 dependencies = [
-    "numpy<=2.3",
+    "numpy",
     "scipy",
     "jax",
     "jaxlib",
@@ -17,12 +17,29 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-mpi = ["mpi4py"]
 gpu = ["jaxlib[cuda]"] 
 
 [tool.setuptools]
-packages = ["ad_afqmc"]
+packages = ["ad_afqmc_prototype"]
+
+[tool.black]
+line-length = 100
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E402", "E741", "E731", "E501"]
 
 [tool.pyright]
 reportGeneralTypeIssues = false
 reportOptionalSubscript = false
+reportUnboundVariable = false
+reportOptionalOperand = false
+reportOptionalMemberAccess = false
+reportIncompatibleMethodOverride = false
+reportPrivateImportUsage = false
+reportMissingImports = false
+reportPossiblyUnboundVariable = false

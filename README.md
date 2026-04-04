@@ -1,4 +1,12 @@
-# Automatically differentiable AFQMC
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="logo_dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="logo_light.svg">
+    <img alt="TROT" src="logo_light.svg" width="400">
+  </picture>
+  <br>
+  <em><b>T</b>rotter-propagated <b>R</b>andom <b>O</b>rbital <b>T</b>rajectories</em>
+</p>
 
 An end-to-end differentiable Auxiliary Field Quantum Monte Carlo (AFQMC) code based on Jax.
 
@@ -16,15 +24,6 @@ For use on GPUs with CUDA, install as:
   pip install .[gpu]
 ```
 
-Currently MPI is only used for CPU calculations. To install with MPI support, use:
+CPU calculations are only parallelized with multithreading (no MPI).
 
-```
-  pip install .[mpi]
-```
-
-This code is interfaced with pyscf for molecular integral evaluation. The examples therefore require pyscf to be installed and can be run as:
-
-```
-  python hchain.py > hchain.out
-  python nh3.py > nh3.out
-```
+This code is interfaced with pyscf for electronic integral evaluation. Examples can be found in the examples/ directory.

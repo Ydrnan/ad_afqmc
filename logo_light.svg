@@ -1,0 +1,14 @@
+<svg viewBox="0 0 510 198" xmlns="http://www.w3.org/2000/svg">
+  <g stroke="#1a1918" stroke-width="21" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <line x1="12" y1="44" x2="108" y2="44"/>
+    <polyline points="60,44 60,92 34,124 49,166"/>
+    <line x1="30" y1="166" x2="62" y2="166"/>
+    <line x1="138" y1="44" x2="138" y2="166"/>
+    <path d="M 138,44 C 200,44 200,118 138,118"/>
+    <line x1="168" y1="118" x2="208" y2="166"/>
+    <ellipse cx="284" cy="105" rx="50" ry="61"/>
+    <line x1="364" y1="44" x2="484" y2="44"/>
+    <polyline points="424,44 452,90 418,130 432,166"/>
+    <line x1="414" y1="166" x2="448" y2="166"/>
+  </g>
+</svg>
