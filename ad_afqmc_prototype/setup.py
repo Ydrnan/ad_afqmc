@@ -8,8 +8,6 @@ from pathlib import Path
 from typing import Any, Callable, ClassVar, Union, cast
 
 import numpy as np
-from numpy.typing import ArrayLike
-
 from jax.sharding import Mesh
 
 print = partial(print, flush=True)
@@ -23,7 +21,7 @@ from .prop.afqmc import make_prop_ops
 from .prop.blocks import block as default_block
 from .prop.types import PropOps, PropState, QmcParams, QmcParamsBase
 from .runtime_layout import RuntimeLayout, make_runtime_layout
-from .staging import StagedInputs, load, stage
+from .staging import StagedInputs, _resolve_stage_frozen_arg, load, stage
 
 
 def _setup_begin(message: str) -> float:
@@ -117,7 +115,7 @@ def _make_prop(
 def _resolve_staged(
     obj_or_staged: Union[Any, StagedInputs, str, Path],
     *,
-    frozen: int | ArrayLike | None,
+    norb_frozen_core: int | None,
     chol_cut: float,
     cache: Union[str, Path] | None,
     overwrite: bool,
@@ -139,7 +137,7 @@ def _resolve_staged(
 
     staged = stage(
         obj_or_staged,
-        frozen=frozen,  # if frozen is not None else 0,
+        norb_frozen_core=norb_frozen_core,
         chol_cut=chol_cut,
         cache=cache,
         overwrite=overwrite,
@@ -315,7 +313,8 @@ class Job:
 def _assemble_job(
     obj_or_staged: Union[Any, StagedInputs, str, Path],
     *,
-    frozen: int | ArrayLike | None = None,
+    norb_frozen_core: int | None = None,
+    norb_frozen: int | None = None,
     chol_cut: float = 1e-5,
     cache: Union[str, Path] | None = None,
     overwrite: bool = False,
@@ -342,9 +341,14 @@ def _assemble_job(
     meas_ops_override = meas_ops
     prop_ops_override = prop_ops
 
+    resolved_norb_frozen_core = cast(
+        int | None,
+        _resolve_stage_frozen_arg(norb_frozen_core, norb_frozen, None),
+    )
+
     staged = _resolve_staged(
         obj_or_staged,
-        frozen=frozen,
+        norb_frozen_core=resolved_norb_frozen_core,
         chol_cut=chol_cut,
         cache=cache,
         overwrite=overwrite,
@@ -407,7 +411,8 @@ def setup(
     obj_or_staged: Union[Any, StagedInputs, str, Path],
     *,
     # staging options (used only if we need to stage)
-    frozen: int | ArrayLike | None = None,
+    norb_frozen_core: int | None = None,
+    norb_frozen: int | None = None,
     chol_cut: float = 1e-5,
     cache: Union[str, Path] | None = None,
     overwrite: bool = False,
@@ -445,7 +450,8 @@ def setup(
     """
     return _assemble_job(
         obj_or_staged,
-        frozen=frozen,
+        norb_frozen_core=norb_frozen_core,
+        norb_frozen=norb_frozen,
         chol_cut=chol_cut,
         cache=cache,
         overwrite=overwrite,

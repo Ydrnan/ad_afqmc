@@ -46,6 +46,20 @@ def banner_afqmc() -> str:
 """
 
 
+def _frozen_cache_key(frozen: int | ArrayLike | None) -> int | tuple[int, ...] | None:
+    if isinstance(frozen, np.ndarray):
+        arr = np.asarray(frozen, dtype=np.int64).reshape(-1)
+        return tuple(int(x) for x in arr)
+    if isinstance(frozen, (list, tuple)):
+        arr = np.asarray(frozen, dtype=np.int64).reshape(-1)
+        return tuple(int(x) for x in arr)
+    if frozen is None:
+        return None
+    if isinstance(frozen, (int, np.integer)):
+        return int(frozen)
+    raise TypeError(f"Unsupported frozen type for cache key: {type(frozen)}")
+
+
 class Afqmc:
     """
     AFQMC driver object.
@@ -54,8 +68,15 @@ class Afqmc:
     ----------
     mf_or_cc : Any
         Mean-field or coupled-cluster object from which to build Hamiltonian and trial wavefunction.
+    norb_frozen_core : int, optional
+        Preferred name for the number of lowest occupied core orbitals removed from the AFQMC
+        Hamiltonian.
     norb_frozen : int, optional
-        Number of lowest occupied orbitals removed from the AFQMC Hamiltonian. For CC objects with integer cc.frozen, norb_frozen must match this attribute. For restricted CCSD objects with list-valued cc.frozen, the trial space frozen occupied/virtual blocks are inferred from cc.frozen and norb_frozen controls the orbitals frozen in AFQMC.
+        Backward-compatible alias for ``norb_frozen_core``. For CC objects with integer
+        ``cc.frozen``, this is inferred from ``cc.frozen``. For restricted CCSD objects with
+        list-valued ``cc.frozen``, the trial-space frozen occupied/virtual blocks are inferred
+        from ``cc.frozen`` while ``norb_frozen_core``/``norb_frozen`` control the occupied core
+        orbitals removed from the AFQMC Hamiltonian.
     chol_cut : float, optional
         Cholesky decomposition cutoff, by default 1e-5
     cache : Union[str, Path], optional
@@ -82,7 +103,8 @@ class Afqmc:
         self,
         mf_or_cc: Any,
         *,
-        frozen: int | ArrayLike | None = None,
+        norb_frozen_core: int | None = None,
+        norb_frozen: int | None = None,
         chol_cut: float = 1e-5,
         cache: Union[str, Path] | None = None,
         n_eql_blocks: int | None = None,
@@ -102,7 +124,12 @@ class Afqmc:
             self._scf = mf_or_cc
             self.source_kind = "mf"
 
-        self.frozen = frozen
+        resolved_norb_frozen = staging._resolve_stage_frozen_arg(
+            norb_frozen_core, norb_frozen, None
+        )
+        assert resolved_norb_frozen is None or isinstance(resolved_norb_frozen, int)
+        self.norb_frozen_core = resolved_norb_frozen
+        self.norb_frozen = resolved_norb_frozen
         self.chol_cut = float(chol_cut)
         self.cache = Path(cache).expanduser().resolve() if cache is not None else None
         self.overwrite_cache = False
@@ -207,7 +234,7 @@ class Afqmc:
             cache_mtime = self.cache.stat().st_mtime
         return (
             self.source_kind,
-            self.frozen,
+            _frozen_cache_key(self.norb_frozen_core),
             float(self.chol_cut),
             str(self.cache) if self.cache is not None else None,
             bool(self.overwrite_cache),
@@ -219,13 +246,21 @@ class Afqmc:
         Compute or load HamInput/TrialInput.
         If cache is set and exists, loads unless overwrite_cache=True.
         """
+        if isinstance(self.norb_frozen_core, (list, tuple, np.ndarray)):
+            raise TypeError(
+                "Array-valued frozen is reserved for LNO orbital-list staging; "
+                "use AfqmcLnoFrag(..., frozen_orbitals=...)."
+            )
+
         key = self._key()
         if self._staged is not None and self._cache_key == key and not force:
             return self._staged
 
         staged = stage_inputs(
             self._obj,
-            frozen=self.frozen if self.frozen is not None else None,
+            norb_frozen_core=(
+                int(self.norb_frozen_core) if self.norb_frozen_core is not None else None
+            ),
             chol_cut=self.chol_cut,
             cache=self.cache,
             overwrite=self.overwrite_cache if self.cache is not None else False,
@@ -345,7 +380,7 @@ class Afqmc:
 
         af = cls(
             None,
-            frozen=meta["frozen"],
+            norb_frozen_core=meta["frozen"],
             chol_cut=meta["chol_cut"],
             **kwargs,
         )
@@ -368,7 +403,8 @@ class Afqmc:
     ) -> Afqmc:
         """
         Returns a new AFQMC object from a previously staged calculations
-        (using save_staged method). The number of frozen orbitals, norb_frozen,
+        (using save_staged method). The number of frozen core orbitals, norb_frozen_core
+        (legacy alias ``norb_frozen``),
         and the cholesky decomposition threshold, chol_cut, cannot be changed.
         Parameters
         ----------
@@ -395,7 +431,8 @@ class AfqmcFp(Afqmc):
         self,
         mf_or_cc: Any,
         *,
-        frozen: int | ArrayLike | None = None,
+        norb_frozen_core: int | None = None,
+        norb_frozen: int | None = None,
         chol_cut: float = 1e-5,
         cache: Union[str, Path] | None = None,
         n_blocks: int | None = None,
@@ -409,7 +446,8 @@ class AfqmcFp(Afqmc):
     ):
         super().__init__(
             mf_or_cc,
-            frozen=frozen,
+            norb_frozen_core=norb_frozen_core,
+            norb_frozen=norb_frozen,
             chol_cut=chol_cut,
             cache=cache,
             n_eql_blocks=None,
@@ -470,7 +508,8 @@ class AfqmcFp(Afqmc):
     ) -> AfqmcFp:
         """
         Returns a new AFQMC object from a previously staged calculations
-        (using save_staged method). The number of frozen orbitals, norb_frozen,
+        (using save_staged method). The number of frozen core orbitals, norb_frozen_core
+        (legacy alias ``norb_frozen``),
         and the choliesky decomposition threshold, chol_cut, cannot be changed.
         Parameters
         ----------
@@ -489,11 +528,13 @@ class AfqmcFp(Afqmc):
 
 
 class AfqmcLnoFrag(Afqmc):
+    params_cls = QmcParamsLno
+
     def __init__(
         self,
         mf_or_cc: Any,
         *,
-        frozen: int | ArrayLike | None = None,
+        frozen_orbitals: ArrayLike | None = None,
         chol_cut: float = 1e-5,
         cache: Union[str, Path] | None = None,
         n_eql_blocks: int | None = None,
@@ -506,7 +547,7 @@ class AfqmcLnoFrag(Afqmc):
     ):
         super().__init__(
             mf_or_cc,
-            frozen=frozen,
+            norb_frozen_core=0,
             chol_cut=chol_cut,
             cache=cache,
             n_eql_blocks=n_eql_blocks,
@@ -519,6 +560,7 @@ class AfqmcLnoFrag(Afqmc):
 
         self.mixed_precision = False
         self.prjlo = prjlo
+        self.frozen_orbitals = frozen_orbitals
 
     def stage(self, *, force: bool = False) -> StagedInputs:
         """
@@ -529,16 +571,19 @@ class AfqmcLnoFrag(Afqmc):
         if self._staged is not None and self._cache_key == key and not force:
             return self._staged
 
-        assert isinstance(self.frozen, np.ndarray)
+        frozen_orbitals = self.frozen_orbitals
+        if frozen_orbitals is None:
+            frozen_orbitals = np.zeros((0,), dtype=np.int64)
+
         ham = staging.build_ham_lno(
             self._obj,
-            frozen=self.frozen,
+            frozen_orbitals=frozen_orbitals,
             chol_cut=self.chol_cut,
         )
 
         staged = stage_inputs(
             self._obj,
-            frozen=self.frozen,
+            frozen_orbitals=frozen_orbitals,
             chol_cut=self.chol_cut,
             cache=self.cache,
             overwrite=self.overwrite_cache if self.cache is not None else False,
@@ -551,6 +596,46 @@ class AfqmcLnoFrag(Afqmc):
         self._cache_key = key
         self._job = None
         return staged
+
+    def _key(self) -> tuple:
+        base = super()._key()
+        return base + (_frozen_cache_key(self.frozen_orbitals),)
+
+    @classmethod
+    def from_staged(
+        cls,
+        path: Union[str, Path],
+        *,
+        n_eql_blocks: int | None = None,
+        n_blocks: int | None = None,
+        seed: int | None = None,
+        dt: float | None = None,
+        n_walkers: int | None = None,
+        n_chunks: int = 1,
+        prjlo: NDArray | None = None,
+    ) -> "AfqmcLnoFrag":
+        staged = load_staged(path)
+        meta = staged.meta
+        frozen_orbitals = meta["frozen"]
+        if frozen_orbitals is not None and not isinstance(frozen_orbitals, np.ndarray):
+            frozen_orbitals = np.asarray(frozen_orbitals, dtype=np.int64)
+
+        af = cls(
+            None,
+            frozen_orbitals=frozen_orbitals,
+            chol_cut=meta["chol_cut"],
+            n_eql_blocks=n_eql_blocks,
+            n_blocks=n_blocks,
+            seed=seed,
+            dt=dt,
+            n_walkers=n_walkers,
+            n_chunks=n_chunks,
+            prjlo=prjlo,
+        )
+        af._staged = staged
+        af.source_kind = meta["source_kind"]
+        af._cache_key = af._key()
+        return af
 
     def build_job(
         self,
@@ -577,6 +662,7 @@ class AfqmcLnoFrag(Afqmc):
 
         staged = self.stage()
         params = self._make_params()
+        assert isinstance(params, QmcParamsLno)
         self.params = params
 
         ham = staged.ham
@@ -598,58 +684,6 @@ class AfqmcLnoFrag(Afqmc):
         )
         self._job = job
         return job
-
-    def _make_params(self) -> QmcParamsLno:
-        """
-        Create QmcParams if user didn't provide one.
-        """
-        if self.params is not None and isinstance(self.params, QmcParamsLno):
-            params = self.params
-        elif self.params is not None and not isinstance(self.params, QmcParamsLno):
-            raise TypeError(
-                f"Expected type QmcParamsLno for self.params, but received '{type(self.params)}'"
-            )
-        else:
-            kwargs: dict[str, Any] = {}
-            for field in dataclasses.fields(QmcParamsLno):
-                if hasattr(self, field.name):
-                    val = getattr(self, field.name)
-                    if val is not None:
-                        kwargs[field.name] = val
-
-            params = QmcParamsLno(**kwargs)
-
-        return params
-
-    def _dump_params(self, params: QmcParamsLno) -> None:
-        assert isinstance(
-            params, QmcParamsLno
-        ), f"Expected a QmcParamsLno instance, but got {type(params)}"
-        fields = dataclasses.fields(params)
-        width = len(max(fields, key=lambda f: len(f.name)).name)
-        print(" QmcParamsLno:")
-        for field in fields:
-            print(f"  {field.name:<{width}} = {getattr(params, field.name)}")
-        print("")
-
-    def _dump_flags_helper(self, job) -> None:
-        meta = job.staged.meta
-        src = meta["source_kind"]
-        chol_cut = meta["chol_cut"]
-        sys = job.sys
-        nchol = job.staged.ham.chol.shape[0]
-        params = job.params
-        assert isinstance(params, QmcParamsLno)
-        trial = job.staged.trial
-        print("******** AFQMC ********")
-        print(f" nchol           = {nchol}")
-        print(f" source_kind     = {src}")
-        print(f" trial_kind      = {trial.kind}")
-        print(f" chol_cut        = {chol_cut:g}")
-        print(f" cache           = {str(self.cache) if self.cache else None}")
-        print(f" walker_kind     = {sys.walker_kind}")
-        print(f" mixed_precision = {self.mixed_precision}\n")
-        self._dump_params(params)
 
     def kernel(self, **driver_kwargs: Any) -> tuple[NDArray, NDArray]:
         """
@@ -683,7 +717,7 @@ def run_afqmc_lno_helper(
     norb_act=None,
     nelec_act=None,
     mo_coeff=None,
-    frozen: int | ArrayLike | None = [],
+    frozen_orbitals: ArrayLike | None = None,
     chol_cut: float = 1e-5,
     seed: int | None = None,
     dt: float = 0.005,
@@ -709,7 +743,7 @@ def run_afqmc_lno_helper(
 
     myafqmc = AfqmcLnoFrag(
         mf2,
-        frozen=frozen,
+        frozen_orbitals=frozen_orbitals,
         chol_cut=chol_cut,
         n_eql_blocks=n_eql,
         n_blocks=nblocks,

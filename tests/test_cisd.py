@@ -446,7 +446,7 @@ def test_stage_infers_trial_freeze_from_list_valued_cc_frozen(mycc_frozen_list):
 
 
 def test_stage_splits_list_valued_cc_frozen_with_afqmc_frozen_core(mycc_frozen_list):
-    staged = Afqmc(mycc_frozen_list, frozen=1).stage()
+    staged = Afqmc(mycc_frozen_list, norb_frozen_core=1).stage()
 
     assert staged.ham.frozen == 1
     assert staged.ham.norb == mycc_frozen_list._scf.mo_coeff.shape[-1] - 1
@@ -454,6 +454,23 @@ def test_stage_splits_list_valued_cc_frozen_with_afqmc_frozen_core(mycc_frozen_l
     assert staged.trial.data["ci1"].shape == mycc_frozen_list.t1.shape
     assert int(staged.trial.data["nocc_t_core"].item()) == 0
     assert int(staged.trial.data["nvir_t_outer"].item()) == 1
+
+
+def test_stage_legacy_norb_frozen_alias_still_works(mycc_frozen_list):
+    staged = Afqmc(mycc_frozen_list, norb_frozen=1).stage()
+
+    assert staged.ham.frozen == 1
+    assert staged.ham.norb == mycc_frozen_list._scf.mo_coeff.shape[-1] - 1
+
+
+def test_stage_infers_integer_cc_frozen_for_hamiltonian_and_trial(mycc_frozen_int):
+    staged = Afqmc(mycc_frozen_int).stage()
+
+    assert staged.ham.frozen == 1
+    assert staged.ham.norb == mycc_frozen_int._scf.mo_coeff.shape[-1] - 1
+    assert staged.trial.kind == "cisd"
+    assert staged.trial.frozen == 1
+    assert staged.trial.data["ci1"].shape == mycc_frozen_int.t1.shape
 
 
 def test_stage_prefers_cc_mo_coeff_for_hamiltonian(mycc_rotated_basis):
@@ -568,6 +585,23 @@ def mycc_rotated_basis():
     mo_coeff[:, nocc:] = mo_coeff[:, nocc:] @ rot_vir
 
     mycc = cc.CCSD(mf, mo_coeff=mo_coeff)
+    mycc.kernel()
+    return mycc
+
+
+@pytest.fixture(scope="module")
+def mycc_frozen_int():
+    mol = gto.M(
+        atom="""
+        O        0.0000000000      0.0000000000      0.0000000000
+        H        0.9562300000      0.0000000000      0.0000000000
+        H       -0.2353791634      0.9268076728      0.0000000000
+        """,
+        basis="sto-6g",
+    )
+    mf = scf.RHF(mol)
+    mf.kernel()
+    mycc = cc.CCSD(mf, frozen=1)
     mycc.kernel()
     return mycc
 

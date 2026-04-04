@@ -10,7 +10,8 @@ from pyscf import gto, scf
 from ad_afqmc_prototype import testing
 from ad_afqmc_prototype.prop.types import QmcParams
 from ad_afqmc_prototype.trial.rhf import RhfTrial
-from ad_afqmc_prototype.afqmc import run_afqmc_lno_helper
+from ad_afqmc_prototype.afqmc import AfqmcLnoFrag, run_afqmc_lno_helper
+from ad_afqmc_prototype.staging import load as load_staged
 
 
 def _make_random_rhf_trial(key, norb, nocc):
@@ -53,7 +54,7 @@ def test_calc_rhf(mf, params, e_ref, err_ref, norb_frozen):
         mo_coeff=mo_coeff,
         norb_act=norb_act,
         nelec_act=nactocc * 2,
-        frozen=orbs_frozen,
+        frozen_orbitals=orbs_frozen,
         n_walkers=params.n_walkers,
         nblocks=params.n_blocks,
         seed=params.seed,
@@ -66,6 +67,23 @@ def test_calc_rhf(mf, params, e_ref, err_ref, norb_frozen):
 
     assert jnp.isclose(elcorr_afqmc, e_ref), (elcorr_afqmc, e_ref, elcorr_afqmc - e_ref)
     assert jnp.isclose(err_afqmc, err_ref), (err_afqmc, err_ref, err_afqmc - err_ref)
+
+
+def test_lno_stage_roundtrips_array_frozen_orbitals(tmp_path):
+    frozen_orbitals = np.array([0], dtype=np.int64)
+    path = tmp_path / "lno_stage.h5"
+
+    af = AfqmcLnoFrag(mf, frozen_orbitals=frozen_orbitals)
+    af.save_staged(path)
+
+    staged = load_staged(path)
+    af_loaded = AfqmcLnoFrag.from_staged(path)
+
+    assert np.array_equal(staged.ham.frozen, frozen_orbitals)
+    assert np.array_equal(staged.trial.frozen, frozen_orbitals)
+    assert np.array_equal(staged.meta["frozen"], frozen_orbitals)
+    assert af_loaded.frozen_orbitals is not None
+    assert np.array_equal(af_loaded.frozen_orbitals, frozen_orbitals)
 
 
 @pytest.fixture(scope="module")

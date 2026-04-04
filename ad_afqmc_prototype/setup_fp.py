@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Union, cast
 
-from numpy.typing import ArrayLike
 from jax.sharding import Mesh
 
 from . import driver
@@ -94,7 +93,8 @@ def setup_fp(
     obj_or_staged: Union[Any, StagedInputs, str, Path],
     *,
     # staging options (used only if we need to stage)
-    frozen: int | ArrayLike | None = None,
+    norb_frozen_core: int | None = None,
+    norb_frozen: int | None = None,
     chol_cut: float = 1e-5,
     cache: Union[str, Path] | None = None,
     overwrite: bool = False,
@@ -134,7 +134,8 @@ def setup_fp(
         JobFp,
         _assemble_job(
             obj_or_staged,
-            frozen=frozen,
+            norb_frozen_core=norb_frozen_core,
+            norb_frozen=norb_frozen,
             chol_cut=chol_cut,
             cache=cache,
             overwrite=overwrite,

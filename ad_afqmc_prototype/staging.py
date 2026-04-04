@@ -333,6 +333,72 @@ def _stage_frozen(frozen: int | ArrayLike | None) -> int | NDArray | None:
     return frozen
 
 
+def _resolve_stage_frozen_arg(
+    norb_frozen_core: int | None,
+    norb_frozen: int | None,
+    frozen_orbitals: ArrayLike | None,
+) -> int | ArrayLike | None:
+    if (
+        norb_frozen_core is not None
+        and norb_frozen is not None
+        and norb_frozen_core != norb_frozen
+    ):
+        raise ValueError("norb_frozen_core and norb_frozen must match when both are passed.")
+    core_frozen = norb_frozen_core if norb_frozen_core is not None else norb_frozen
+    if core_frozen is not None and frozen_orbitals is not None:
+        raise ValueError("Pass only one of norb_frozen_core/norb_frozen or frozen_orbitals.")
+    if frozen_orbitals is not None:
+        return frozen_orbitals
+    return core_frozen
+
+
+def _freeze_meta_value(frozen: int | NDArray | None) -> int | list[int] | None:
+    if isinstance(frozen, np.ndarray):
+        arr = np.asarray(frozen, dtype=np.int64).reshape(-1)
+        return [int(x) for x in arr]
+    if isinstance(frozen, int):
+        return frozen
+    if isinstance(frozen, np.integer):
+        return int(frozen.item())
+    if frozen is None:
+        return None
+    raise TypeError(f"Unsupported frozen metadata type: {type(frozen)}")
+
+
+def _freeze_from_meta_value(frozen: Any) -> int | NDArray | None:
+    if frozen is None:
+        return None
+    if isinstance(frozen, list):
+        return np.asarray(frozen, dtype=np.int64)
+    if isinstance(frozen, np.ndarray):
+        return np.asarray(frozen, dtype=np.int64)
+    if isinstance(frozen, (int, np.integer)):
+        return int(frozen)
+    raise TypeError(f"Unsupported frozen metadata type: {type(frozen)}")
+
+
+def _dump_frozen(group: h5py.Group, frozen: int | NDArray, *, attr_name: str = "frozen") -> None:
+    if isinstance(frozen, np.ndarray):
+        group.create_dataset(attr_name, data=np.asarray(frozen, dtype=np.int64))
+    else:
+        group.attrs[attr_name] = int(frozen)
+
+
+def _load_frozen(group: h5py.Group, *, attr_name: str = "frozen") -> int | NDArray:
+    if attr_name in group:
+        dataset = group[attr_name]
+        if not isinstance(dataset, h5py.Dataset):
+            raise TypeError(f"Expected dataset '{attr_name}', got {type(dataset)}")
+        return np.asarray(dataset[...], dtype=np.int64)
+
+    attr_value = group.attrs[attr_name]
+    if isinstance(attr_value, np.ndarray):
+        return int(np.asarray(attr_value).item())
+    if isinstance(attr_value, (int, np.integer)):
+        return int(attr_value)
+    raise TypeError(f"Unsupported frozen attribute type: {type(attr_value)}")
+
+
 @dataclass(frozen=True, slots=True)
 class HamInput:
     """ham inputs in the chosen orthonormal one particle basis"""
@@ -402,22 +468,44 @@ class StagedCc:
         frozen = _stage_frozen(frozen)
         cc_frozen = _stage_frozen(cc.frozen)
 
-        if frozen is None and cc_frozen is None:
+        if cc_frozen is None:
+            if frozen is not None and not (isinstance(frozen, int) and frozen == 0):
+                raise ValueError(
+                    "Explicit AFQMC frozen orbitals are unsupported for CC objects without cc.frozen."
+                )
             afqmc_frozen = 0
             trial_frozen = 0
+        elif isinstance(cc_frozen, np.ndarray):
+            if kind != "ccsd":
+                raise NotImplementedError(
+                    "List-valued cc.frozen is currently supported only for restricted CCSD staging."
+                )
+            trial_frozen = _normalize_frozen_list(cc_frozen, nmo=mf.mo_coeff.shape[-1])
+            if frozen is None:
+                afqmc_frozen = 0
+            elif isinstance(frozen, int):
+                afqmc_frozen = frozen
+            else:
+                raise TypeError(
+                    "List-valued cc.frozen requires an integer AFQMC frozen-core count."
+                )
         else:
-            afqmc_frozen = frozen if frozen is not None else 0
-            trial_frozen = cc_frozen if cc_frozen is not None else 0
-
-        assert isinstance(afqmc_frozen, (int, np.ndarray))
-        assert isinstance(trial_frozen, (int, np.ndarray))
+            if frozen is None:
+                afqmc_frozen = int(cc_frozen)
+            elif isinstance(frozen, int):
+                if int(cc_frozen) != frozen:
+                    raise ValueError("cc.frozen and staging frozen must be equal.")
+                afqmc_frozen = frozen
+            else:
+                raise TypeError("Integer cc.frozen is incompatible with list-valued staging frozen.")
+            trial_frozen = int(cc_frozen)
 
         if isinstance(trial_frozen, np.ndarray) and kind != "ccsd":
             raise NotImplementedError(
                 "List-valued cc.frozen is currently supported only for restricted CCSD staging."
             )
 
-        mf = StagedMf(mf, frozen)
+        mf = StagedMf(mf, afqmc_frozen)
 
         object.__setattr__(self, "cc", cc)
         object.__setattr__(self, "mf", mf)
@@ -481,10 +569,10 @@ class StagedMf:
         frozen = _stage_frozen(frozen)
 
         if isinstance(frozen, np.ndarray):
-            if frozen.size > 0:
-                assert frozen.size < mf.mo_coeff.shape[-1]
-                assert np.min(frozen) >= 0
-                assert np.max(frozen) < mf.mo_coeff.shape[-1]
+            frozen_arr = _normalize_frozen_list(frozen, nmo=mf.mo_coeff.shape[-1])
+            if frozen_arr.size > 0:
+                assert frozen_arr.size < mf.mo_coeff.shape[-1]
+            frozen = frozen_arr
         elif isinstance(frozen, int):
             assert frozen < mf.mo_coeff.shape[-1]
             assert frozen >= 0
@@ -584,7 +672,9 @@ class StagedMfOrCc:
 def stage(
     obj: Any,
     *,
-    frozen: int | ArrayLike | None = None,
+    norb_frozen_core: int | None = None,
+    norb_frozen: int | None = None,
+    frozen_orbitals: ArrayLike | None = None,
     chol_cut: float = 1e-5,
     cache: Union[str, Path] | None = None,
     overwrite: bool = False,
@@ -598,12 +688,19 @@ def stage(
     Args:
         obj:
             pyscf mf object (RHF/ROHF/UHF) or cc object (CCSD/UCCSD).
-        frozen:
-            Number of lowest occupied orbitals removed from the AFQMC Hamiltonian.
+        norb_frozen_core:
+            Preferred name for the number of lowest occupied core orbitals removed from the
+            AFQMC Hamiltonian.
+        norb_frozen:
+            Backward-compatible alias for ``norb_frozen_core``.
             For CC objects with integer ``cc.frozen``, this is inferred from ``cc.frozen``.
             For restricted CCSD objects with list-valued ``cc.frozen``, trial-space frozen
-            occupied/virtual blocks are inferred from ``cc.frozen`` and ``frozen``
-            defaults to 0 unless set explicitly.
+            occupied/virtual blocks are inferred from ``cc.frozen`` while
+            ``norb_frozen_core``/``norb_frozen`` control the occupied core orbitals removed
+            from the AFQMC Hamiltonian.
+        frozen_orbitals:
+            Explicit orbital list for LNO-style staging. Generic AFQMC/FNO staging should use
+            ``norb_frozen_core`` instead.
         chol_cut:
             Cholesky decomposition cutoff.
         cache:
@@ -627,7 +724,10 @@ def stage(
 
     t0 = time.time()
 
-    obj = StagedMfOrCc(obj, frozen)
+    resolved_frozen = _resolve_stage_frozen_arg(
+        norb_frozen_core, norb_frozen, frozen_orbitals
+    )
+    obj = StagedMfOrCc(obj, resolved_frozen)
     mol = obj.mol
 
     if ham is None:
@@ -652,7 +752,7 @@ def stage(
         "format_version": STAGE_FORMAT_VERSION,
         "timestamp_unix": time.time(),
         "source_kind": obj.source,
-        "frozen": obj.afqmc_frozen,
+        "frozen": _freeze_meta_value(obj.afqmc_frozen),
         "chol_cut": ham.chol_cut if ham is not None else chol_cut,
         "mol": {
             "nao": int(mol.nao),
@@ -880,7 +980,9 @@ def _mf_coeff_helper(
         idx = np.delete(np.arange(len(q)), frozen)
         q = q[np.ix_(idx, idx)]
     else:
-        raise TypeError("frozen must be an integer or a np.ndarray, but received '{type(frozen)}'.")
+        raise TypeError(
+            f"frozen must be an integer or a np.ndarray, but received '{type(frozen)}'."
+        )
 
     return q
 
@@ -1044,13 +1146,13 @@ def _dump_h5(staged: StagedInputs, path: Path) -> None:
         gham.create_dataset("nelec", data=np.array(staged.ham.nelec, dtype=np.int64))
         gham.attrs["norb"] = staged.ham.norb
         gham.attrs["chol_cut"] = staged.ham.chol_cut
-        gham.attrs["frozen"] = staged.ham.frozen
+        _dump_frozen(gham, staged.ham.frozen)
         gham.attrs["source_kind"] = staged.ham.source_kind
         gham.attrs["basis"] = staged.ham.basis
 
         gtr = f.create_group("trial")
         gtr.attrs["kind"] = staged.trial.kind
-        gtr.attrs["frozen"] = staged.trial.frozen
+        _dump_frozen(gtr, staged.trial.frozen)
         gtr.attrs["source_kind"] = staged.trial.source_kind
         gdata = gtr.create_group("data")
         for k, v in staged.trial.data.items():
@@ -1070,6 +1172,8 @@ def _to_json_str(x: Any) -> str:
 def _load_h5(path: Path) -> StagedInputs:
     with h5py.File(path, "r") as f:
         meta = json.loads(_to_json_str(f.attrs["meta_json"]))
+        if "frozen" in meta:
+            meta["frozen"] = _freeze_from_meta_value(meta["frozen"])
 
         t_ham = _stage_begin("reading Hamiltonian from cache")
         gham: Any = f["ham"]
@@ -1080,7 +1184,7 @@ def _load_h5(path: Path) -> StagedInputs:
             nelec=(int(np.array(gham["nelec"])[0]), int(np.array(gham["nelec"])[1])),
             norb=int(gham.attrs["norb"]),
             chol_cut=float(gham.attrs["chol_cut"]),
-            frozen=int(gham.attrs["frozen"]),
+            frozen=_load_frozen(gham),
             source_kind=str(gham.attrs["source_kind"]),
             basis=cast(HamBasis, str(gham.attrs["basis"])),
         )
@@ -1095,7 +1199,7 @@ def _load_h5(path: Path) -> StagedInputs:
         trial = TrialInput(
             kind=str(gtr.attrs["kind"]),
             data=trial_data,
-            frozen=int(gtr.attrs["frozen"]),
+            frozen=_load_frozen(gtr),
             source_kind=str(gtr.attrs["source_kind"]),
         )
         _stage_end(t_trial, "trial input loaded", details=f"kind={trial.kind}")
@@ -1106,17 +1210,17 @@ def _load_h5(path: Path) -> StagedInputs:
 def build_ham_lno(
     obj: Any,
     *,
-    frozen: np.ndarray,
+    frozen_orbitals: ArrayLike,
     chol_cut: float,
 ) -> HamInput:
     from pyscf import mcscf, ao2mo
 
-    obj = StagedMfOrCc(obj, frozen)
+    obj = StagedMfOrCc(obj, 0)
     mf = obj.mf.mf
     mol = mf.mol
 
     norb = obj.norb
-    frozen = obj.afqmc_frozen
+    frozen = _normalize_frozen_list(frozen_orbitals, nmo=norb)
     basis_coeff = mf.mo_coeff
 
     nelec_frozen = 2 * np.sum(frozen < mol.nelec[0])

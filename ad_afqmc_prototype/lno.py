@@ -5,7 +5,7 @@ from pyscf.lib import logger
 from pyscf import lib, lo
 
 try:
-    from pyscf.lno import LNO
+    from pyscf.lno import LNO  # pyright: ignore[reportMissingImports]
 except ModuleNotFoundError:
     raise ModuleNotFoundError("You need to install pyscf-forge for LNO.")
 
@@ -114,7 +114,7 @@ def impurity_solve(
                 mo_coeff=mo_coeff,
                 norb_act=(nactocc + nactvir),
                 nelec_act=nactocc * 2,
-                frozen=frozen,
+                frozen_orbitals=frozen,
                 n_walkers=n_walkers,
                 nblocks=n_blocks,
                 seed=seed,
@@ -151,7 +151,9 @@ def get_maskact(frozen, nmo):
     if isinstance(frozen, (int, np.integer)):
         maskact = np.hstack([np.zeros(frozen, dtype=bool), np.ones(nmo - frozen, dtype=bool)])
     elif isinstance(frozen, (list, tuple, np.ndarray)):
-        maskact = np.array([i not in frozen for i in range(nmo)])
+        frozen_arr = np.asarray(frozen, dtype=np.int64).reshape(-1)
+        frozen_set = {int(i) for i in frozen_arr}
+        maskact = np.array([i not in frozen_set for i in range(nmo)])
     else:
         raise RuntimeError
 
@@ -227,7 +229,7 @@ class AfqmcLno(LNO):
             log = logger.new_logger(self)
         mo_occ = self.mo_occ
         frozen, maskact = get_maskact(frozen, mo_occ.size)
-        from pyscf.lno.lnoccsd import CCSD
+        from pyscf.lno.lnoccsd import CCSD  # pyright: ignore[reportMissingImports]
 
         mcc = CCSD(mf, mo_coeff=mo_coeff, frozen=frozen).set(verbose=self.verbose_imp)
         mcc._s1e = self._s1e
