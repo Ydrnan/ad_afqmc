@@ -4,21 +4,23 @@ from .config import configure_once
 
 configure_once()
 
+import copy
 import dataclasses
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Union, cast
-import copy
+
 import numpy as np
-from numpy.typing import NDArray, ArrayLike
+from numpy.typing import ArrayLike, NDArray
 
 print = partial(print, flush=True)
 
 from jax.sharding import Mesh
 
+from . import staging
 from .core.system import WalkerKind
-from .prop.types import QmcParamsBase, QmcParams, QmcParamsFp, QmcParamsLno
 from .driver import QmcResult
+from .prop.types import QmcParams, QmcParamsBase, QmcParamsFp, QmcParamsLno
 from .runtime_provenance import print_runtime_provenance
 from .setup import Job
 from .setup import setup as setup_job
@@ -31,18 +33,18 @@ from .staging import StagedInputs, _is_cc_like
 from .staging import dump as dump_staged
 from .staging import load as load_staged
 from .staging import stage as stage_inputs
-from . import staging
 
 
 def banner_afqmc() -> str:
     return r"""
- █████╗ ██████╗        █████╗ ███████╗ ██████╗ ███╗   ███╗ ██████╗
-██╔══██╗██╔══██╗      ██╔══██╗██╔════╝██╔═══██╗████╗ ████║██╔════╝
-███████║██║  ██║█████╗███████║█████╗  ██║   ██║██╔████╔██║██║
-██╔══██║██║  ██║╚════╝██╔══██║██╔══╝  ██║▄▄ ██║██║╚██╔╝██║██║
-██║  ██║██████╔╝      ██║  ██║██║     ╚██████╔╝██║ ╚═╝ ██║╚██████╗
-╚═╝  ╚═╝╚═════╝       ╚═╝  ╚═╝╚═╝      ╚══▀▀═╝ ╚═╝     ╚═╝ ╚═════╝
-     differentiable auxiliary-field quantum Monte Carlo
+    ████████╗██████╗  ██████╗ ████████╗
+    ╚══██╔══╝██╔══██╗██╔═══██╗╚══██╔══╝
+       ██║   ██████╔╝██║   ██║   ██║
+       ██║   ██╔══██╗██║   ██║   ██║
+       ██║   ██║  ██║╚██████╔╝   ██║
+       ╚═╝   ╚═╝  ╚═╝ ╚═════╝    ╚═╝
+  Trotter-propagated Random Orbital Trajectories
+differentiable auxiliary-field quantum Monte Carlo
 """
 
 
