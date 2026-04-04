@@ -2,13 +2,13 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from ad_afqmc_prototype.core.ops import MeasOps
-from ad_afqmc_prototype.core.system import System
-from ad_afqmc_prototype.ham.chol import HamChol
-from ad_afqmc_prototype.prop.afqmc import afqmc_step
-from ad_afqmc_prototype.prop.chol_afqmc_ops import _build_prop_ctx, make_trotter_ops
-from ad_afqmc_prototype.prop.types import PropState, QmcParams
-from ad_afqmc_prototype import testing
+from trot.core.ops import MeasOps
+from trot.core.system import System
+from trot.ham.chol import HamChol
+from trot.prop.afqmc import afqmc_step
+from trot.prop.chol_afqmc_ops import _build_prop_ctx, make_trotter_ops
+from trot.prop.types import PropState, QmcParams
+from trot import testing
 
 
 def _make_dummy_meas_ops():

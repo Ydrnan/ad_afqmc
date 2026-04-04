@@ -1,4 +1,4 @@
-from ad_afqmc_prototype import config
+from trot import config
 
 config.configure_once()
 
@@ -6,17 +6,17 @@ import jax.numpy as jnp
 import pytest
 from pyscf import cc, gto, scf
 
-from ad_afqmc_prototype.driver import run_mixed_qmc
-from ad_afqmc_prototype.ham.chol import HamChol
-from ad_afqmc_prototype.meas.pt2ccsd import Pt2ccsdMeasCfg, build_meas_ctx, make_pt2ccsd_meas_ops
-from ad_afqmc_prototype.meas.rhf import make_rhf_meas_ops
-from ad_afqmc_prototype.prop.afqmc import make_prop_ops
-from ad_afqmc_prototype.prop.blocks import block_mixed
-from ad_afqmc_prototype.prop.types import QmcParams
-from ad_afqmc_prototype.staging import StagedMfOrCc, _stage_pt2ccsd_input, stage
-from ad_afqmc_prototype.core.system import System
-from ad_afqmc_prototype.trial.pt2ccsd import Pt2ccsdTrial
-from ad_afqmc_prototype.trial.rhf import RhfTrial, make_rhf_trial_ops
+from trot.driver import run_mixed_qmc
+from trot.ham.chol import HamChol
+from trot.meas.pt2ccsd import Pt2ccsdMeasCfg, build_meas_ctx, make_pt2ccsd_meas_ops
+from trot.meas.rhf import make_rhf_meas_ops
+from trot.prop.afqmc import make_prop_ops
+from trot.prop.blocks import block_mixed
+from trot.prop.types import QmcParams
+from trot.staging import StagedMfOrCc, _stage_pt2ccsd_input, stage
+from trot.core.system import System
+from trot.trial.pt2ccsd import Pt2ccsdTrial
+from trot.trial.rhf import RhfTrial, make_rhf_trial_ops
 
 # ---------------------------------------------------------------------------
 # Module-level fixtures — built once for the whole test file
@@ -27,7 +27,7 @@ from ad_afqmc_prototype.trial.rhf import RhfTrial, make_rhf_trial_ops
 def h8_system():
     """8 H2 molecules (nc=8, na=2) in sto-6g, well-separated clusters.
 
-    Returns a dict containing the pyscf objects and all pre-built ad_afqmc
+    Returns a dict containing the pyscf objects and all pre-built TROT
     inputs so each parametrised test can reuse them without re-running SCF/CC.
     """
     a = 2  # bond length inside each H2 dimer (Bohr)

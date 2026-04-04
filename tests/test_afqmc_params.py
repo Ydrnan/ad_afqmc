@@ -1,7 +1,7 @@
 import pytest
 
-from ad_afqmc_prototype.afqmc import Afqmc, AfqmcFp
-from ad_afqmc_prototype.prop.types import QmcParams, QmcParamsFp
+from trot.afqmc import Afqmc, AfqmcFp
+from trot.prop.types import QmcParams, QmcParamsFp
 
 
 class _DummyMF:

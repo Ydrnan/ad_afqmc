@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from ad_afqmc_prototype import walkers as wk
+from trot import walkers as wk
 
 
 def _rand_complex(key, shape, dtype=jnp.complex64):

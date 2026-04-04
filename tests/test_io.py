@@ -1,4 +1,4 @@
-from ad_afqmc_prototype import config
+from trot import config
 
 config.configure_once()
 
@@ -7,8 +7,8 @@ from typing import Any
 import pytest
 import jax.numpy as jnp
 from pyscf import gto, scf
-from ad_afqmc_prototype.afqmc import Afqmc, AfqmcFp
-from ad_afqmc_prototype.prop.types import QmcParams, QmcParamsFp
+from trot.afqmc import Afqmc, AfqmcFp
+from trot.prop.types import QmcParams, QmcParamsFp
 
 
 def build_mf() -> Any:

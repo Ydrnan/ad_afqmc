@@ -1,4 +1,4 @@
-from ad_afqmc_prototype import config
+from trot import config
 
 config.configure_once(use_gpu=False)
 
@@ -8,11 +8,11 @@ import numpy as np
 import pytest
 from pyscf import cc, gto, scf
 
-from ad_afqmc_prototype import testing
-from ad_afqmc_prototype.afqmc import Afqmc
-from ad_afqmc_prototype.core.ops import k_energy, k_force_bias
-from ad_afqmc_prototype.core.system import System
-from ad_afqmc_prototype.meas.cisd import (
+from trot import testing
+from trot.afqmc import Afqmc
+from trot.core.ops import k_energy, k_force_bias
+from trot.core.system import System
+from trot.meas.cisd import (
     CisdMeasCfg,
     build_meas_ctx,
     energy_kernel_rw_rh,
@@ -25,16 +25,16 @@ from ad_afqmc_prototype.meas.cisd import (
     make_cisd_meas_ops,
     rdm1_kernel_rw,
 )
-from ad_afqmc_prototype.prop.chol_afqmc_ops import _build_prop_ctx
-from ad_afqmc_prototype.prop.types import QmcParams
-from ad_afqmc_prototype.runtime_layout import (
+from trot.prop.chol_afqmc_ops import _build_prop_ctx
+from trot.prop.types import QmcParams
+from trot.runtime_layout import (
     CisdHostRuntimeLayout,
     _build_cisd_meas_ctx_from_host,
     _build_restricted_prop_ctx_from_host,
     _make_ham_data,
 )
-from ad_afqmc_prototype.setup import setup as setup_job
-from ad_afqmc_prototype.trial.cisd import (
+from trot.setup import setup as setup_job
+from trot.trial.cisd import (
     CisdTrial,
     make_cisd_trial_data,
     make_cisd_trial_ops,

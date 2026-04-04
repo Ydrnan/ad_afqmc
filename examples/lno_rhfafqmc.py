@@ -8,7 +8,7 @@ import numpy as np
 from pyscf import gto, scf, mp
 from pyscf.data.elements import chemcore
 from pyscf.lib import logger
-from ad_afqmc_prototype import lno
+from trot import lno
 
 log = logger.Logger(sys.stdout, 6)
 

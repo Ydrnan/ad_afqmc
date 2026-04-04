@@ -15,32 +15,32 @@ workflow on setup AFQMC/pt2CCSD (Manually)
 4. Run the mixed AFQMC via run_mixed_qmc().
 5. Post-process the raw block data with clean_pt2ccsd() and blocking analysis.
 
-Note: ad_afqmc_prototype does not yet have a single high-level interface for
+Note: trot does not yet have a single high-level interface for
 pt2CCSD (unlike Afqmc for CISD).  All setup steps are therefore explicit here.
 """
 
-from ad_afqmc_prototype import config
+from trot import config
 
 config.configure_once()
 
 import jax.numpy as jnp
 from pyscf import cc, gto, scf
 
-from ad_afqmc_prototype.core.system import System
-from ad_afqmc_prototype.driver import run_mixed_qmc
-from ad_afqmc_prototype.ham.chol import HamChol
-from ad_afqmc_prototype.meas.pt2ccsd import (
+from trot.core.system import System
+from trot.driver import run_mixed_qmc
+from trot.ham.chol import HamChol
+from trot.meas.pt2ccsd import (
     Pt2ccsdMeasCfg,
     build_meas_ctx,
     make_pt2ccsd_meas_ops,
 )
-from ad_afqmc_prototype.meas.rhf import make_rhf_meas_ops
-from ad_afqmc_prototype.prop.afqmc import make_prop_ops
-from ad_afqmc_prototype.prop.blocks import block_mixed
-from ad_afqmc_prototype.prop.types import QmcParams
-from ad_afqmc_prototype.staging import StagedMfOrCc, _stage_pt2ccsd_input, stage
-from ad_afqmc_prototype.trial.pt2ccsd import Pt2ccsdTrial
-from ad_afqmc_prototype.trial.rhf import RhfTrial, make_rhf_trial_ops
+from trot.meas.rhf import make_rhf_meas_ops
+from trot.prop.afqmc import make_prop_ops
+from trot.prop.blocks import block_mixed
+from trot.prop.types import QmcParams
+from trot.staging import StagedMfOrCc, _stage_pt2ccsd_input, stage
+from trot.trial.pt2ccsd import Pt2ccsdTrial
+from trot.trial.rhf import RhfTrial, make_rhf_trial_ops
 
 # =============================================================================
 # Section 1: Molecular system
@@ -82,7 +82,7 @@ print(f"CCSD energy: {mycc.e_tot:.10f} Ha")
 # =============================================================================
 # Section 3: Stage the guide Hamiltonian (RHF)
 # =============================================================================
-# stage() converts the PySCF mean-field object into ad_afqmc's internal
+# stage() converts the PySCF mean-field object into TROT's internal
 # representation: a StagedInputs containing ham (integrals in the MO basis)
 # and a trivial RHF trial.
 #

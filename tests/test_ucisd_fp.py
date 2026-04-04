@@ -1,4 +1,4 @@
-from ad_afqmc_prototype import config
+from trot import config
 
 config.configure_once()
 
@@ -6,8 +6,8 @@ import jax.numpy as jnp
 import pytest
 from pyscf import gto, scf, cc
 
-from ad_afqmc_prototype.afqmc import AfqmcFp
-from ad_afqmc_prototype.prop.types import QmcParamsFp
+from trot.afqmc import AfqmcFp
+from trot.prop.types import QmcParamsFp
 
 
 @pytest.mark.parametrize(

@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ad_afqmc_prototype"
+name = "trot"
 version = "0.1.0"
 description = "Differentiable Auxiliary-Field Quantum Monte Carlo"
 requires-python = ">=3.10"
@@ -20,7 +20,7 @@ dependencies = [
 gpu = ["jaxlib[cuda]"] 
 
 [tool.setuptools]
-packages = ["ad_afqmc_prototype"]
+packages = ["trot"]
 
 [tool.black]
 line-length = 100

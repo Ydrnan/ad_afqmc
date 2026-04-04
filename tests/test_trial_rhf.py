@@ -4,10 +4,10 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from ad_afqmc_prototype.core.ops import k_energy, k_force_bias
-from ad_afqmc_prototype.core.system import System
-from ad_afqmc_prototype.ham.chol import HamChol
-from ad_afqmc_prototype.meas.rhf import (
+from trot.core.ops import k_energy, k_force_bias
+from trot.core.system import System
+from trot.ham.chol import HamChol
+from trot.meas.rhf import (
     RhfMeasCfg,
     RhfMeasMemoryMode,
     build_meas_ctx,
@@ -17,7 +17,7 @@ from ad_afqmc_prototype.meas.rhf import (
     force_bias_kernel_uw_rh,
     make_rhf_meas_ops,
 )
-from ad_afqmc_prototype.trial.rhf import RhfTrial
+from trot.trial.rhf import RhfTrial
 
 
 def _rand_orthonormal(key: jax.Array, n: int, k: int) -> jax.Array:

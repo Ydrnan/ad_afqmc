@@ -43,7 +43,7 @@ The multi-GPU example here uses the `data` axis only.
 In code, this is just:
 
 ```python
-from ad_afqmc_prototype.sharding import make_data_mesh
+from trot.sharding import make_data_mesh
 mesh = make_data_mesh()
 ```
 

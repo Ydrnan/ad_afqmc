@@ -1,4 +1,4 @@
-from ad_afqmc_prototype import config
+from trot import config
 
 config.configure_once()
 
@@ -6,10 +6,10 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from ad_afqmc_prototype import testing
-from ad_afqmc_prototype.core.ops import k_energy, k_force_bias
-from ad_afqmc_prototype.meas.eom_cisd import make_eom_cisd_meas_ops
-from ad_afqmc_prototype.trial.eom_cisd import EomCisdTrial, make_eom_cisd_trial_ops
+from trot import testing
+from trot.core.ops import k_energy, k_force_bias
+from trot.meas.eom_cisd import make_eom_cisd_meas_ops
+from trot.trial.eom_cisd import EomCisdTrial, make_eom_cisd_trial_ops
 
 
 def _make_eom_cisd_trial(

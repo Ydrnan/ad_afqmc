@@ -1,6 +1,6 @@
 from pyscf import cc, gto, scf
 
-from ad_afqmc_prototype.afqmc import AfqmcFp
+from trot.afqmc import AfqmcFp
 
 mol = gto.M(
     atom="""

@@ -20,7 +20,7 @@ automatic differentiation, JIT compilation, vectorization, and GPU acceleration.
 ## Code layout
 
 ```
-ad_afqmc_prototype/
+trot/
 |-- __init__.py
 |-- afqmc.py                 High-level AFQMC driver class
 |-- config.py                JAX configuration (GPU, precision, logging)
@@ -275,7 +275,7 @@ Defined in `afqmc.py`. Accepts a PySCF mean field or coupled cluster object
 and handles staging, job assembly, and execution internally:
 
 ```python
-from ad_afqmc_prototype import AFQMC
+from trot import AFQMC
 
 afqmc = AFQMC(mf, norb_frozen=1, n_walkers=200, n_blocks=200)
 mean, err = afqmc.kernel()
@@ -291,7 +291,7 @@ an HDF5 cache path, with full control over walker kind, precision, QMC
 parameters, and custom operation overrides:
 
 ```python
-from ad_afqmc_prototype.setup import setup
+from trot.setup import setup
 
 job = setup(mf, walker_kind="restricted", mixed_precision=False)
 mean, err, block_e, block_w = job.kernel()
@@ -304,7 +304,7 @@ when you need to supply a custom `PropState`, swap out individual operation
 bundles, request specific observables, or resume a run:
 
 ```python
-from ad_afqmc_prototype.driver import run_qmc
+from trot.driver import run_qmc
 
 result = run_qmc(
     sys=sys,

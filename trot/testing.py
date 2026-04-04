@@ -1,13 +1,13 @@
 import jax
 import jax.numpy as jnp
 
-from ad_afqmc_prototype import driver
-from ad_afqmc_prototype.core.ops import TrialOps
-from ad_afqmc_prototype.core.system import System
-from ad_afqmc_prototype.ham.chol import HamBasis, HamChol
-from ad_afqmc_prototype.meas.auto import make_auto_meas_ops
-from ad_afqmc_prototype.prop.afqmc import make_prop_ops
-from ad_afqmc_prototype.staging import StagedMfOrCc, _stage_ham_input
+from trot import driver
+from trot.core.ops import TrialOps
+from trot.core.system import System
+from trot.ham.chol import HamBasis, HamChol
+from trot.meas.auto import make_auto_meas_ops
+from trot.prop.afqmc import make_prop_ops
+from trot.staging import StagedMfOrCc, _stage_ham_input
 
 
 def rand_orthonormal_cols(key, nrow, ncol, dtype=jnp.complex128):

@@ -1,4 +1,4 @@
-from ad_afqmc_prototype import config
+from trot import config
 
 config.configure_once()
 
@@ -7,12 +7,12 @@ import jax.numpy as jnp
 import pytest
 from pyscf import gto, scf
 
-from ad_afqmc_prototype import testing
-from ad_afqmc_prototype.core.ops import k_energy, k_force_bias
-from ad_afqmc_prototype.meas.ghf import make_ghf_meas_ops_chol
-from ad_afqmc_prototype.prop.blocks import block
-from ad_afqmc_prototype.prop.types import QmcParams
-from ad_afqmc_prototype.trial.ghf import GhfTrial, make_ghf_trial_ops
+from trot import testing
+from trot.core.ops import k_energy, k_force_bias
+from trot.meas.ghf import make_ghf_meas_ops_chol
+from trot.prop.blocks import block
+from trot.prop.types import QmcParams
+from trot.trial.ghf import GhfTrial, make_ghf_trial_ops
 
 
 def _make_ghf_trial(key, norb, nup, ndn, dtype=jnp.complex128) -> GhfTrial:

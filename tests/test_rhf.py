@@ -1,4 +1,4 @@
-from ad_afqmc_prototype import config
+from trot import config
 
 config.configure_once()
 
@@ -7,16 +7,16 @@ import jax.numpy as jnp
 import pytest
 from pyscf import gto, scf
 
-from ad_afqmc_prototype import driver
-from ad_afqmc_prototype.afqmc import Afqmc
-from ad_afqmc_prototype.prop.types import QmcParams
-from ad_afqmc_prototype import testing
+from trot import driver
+from trot.afqmc import Afqmc
+from trot.prop.types import QmcParams
+from trot import testing
 
-from ad_afqmc_prototype.core.ops import k_energy, k_force_bias
-from ad_afqmc_prototype.meas.rhf import (
+from trot.core.ops import k_energy, k_force_bias
+from trot.meas.rhf import (
     make_rhf_meas_ops,
 )
-from ad_afqmc_prototype.trial.rhf import RhfTrial, make_rhf_trial_ops
+from trot.trial.rhf import RhfTrial, make_rhf_trial_ops
 
 
 def _make_random_rhf_trial(key, norb, nocc):

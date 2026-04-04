@@ -1,5 +1,5 @@
-from ad_afqmc_prototype.afqmc import AFQMC
-from ad_afqmc_prototype.sharding import make_data_mesh
+from trot.afqmc import AFQMC
+from trot.sharding import make_data_mesh
 
 STAGED_PATH = "h2o_afqmc.h5"
 
@@ -13,7 +13,7 @@ af.seed = 42
 mesh = make_data_mesh()
 
 # Choleskies can be sharded by using
-# from ad_afqmc_prototype.sharding import make_data_model_mesh
+# from trot.sharding import make_data_model_mesh
 # for 4 devices, with 2 data shards and 2 model shards
 # mesh = make_data_model_mesh(n_data=2, n_model=2)
 

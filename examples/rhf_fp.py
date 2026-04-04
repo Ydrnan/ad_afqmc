@@ -1,10 +1,10 @@
 from pyscf import gto, scf
 
-from ad_afqmc_prototype import config
+from trot import config
 
 config.configure_once(use_gpu=False)
 
-from ad_afqmc_prototype.afqmc import AfqmcFp
+from trot.afqmc import AfqmcFp
 
 mol = gto.M(
     atom="""

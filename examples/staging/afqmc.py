@@ -1,4 +1,4 @@
-from ad_afqmc_prototype.afqmc import AFQMC
+from trot.afqmc import AFQMC
 
 STAGED_PATH = "h2o_afqmc.h5"
 

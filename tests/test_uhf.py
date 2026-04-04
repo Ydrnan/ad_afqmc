@@ -1,4 +1,4 @@
-from ad_afqmc_prototype import config
+from trot import config
 
 config.configure_once()
 
@@ -10,10 +10,10 @@ import pytest
 from jax import lax
 from pyscf import gto, scf
 
-from ad_afqmc_prototype import testing
-from ad_afqmc_prototype.afqmc import Afqmc
-from ad_afqmc_prototype.core.ops import k_energy, k_force_bias
-from ad_afqmc_prototype.meas.uhf import (
+from trot import testing
+from trot.afqmc import Afqmc
+from trot.core.ops import k_energy, k_force_bias
+from trot.meas.uhf import (
     build_meas_ctx,
     energy_kernel_gw_rh,
     energy_kernel_rw_rh,
@@ -23,8 +23,8 @@ from ad_afqmc_prototype.meas.uhf import (
     force_bias_kernel_uw_rh,
     make_uhf_meas_ops,
 )
-from ad_afqmc_prototype.prop.types import QmcParams
-from ad_afqmc_prototype.trial.uhf import UhfTrial, make_uhf_trial_ops
+from trot.prop.types import QmcParams
+from trot.trial.uhf import UhfTrial, make_uhf_trial_ops
 
 
 def _make_uhf_trial(key, norb, nup, ndn, dtype=jnp.complex128) -> UhfTrial:

@@ -15,28 +15,28 @@ from jax import tree_util
 from jax.sharding import NamedSharding
 from jax.sharding import PartitionSpec as P
 
-import ad_afqmc_prototype.walkers as wk
-from ad_afqmc_prototype import testing
-from ad_afqmc_prototype.core.system import System
-from ad_afqmc_prototype.ham.chol import HamChol
-from ad_afqmc_prototype.ham.hubbard import HamHubbard
-from ad_afqmc_prototype.meas.auto import make_auto_meas_ops
-from ad_afqmc_prototype.meas.rhf import RhfMeasCfg, RhfMeasCtx, RhfMeasMemoryMode, make_rhf_meas_ops
-from ad_afqmc_prototype.meas.rhf import build_meas_ctx as build_rhf_meas_ctx
-from ad_afqmc_prototype.prop.afqmc import init_prop_state, make_prop_ops
-from ad_afqmc_prototype.prop.blocks import block
-from ad_afqmc_prototype.prop.chol_afqmc_ops import CholAfqmcCtx, _build_prop_ctx
-from ad_afqmc_prototype.prop.types import QmcParams
-from ad_afqmc_prototype.setup import setup
-from ad_afqmc_prototype.sharding import (
+import trot.walkers as wk
+from trot import testing
+from trot.core.system import System
+from trot.ham.chol import HamChol
+from trot.ham.hubbard import HamHubbard
+from trot.meas.auto import make_auto_meas_ops
+from trot.meas.rhf import RhfMeasCfg, RhfMeasCtx, RhfMeasMemoryMode, make_rhf_meas_ops
+from trot.meas.rhf import build_meas_ctx as build_rhf_meas_ctx
+from trot.prop.afqmc import init_prop_state, make_prop_ops
+from trot.prop.blocks import block
+from trot.prop.chol_afqmc_ops import CholAfqmcCtx, _build_prop_ctx
+from trot.prop.types import QmcParams
+from trot.setup import setup
+from trot.sharding import (
     make_data_mesh,
     make_data_model_mesh,
     shard_ham_data,
     shard_model_axis,
     shard_prop_state,
 )
-from ad_afqmc_prototype.staging import HamInput, StagedInputs, TrialInput, dump
-from ad_afqmc_prototype.trial.rhf import RhfTrial, get_rdm1
+from trot.staging import HamInput, StagedInputs, TrialInput, dump
+from trot.trial.rhf import RhfTrial, get_rdm1
 
 
 def _assert_named_sharding_spec(a: object, spec: P) -> None:

@@ -35,7 +35,7 @@ jobs:
     - name: Lint with ruff
       run: ruff check .
     # - name: Type check with pyright
-    #   run: pyright ad_afqmc_prototype/ tests/
+    #   run: pyright trot/ tests/
     - name: Test with pytest
       run: |
         pytest

@@ -1,4 +1,4 @@
-from ad_afqmc_prototype import config
+from trot import config
 
 config.configure_once()
 
@@ -8,12 +8,12 @@ import jax.numpy as jnp
 import pytest
 from pyscf import cc, gto, scf
 
-from ad_afqmc_prototype import testing
-from ad_afqmc_prototype.core.ops import k_energy, k_force_bias
-from ad_afqmc_prototype.meas.gcisd import make_gcisd_meas_ops
-from ad_afqmc_prototype.prop.blocks import block
-from ad_afqmc_prototype.prop.types import QmcParams
-from ad_afqmc_prototype.trial.gcisd import GcisdTrial, make_gcisd_trial_ops
+from trot import testing
+from trot.core.ops import k_energy, k_force_bias
+from trot.meas.gcisd import make_gcisd_meas_ops
+from trot.prop.blocks import block
+from trot.prop.types import QmcParams
+from trot.trial.gcisd import GcisdTrial, make_gcisd_trial_ops
 
 
 def _make_gcisd_trial(
