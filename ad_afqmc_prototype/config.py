@@ -171,7 +171,7 @@ def setup_jax(
             os.environ.setdefault("NVIDIA_TF32_OVERRIDE", "0")
         if use_gpu:
             os.environ.setdefault("JAX_PLATFORM_NAME", "gpu")
-            os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", "0.95")
+            os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", "0.9")
         else:
             os.environ.setdefault("JAX_PLATFORM_NAME", "cpu")
 

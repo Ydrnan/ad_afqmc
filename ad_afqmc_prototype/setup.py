@@ -13,6 +13,7 @@ from jax.sharding import Mesh
 print = partial(print, flush=True)
 
 from . import driver
+from .driver import QmcResult
 from .core.ops import MeasOps, TrialOps
 from .core.system import System, WalkerKind
 from .ham.chol import HamChol
@@ -20,7 +21,7 @@ from .prop.afqmc import make_prop_ops
 from .prop.blocks import block as default_block
 from .prop.types import PropOps, PropState, QmcParams, QmcParamsBase
 from .runtime_layout import RuntimeLayout, make_runtime_layout
-from .staging import StagedInputs, load, stage
+from .staging import StagedInputs, _resolve_stage_frozen_arg, load, stage
 
 
 def _setup_begin(message: str) -> float:
@@ -114,7 +115,7 @@ def _make_prop(
 def _resolve_staged(
     obj_or_staged: Union[Any, StagedInputs, str, Path],
     *,
-    norb_frozen: int | None,
+    norb_frozen_core: int | None,
     chol_cut: float,
     cache: Union[str, Path] | None,
     overwrite: bool,
@@ -136,7 +137,7 @@ def _resolve_staged(
 
     staged = stage(
         obj_or_staged,
-        norb_frozen=norb_frozen if norb_frozen is not None else 0,
+        norb_frozen_core=norb_frozen_core,
         chol_cut=chol_cut,
         cache=cache,
         overwrite=overwrite,
@@ -248,7 +249,7 @@ class Job:
     _runtime_state: PropState | None = field(default=None, init=False, repr=False)
 
     params_cls: ClassVar[type[QmcParamsBase]] = QmcParams
-    driver_fn: ClassVar[Callable[..., Any]] = staticmethod(driver.run_qmc_energy)
+    driver_fn: ClassVar[Callable[..., Any]] = staticmethod(driver.run_qmc)
 
     def _prepare_runtime(
         self,
@@ -280,7 +281,7 @@ class Job:
         self._runtime_state = prepared.state
         return prepared.state, prepared.meas_ctx, prepared.prop_ctx
 
-    def kernel(self, **driver_kwargs: Any):
+    def kernel(self, **driver_kwargs: Any) -> QmcResult:
         """
         Run AFQMC energy driver.
         Extra kwargs are forwarded to driver.run_qmc_energy (e.g. state=..., meas_ctx=...).
@@ -295,7 +296,7 @@ class Job:
         driver_kwargs["meas_ctx"] = meas_ctx
         driver_kwargs["prop_ctx"] = prop_ctx
         driver_kwargs.setdefault("mesh", self.mesh)
-        return self.driver_fn(
+        out = self.driver_fn(
             sys=self.sys,
             params=self.params,
             ham_data=self.ham_data,
@@ -306,11 +307,13 @@ class Job:
             block_fn=self.block_fn,
             **driver_kwargs,
         )
+        return out
 
 
 def _assemble_job(
     obj_or_staged: Union[Any, StagedInputs, str, Path],
     *,
+    norb_frozen_core: int | None = None,
     norb_frozen: int | None = None,
     chol_cut: float = 1e-5,
     cache: Union[str, Path] | None = None,
@@ -338,9 +341,14 @@ def _assemble_job(
     meas_ops_override = meas_ops
     prop_ops_override = prop_ops
 
+    resolved_norb_frozen_core = cast(
+        int | None,
+        _resolve_stage_frozen_arg(norb_frozen_core, norb_frozen, None),
+    )
+
     staged = _resolve_staged(
         obj_or_staged,
-        norb_frozen=norb_frozen,
+        norb_frozen_core=resolved_norb_frozen_core,
         chol_cut=chol_cut,
         cache=cache,
         overwrite=overwrite,
@@ -403,6 +411,7 @@ def setup(
     obj_or_staged: Union[Any, StagedInputs, str, Path],
     *,
     # staging options (used only if we need to stage)
+    norb_frozen_core: int | None = None,
     norb_frozen: int | None = None,
     chol_cut: float = 1e-5,
     cache: Union[str, Path] | None = None,
@@ -441,6 +450,7 @@ def setup(
     """
     return _assemble_job(
         obj_or_staged,
+        norb_frozen_core=norb_frozen_core,
         norb_frozen=norb_frozen,
         chol_cut=chol_cut,
         cache=cache,

@@ -7,7 +7,8 @@ import jax
 import jax.numpy as jnp
 from jax import lax, tree_util
 
-from ..core.ops import MeasOps, k_energy, k_force_bias, o_density_corr, o_rdm1
+from ..prop.types import QmcParamsLno
+from ..core.ops import MeasOps, k_energy, k_force_bias, o_density_corr, o_rdm1, o_orb_corr
 from ..core.system import System
 from ..ham.chol import HamChol
 from ..meas.uhf import _density_corr_from_greens
@@ -364,3 +365,100 @@ def make_rhf_meas_ops(sys: System, memory_mode: str = "high") -> MeasOps:
     )
     object.__setattr__(meas_ops, _RHF_MEAS_CFG_ATTR, cfg)
     return meas_ops
+
+
+def lnoenergy_kernel_rw_rh(
+    walker: jax.Array, ham_data: HamChol, meas_ctx: LnoRhfMeasCtx, trial_data: RhfTrial
+) -> jax.Array:
+    m = trial_data.mo_coeff.conj().T @ walker
+    g_half = _half_green_from_overlap_matrix(walker, m)  # (nocc, norb)
+    prjlo_mat = jnp.dot(meas_ctx.prjlo.T, meas_ctx.prjlo)
+    nocc = trial_data.nocc
+    f = jnp.einsum(
+        "gij,jk->gik",
+        meas_ctx.rot_chol[:, :nocc, nocc:],
+        g_half.T[nocc:, :nocc],
+        optimize="optimal",
+    )
+    c = jax.vmap(jnp.trace)(f)
+    eneo2Jt = jnp.einsum("Gxk,xk,G->", f, prjlo_mat, c) * 2
+    eneo2ext = jnp.einsum("Gxy,Gyk,xk->", f, f, prjlo_mat)
+
+    return eneo2Jt - eneo2ext
+
+
+@tree_util.register_pytree_node_class
+@dataclass(frozen=True)
+class LnoRhfMeasCtx:
+    rot_h1: jax.Array
+    rot_chol: jax.Array
+    rot_chol_flat: jax.Array
+    prjlo: jax.Array
+    cfg: RhfMeasCfg = RhfMeasCfg()
+
+    def tree_flatten(self):
+        children = (self.rot_h1, self.rot_chol, self.rot_chol_flat, self.prjlo)
+        aux = (self.cfg,)
+        return children, aux
+
+    @classmethod
+    def tree_unflatten(cls, aux, children):
+        (cfg,) = aux
+        rot_h1, rot_chol, rot_chol_flat, prjlo = children
+        return cls(
+            rot_h1=rot_h1,
+            rot_chol=rot_chol,
+            rot_chol_flat=rot_chol_flat,
+            prjlo=prjlo,
+            cfg=cfg,
+        )
+
+
+def build_lno_meas_ctx(
+    ham_data: HamChol,
+    trial_data: RhfTrial,
+    prjlo: jax.Array,
+) -> LnoRhfMeasCtx:
+    if ham_data.basis != "restricted":
+        raise ValueError("RHF MeasOps currently assumes HamChol.basis == 'restricted'.")
+    cH = trial_data.mo_coeff.conj().T  # (nocc, norb)
+    rot_h1 = cH @ ham_data.h1  # (nocc, norb)
+    rot_chol = jnp.einsum("pi,gij->gpj", cH, ham_data.chol, optimize="optimal")
+    rot_chol_flat = rot_chol.reshape(rot_chol.shape[0], -1)
+    return LnoRhfMeasCtx(rot_h1=rot_h1, rot_chol=rot_chol, rot_chol_flat=rot_chol_flat, prjlo=prjlo)
+
+
+def make_build_lno_meas_ctx(prjlo):
+    def build_meas_ctx(ham_data: HamChol, trial_data: RhfTrial) -> LnoRhfMeasCtx:
+        return build_lno_meas_ctx(
+            ham_data=ham_data,
+            trial_data=trial_data,
+            prjlo=prjlo,
+        )
+
+    return build_meas_ctx
+
+
+def make_lno_rhf_meas_ops(sys: System, params: QmcParamsLno) -> MeasOps:
+    wk = sys.walker_kind.lower()
+    if wk == "restricted":
+        overlap_fn = overlap_r
+        build_meas_ctx_fn = make_build_lno_meas_ctx(params.prjlo)
+        kernels = {
+            k_force_bias: force_bias_kernel_rw_rh,
+            k_energy: energy_kernel_rw_rh,
+        }
+        observables = {
+            o_orb_corr: lnoenergy_kernel_rw_rh,
+        }
+    elif wk == "unrestricted" or wk == "generalized":
+        raise NotImplementedError
+    else:
+        raise ValueError(f"unknown walker_kind: {sys.walker_kind}")
+
+    return MeasOps(
+        overlap=overlap_fn,
+        build_meas_ctx=build_meas_ctx_fn,
+        kernels=kernels,
+        observables=observables,
+    )

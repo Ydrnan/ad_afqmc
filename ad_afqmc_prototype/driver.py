@@ -817,6 +817,7 @@ def run_qmc_fp(
     meas_ctx: Any | None = None,
     prop_ctx: Any | None = None,
     target_error: float | None = None,
+    mesh: Mesh | None = None,
 ) -> QmcResult:
     """
     Returns:

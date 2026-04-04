@@ -86,13 +86,14 @@ class JobFp(Job):
     """
 
     params_cls: ClassVar[type[QmcParamsBase]] = QmcParamsFp
-    driver_fn: ClassVar[Callable[..., Any]] = staticmethod(driver.run_qmc_energy_fp)
+    driver_fn: ClassVar[Callable[..., Any]] = staticmethod(driver.run_qmc_fp)
 
 
 def setup_fp(
     obj_or_staged: Union[Any, StagedInputs, str, Path],
     *,
     # staging options (used only if we need to stage)
+    norb_frozen_core: int | None = None,
     norb_frozen: int | None = None,
     chol_cut: float = 1e-5,
     cache: Union[str, Path] | None = None,
@@ -133,6 +134,7 @@ def setup_fp(
         JobFp,
         _assemble_job(
             obj_or_staged,
+            norb_frozen_core=norb_frozen_core,
             norb_frozen=norb_frozen,
             chol_cut=chol_cut,
             cache=cache,
