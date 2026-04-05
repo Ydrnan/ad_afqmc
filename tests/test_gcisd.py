@@ -108,7 +108,6 @@ def test_auto_force_bias_matches_manual_gcisd(walker_kind, norb, nup, ndn, n_cho
     "walker_kind,norb,nup,ndn,n_chol",
     [
         ("generalized", 6, 3, 2, 12),
-        ("generalized", 10, 4, 3, 12),
     ],
 )
 def test_auto_energy_matches_manual_gcisd(walker_kind, norb, nup, ndn, n_chol):

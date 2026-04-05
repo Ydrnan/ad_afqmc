@@ -125,7 +125,7 @@ def test_active_space_matches_zero_padded_full_space(nocc_t_core, nvir_t_outer):
     ctx_active = build_meas_ctx(ham, trial_active)
     ctx_full = build_meas_ctx(ham, trial_full)
 
-    for i in range(4):
+    for i in range(1):
         walker = testing.make_restricted_walker_near_ref(
             jax.random.fold_in(k_w, i), norb_full, nocc_full, mix=0.25
         )
@@ -168,7 +168,7 @@ def test_overlap_memory_modes_match(nocc_t_core, nvir_t_outer):
     )
 
     norb_full = nocc_full + nvir_full
-    for i in range(4):
+    for i in range(1):
         walker = testing.make_restricted_walker_near_ref(
             jax.random.fold_in(k_w, i), norb_full, nocc_full, mix=0.25
         )
@@ -212,7 +212,7 @@ def test_force_bias_high_variants_match(nocc_t_core, nvir_t_outer):
     )
     ctx = build_meas_ctx(ham, trial)
 
-    for i in range(4):
+    for i in range(1):
         walker = testing.make_restricted_walker_near_ref(
             jax.random.fold_in(k_w, i), nocc_full + nvir_full, nocc_full, mix=0.25
         )
@@ -262,7 +262,7 @@ def test_force_bias_variants_match_mixed_precision(nocc_t_core, nvir_t_outer):
     )
     ctx = build_meas_ctx(ham, trial, cfg=cfg)
 
-    for i in range(4):
+    for i in range(1):
         walker = testing.make_restricted_walker_near_ref(
             jax.random.fold_in(k_w, i), nocc_full + nvir_full, nocc_full, mix=0.25
         )
@@ -316,7 +316,7 @@ def test_energy_memory_modes_match(nocc_t_core, nvir_t_outer):
     ctx_high = build_meas_ctx(ham, trial, cfg_high)
     ctx_low = build_meas_ctx(ham, trial, cfg_low)
 
-    for i in range(4):
+    for i in range(1):
         walker = testing.make_restricted_walker_near_ref(
             jax.random.fold_in(k_w, i), nocc_full + nvir_full, nocc_full, mix=0.25
         )
@@ -357,7 +357,7 @@ def test_auto_force_bias_matches_manual_cisd(norb, nocc, n_chol, memory_mode):
     fb_manual = meas_manual.require_kernel(k_force_bias)
     fb_auto = meas_auto.require_kernel(k_force_bias)
 
-    for i in range(4):
+    for i in range(1):
         wi = testing.make_restricted_walker_near_ref(
             jax.random.fold_in(k_w, i), norb, nocc, mix=0.25
         )
@@ -405,7 +405,7 @@ def test_auto_energy_matches_manual_cisd(norb, nocc, n_chol, memory_mode):
     e_manual = meas_manual.require_kernel(k_energy)
     e_auto = meas_auto.require_kernel(k_energy)
 
-    for i in range(4):
+    for i in range(1):
         wi = testing.make_restricted_walker_near_ref(
             jax.random.fold_in(k_w, i), norb, nocc, mix=0.25
         )

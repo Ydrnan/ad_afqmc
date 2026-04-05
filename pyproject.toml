@@ -47,3 +47,7 @@ reportPossiblyUnboundVariable = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+markers = [
+    "slow: long-running tests excluded from the default test run",
+    "integration: end-to-end tests that exercise real staged or AFQMC execution paths",
+]
