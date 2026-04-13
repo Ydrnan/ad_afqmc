@@ -1,3 +1,7 @@
+from trot import config
+
+config.configure_once()
+
 import pytest
 import jax
 import jax.numpy as jnp
