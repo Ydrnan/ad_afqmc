@@ -31,6 +31,7 @@ af.n_walkers = 20
 af.ene0 = mycc.e_tot
 af.seed = 5
 af.n_blocks = 5
+af.walker_kind = "unrestricted"
 af.build_job()
 
 job = af._job
