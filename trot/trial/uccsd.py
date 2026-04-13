@@ -1,11 +1,10 @@
 import jax
 import jax.numpy as jnp
-import numpy as np
 from numpy.typing import NDArray, ArrayLike
 from typing import Any
 
 
-def build_hs_op(t2: ArrayLike) -> tuple[NDArray, NDArray]:
+def build_hs_op(t2: ArrayLike) -> tuple[jax.Array, jax.Array]:
     """
     Builds the Cholesky decomposition of UCCSD T2 amplitudes,
     T2 = LL^T.
@@ -18,9 +17,9 @@ def build_hs_op(t2: ArrayLike) -> tuple[NDArray, NDArray]:
     """
     t2aa, t2ab, t2bb = t2
 
-    t2aa = np.asarray(t2aa)
-    t2ab = np.asarray(t2ab)
-    t2bb = np.asarray(t2bb)
+    t2aa = jnp.asarray(t2aa)
+    t2ab = jnp.asarray(t2ab)
+    t2bb = jnp.asarray(t2bb)
 
     nOa, nOb, nVa, nVb = t2ab.shape
     n = nOa + nVa
@@ -35,9 +34,9 @@ def build_hs_op(t2: ArrayLike) -> tuple[NDArray, NDArray]:
     assert t2bb.shape == (nOb, nOb, nVb, nVb)
 
     # t2(i,j,a,b) -> t2(ai,bj)
-    t2aa = np.einsum("ijab->aibj", t2aa)
-    t2ab = np.einsum("ijab->aibj", t2ab)
-    t2bb = np.einsum("ijab->aibj", t2bb)
+    t2aa = jnp.einsum("ijab->aibj", t2aa)
+    t2ab = jnp.einsum("ijab->aibj", t2ab)
+    t2bb = jnp.einsum("ijab->aibj", t2bb)
 
     t2aa = t2aa.reshape(nex_a, nex_a)
     t2ab = t2ab.reshape(nex_a, nex_b)
@@ -46,21 +45,21 @@ def build_hs_op(t2: ArrayLike) -> tuple[NDArray, NDArray]:
     # Symmetric t2 =
     # t2aa/2 t2ab
     # t2ab^T t2bb
-    t2 = np.zeros((nex_a + nex_b, nex_a + nex_b))
-    t2[:nex_a, :nex_a] = 0.5 * t2aa
-    t2[nex_a:, :nex_a] = t2ab.T
-    t2[:nex_a, nex_a:] = t2ab
-    t2[nex_a:, nex_a:] = 0.5 * t2bb
+    t2 = jnp.zeros((nex_a + nex_b, nex_a + nex_b))
+    t2 = jax.lax.dynamic_update_slice(t2, 0.5 * t2aa, (0, 0))
+    t2 = jax.lax.dynamic_update_slice(t2, t2ab.T, (nex_a, 0))
+    t2 = jax.lax.dynamic_update_slice(t2, t2ab, (0, nex_a))
+    t2 = jax.lax.dynamic_update_slice(t2, 0.5 * t2bb, (nex_a, nex_a))
 
     # t2 = LL^T
-    e_val, e_vec = np.linalg.eigh(t2)
-    L = e_vec @ np.diag(np.sqrt(e_val + 0.0j))
-    assert abs(np.linalg.norm(t2 - L @ L.T)) < 1e-12
+    e_val, e_vec = jnp.linalg.eigh(t2)
+    L = e_vec @ jnp.diag(jnp.sqrt(e_val + 0.0j))
+    assert abs(jnp.linalg.norm(t2 - L @ L.T)) < 1e-12
 
     # alpha/beta operators for HS
     # Summation on the left to have a list of operators
-    La = np.array(L[:nex_a, :])
-    Lb = np.array(L[nex_a:, :])
+    La = jnp.array(L[:nex_a, :])
+    Lb = jnp.array(L[nex_a:, :])
     La = La.T.reshape(nex_a + nex_b, nVa, nOa)
     Lb = Lb.T.reshape(nex_a + nex_b, nVb, nOb)
 
@@ -70,7 +69,7 @@ def build_hs_op(t2: ArrayLike) -> tuple[NDArray, NDArray]:
 def init_walkers(
     trial_coeff: tuple[NDArray, NDArray],
     t1: ArrayLike,
-    hs_op: tuple[NDArray, NDArray],
+    hs_op: tuple[jax.Array, jax.Array],
     subkey: jax.Array,
     n_w: int,
 ) -> tuple[jax.Array, jax.Array]:
@@ -89,8 +88,8 @@ def init_walkers(
     """
     t1a, t1b = t1
 
-    t1a = np.asarray(t1a)
-    t1b = np.asarray(t1b)
+    t1a = jnp.asarray(t1a)
+    t1b = jnp.asarray(t1b)
 
     nOa, nVa = t1a.shape
     nOb, nVb = t1b.shape
@@ -106,43 +105,42 @@ def init_walkers(
     assert Lb.shape == (nex_a + nex_b, nVb, nOb)
 
     Ca, Cb = trial_coeff
+    Ca = jnp.asarray(Ca)
+    Cb = jnp.asarray(Cb)
     assert Ca.shape == (n, n)
     assert Cb.shape == (n, n)
 
-    Ca_occ, Ca_vir = np.split(Ca, [nOa], axis=1)
-    Cb_occ, Cb_vir = np.split(Cb, [nOb], axis=1)
+    Ca_occ, Ca_vir = jnp.split(Ca, [nOa], axis=1)
+    Cb_occ, Cb_vir = jnp.split(Cb, [nOb], axis=1)
 
     # e^T1
     e_t1a = t1a.T + 0.0j
     e_t1b = t1b.T + 0.0j
 
-    ops_a = np.array([e_t1a] * n_w)
-    ops_b = np.array([e_t1b] * n_w)
+    ops_a = jnp.array([e_t1a] * n_w)
+    ops_b = jnp.array([e_t1b] * n_w)
 
     fields = jax.random.normal(subkey, shape=(n_w, nex))
 
     # e^{T1+T2}
-    ops_a = ops_a + np.einsum("wg,gai->wai", fields, La)
-    ops_b = ops_b + np.einsum("wg,gai->wai", fields, Lb)
+    ops_a = ops_a + jnp.einsum("wg,gai->wai", fields, La)
+    ops_b = ops_b + jnp.einsum("wg,gai->wai", fields, Lb)
 
     # Initial walkers
     dm_a = Ca[:, :nOa] @ Ca[:, :nOa].conj().T
     dm_b = Cb[:, :nOb] @ Cb[:, :nOb].conj().T
-    nos_a = np.linalg.eigh(dm_a)[1][:, ::-1][:, :nOa]
-    nos_b = np.linalg.eigh(dm_b)[1][:, ::-1][:, :nOb]
+    nos_a = jnp.linalg.eigh(dm_a)[1][:, ::-1][:, :nOa]
+    nos_b = jnp.linalg.eigh(dm_b)[1][:, ::-1][:, :nOb]
 
     w_a = jnp.array([nos_a + 0.0j] * n_w)
     w_b = jnp.array([nos_b + 0.0j] * n_w)
 
-    id_a = jnp.array([np.identity(n) + 0.0j] * n_w)
-    id_b = jnp.array([np.identity(n) + 0.0j] * n_w)
+    id_a = jnp.array([jnp.identity(n) + 0.0j] * n_w)
+    id_b = jnp.array([jnp.identity(n) + 0.0j] * n_w)
 
     # e^{T1+T2} \ket{\phi}
     w_a = (id_a + jnp.einsum("pa,wai,iq -> wpq", Ca_vir, ops_a, Ca_occ.T)) @ w_a
     w_b = (id_b + jnp.einsum("pa,wai,iq -> wpq", Cb_vir, ops_b, Cb_occ.T)) @ w_b
-
-    w_a = jnp.array(w_a)
-    w_b = jnp.array(w_b)
 
     return (w_a, w_b)
 
@@ -156,9 +154,7 @@ def make_init_prop_state(trial_coeff: tuple[NDArray, NDArray], t1: ArrayLike, t2
     from trot.sharding import shard_prop_state
     from trot.prop.types import PropState, QmcParamsBase
 
-    import trot.trial.uccsd
-
-    hs_op = trot.trial.uccsd.build_hs_op(t2)
+    hs_op = build_hs_op(t2)
 
     def init_prop_state(
         *,
@@ -181,7 +177,7 @@ def make_init_prop_state(trial_coeff: tuple[NDArray, NDArray], t1: ArrayLike, t2
         key = jax.random.PRNGKey(int(seed))
         weights = jnp.ones((n_walkers,))
 
-        initial_walkers = trot.trial.uccsd.init_walkers(trial_coeff, t1, hs_op, key, n_walkers)
+        initial_walkers = init_walkers(trial_coeff, t1, hs_op, key, n_walkers)
 
         overlaps = wk.vmap_chunked(meas_ops.overlap, n_chunks=params.n_chunks, in_axes=(0, None))(
             initial_walkers, trial_data
