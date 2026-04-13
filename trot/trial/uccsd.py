@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-from numpy.typing import NDArray, ArrayLike
+from numpy.typing import ArrayLike
 from typing import Any
 
 
@@ -67,7 +67,7 @@ def build_hs_op(t2: ArrayLike) -> tuple[jax.Array, jax.Array]:
 
 
 def init_walkers(
-    trial_coeff: tuple[NDArray, NDArray],
+    trial_coeff: tuple[ArrayLike, ArrayLike],
     t1: ArrayLike,
     hs_op: tuple[jax.Array, jax.Array],
     subkey: jax.Array,
@@ -145,7 +145,7 @@ def init_walkers(
     return (w_a, w_b)
 
 
-def make_init_prop_state(trial_coeff: tuple[NDArray, NDArray], t1: ArrayLike, t2: ArrayLike):
+def make_init_prop_state(trial_coeff: tuple[ArrayLike, ArrayLike], t1: ArrayLike, t2: ArrayLike):
     from jax.sharding import Mesh
     from trot import walkers as wk
     from trot.core.ops import MeasOps, TrialOps, k_energy
