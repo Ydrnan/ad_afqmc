@@ -874,6 +874,12 @@ def run_qmc_fp(
                 params=params,
             )
 
+        block_e_all = block_e_all.at[i, 0].set(jnp.array(state.e_estimate))
+        block_w_all = block_w_all.at[i, 0].set(jnp.sum(state.weights))
+        total_sign = total_sign.at[i, 0].set(
+            jnp.sum(state.overlaps) / (jnp.sum(jnp.abs(state.overlaps)))
+        )
+
         n = params.n_blocks
         state, scalars_chunk, _obs = run_blocks(
             state,
@@ -887,12 +893,6 @@ def run_qmc_fp(
         block_w_s = scalars_chunk["weight"]
         block_ov_s = scalars_chunk["overlap"]
         block_abs_ov_s = scalars_chunk["abs_overlap"]
-
-        block_e_all = block_e_all.at[i, 0].set(jnp.array(state.e_estimate))
-        block_w_all = block_w_all.at[i, 0].set(jnp.sum(state.weights))
-        total_sign = total_sign.at[i, 0].set(
-            jnp.sum(state.overlaps) / (jnp.sum(jnp.abs(state.overlaps)))
-        )
 
         block_e_all = block_e_all.at[i, 1:].set(block_e_s)
         block_w_all = block_w_all.at[i, 1:].set(block_w_s)
