@@ -39,8 +39,8 @@ job.prop_ops = dataclasses.replace(
     job.prop_ops,
     init_prop_state=trot.trial.ccsd.make_init_prop_state(
         trial_coeff,
-        mycc.t1,
-        mycc.t2,
+        mycc.t1,  # type: ignore
+        mycc.t2,  # type: ignore
     ),
 )
 

@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp
-from np.typing import ArrayLike
+from numpy.typing import ArrayLike
 from typing import Any
 
 
