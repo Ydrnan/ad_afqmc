@@ -172,6 +172,7 @@ def make_init_prop_state(trial_coeff: tuple[NDArray, NDArray], t1: ArrayLike, t2
         """
         Initialize AFQMC propagation state.
         """
+        assert sys.walker_kind == "unrestricted"
         n_walkers = params.n_walkers
         seed = params.seed
         key = jax.random.PRNGKey(int(seed))
