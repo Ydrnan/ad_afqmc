@@ -38,19 +38,19 @@ def test_uccsd_walkers():
     mycc.kernel()
 
     job = trot.setup.setup(mf)
+    job._prepare_runtime()
+
     trial_coeff = (
         job.staged.trial.data["mo_a"],
         job.staged.trial.data["mo_b"],
     )
     ham_data = job.ham_data
     trial_data = job.trial_data
-    _, meas_ctx, _ = job._prepare_runtime()
-
+    meas_ctx = job._runtime_meas_ctx
     key = jax.random.key(42)
-    key, subkey = jax.random.split(key)
     n_walkers = 20000
     hs_op = trot.trial.uccsd.build_hs_op(mycc.t2)
-    w = trot.trial.uccsd.init_walkers(trial_coeff, mycc.t1, hs_op, subkey, n_walkers)
+    w = trot.trial.uccsd.init_walkers(trial_coeff, mycc.t1, hs_op, key, n_walkers)
 
     o = jax.vmap(overlap_u, in_axes=(0, None))(w, trial_data)  # type: ignore
     e = jax.vmap(energy_kernel_uw_rh, in_axes=(0, None, None, None))(
