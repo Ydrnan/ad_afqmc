@@ -36,8 +36,8 @@ jobs:
       run: black --check .
     - name: Lint with ruff
       run: ruff check .
-    # - name: Type check with pyright
-    #   run: pyright trot/ tests/
+    - name: Type check with pyright
+      run: pyright trot/ tests/
     - name: Test with pytest
       run: |
         pytest -q
