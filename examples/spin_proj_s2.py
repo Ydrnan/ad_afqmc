@@ -29,8 +29,8 @@ af = AfqmcFp(mycc)
 af.n_walkers = 2000
 af.ene0 = mycc.e_tot
 af.seed = 5
-af.n_prop_steps = 100 #20
-af.n_blocks = 1 #5
+af.n_prop_steps = 20
+af.n_blocks = 5
 af.walker_kind = "unrestricted"
 af.build_job()
 
