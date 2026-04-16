@@ -1,6 +1,6 @@
 import pytest
 import os
-import dill as pickle
+import pickle
 import dataclasses
 from pyscf import cc, gto  # , scf
 
