@@ -2,7 +2,7 @@ import pytest
 import os
 import pickle
 import dataclasses
-from pyscf import cc, gto  # , scf
+from pyscf import cc  # , gto , scf
 
 from trot.afqmc import AfqmcFp
 import trot.spin_proj
@@ -11,25 +11,25 @@ import trot.testing
 import jax
 import jax.numpy as jnp
 
-mol = gto.M(
-    atom="""
-    N 0.0 0.0 0.0
-    N 0.0 0.0 2.0
-    """,
-    basis="6-31g",
-    verbose=3,
-)
-
+# mol = gto.M(
+#    atom="""
+#    N 0.0 0.0 0.0
+#    N 0.0 0.0 2.0
+#    """,
+#    basis="6-31g",
+#    verbose=3,
+# )
+#
 # mf = scf.UHF(mol)
 # mf.kernel()
-
+#
 # mo1 = mf.stability()[0]
 # dm1 = mf.make_rdm1(mo1, mf.mo_occ)
 # mf = mf.run(dm1)
 # mf.stability()
-
+#
 # with open("mf_s2.pkl", "wb") as f:
-#    pickle.dump(mf, f)
+#   pickle.dump(mf, f)
 
 path = os.path.dirname(os.path.abspath(__file__))
 with open(path + "/mf_s2.pkl", "rb") as f:
