@@ -339,7 +339,7 @@ def block_fp(
 
     thresh = jnp.sqrt(2.0 / jnp.asarray(params.dt))
 
-    e_samples = jnp.where(jnp.abs(e_samples - params.ene0) > thresh, params.ene0, e_samples)
+    e_samples = jnp.where(jnp.abs(e_samples - params.ene0) > thresh, params.ene0, e_samples)  # type: ignore
     e_samples = jnp.array(e_samples)
 
     weights = state.weights
