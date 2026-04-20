@@ -555,10 +555,10 @@ class StagedMf:
         if not hasattr(mf, "mo_coeff"):
             raise ValueError("MO coefficients not found; did you run mf.kernel()?")
 
-        if isinstance(mf, RHF):
-            kind = "rhf"
-        elif isinstance(mf, ROHF):
+        if isinstance(mf, ROHF):
             kind = "rohf"
+        elif isinstance(mf, RHF):
+            kind = "rhf"
         elif isinstance(mf, UHF):
             kind = "uhf"
         elif isinstance(mf, GHF):
