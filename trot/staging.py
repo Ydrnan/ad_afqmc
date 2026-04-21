@@ -532,7 +532,7 @@ class StagedCc:
 class StagedMf:
     """Wrapper ensuring the validity of the SCF object"""
 
-    _delegate = {"mo_coeff", "mol", "nelec", "get_ovlp", "energy_nuc", "get_hcore"}
+    _delegate = {"mo_coeff", "mo_occ", "mol", "nelec", "get_ovlp", "energy_nuc", "get_hcore"}
     kind: str  # "rhf", "rohf", "uhf", ghf
     mf: Any  # Python SCF object
     trial_frozen: int | NDArray
@@ -546,11 +546,6 @@ class StagedMf:
 
         if not isinstance(mf, (RHF, ROHF, UHF, GHF)):
             raise TypeError(f"Unsupported object type: {type(mf)}")
-
-        # if not hasattr(mf, "mol"):
-        #   raise TypeError("SCF-like object missing mol reference to underlying mol object.")
-        # else:
-        #   mol = mf.mol
 
         if not hasattr(mf, "mo_coeff"):
             raise ValueError("MO coefficients not found; did you run mf.kernel()?")
@@ -930,6 +925,20 @@ def _stage_trial_input(obj: StagedMfOrCc) -> TrialInput:
     return stage_tr_fun(obj)
 
 
+def _active_orbital_indices(norb: int, frozen: int | NDArray) -> NDArray:
+    if isinstance(frozen, int):
+        return np.arange(frozen, norb, dtype=np.int64)
+    if isinstance(frozen, np.ndarray):
+        return np.delete(np.arange(norb, dtype=np.int64), frozen)
+    raise TypeError(
+        f"frozen must be an integer or a np.ndarray, but received '{type(frozen)}'."
+    )
+
+
+def _apply_frozen_mask(vec: NDArray, frozen: int | NDArray) -> NDArray:
+    return vec[_active_orbital_indices(vec.shape[0], frozen)]
+
+
 def _stage_mf_input(obj: StagedMfOrCc) -> TrialInput:
 
     mol = obj.mol
@@ -937,10 +946,19 @@ def _stage_mf_input(obj: StagedMfOrCc) -> TrialInput:
     frozen = obj.afqmc_frozen
 
     match obj.mf.kind:
-        case "rhf" | "rohf" | "ghf":
+        case "rhf" | "ghf":
             Ca = np.asarray(obj.mo_coeff)
             mo = _mf_coeff_helper(Ca, Ca, S, frozen)
             data = {"mo": np.asarray(mo)}
+
+        case "rohf":
+            Ca = np.asarray(obj.mo_coeff)
+            mo = _mf_coeff_helper(Ca, Ca, S, frozen)
+            mo_occ = _apply_frozen_mask(np.asarray(obj.mf.mo_occ), frozen)
+            data = {
+                "mo_a": np.asarray(mo[:, mo_occ > 0.0]),
+                "mo_b": np.asarray(mo[:, mo_occ > 1.0]),
+            }
 
         case "uhf":
             Ca = np.asarray(obj.mo_coeff[0])
@@ -970,17 +988,8 @@ def _mf_coeff_helper(
     q, r = np.linalg.qr(Ca.T @ S @ Cb)
     sgn = np.sign(np.diag(r))
     q = q * sgn[None, :]
-    if isinstance(frozen, int):
-        q = q[frozen:, frozen:]
-    elif isinstance(frozen, np.ndarray):
-        idx = np.delete(np.arange(len(q)), frozen)
-        q = q[np.ix_(idx, idx)]
-    else:
-        raise TypeError(
-            f"frozen must be an integer or a np.ndarray, but received '{type(frozen)}'."
-        )
-
-    return q
+    idx = _active_orbital_indices(len(q), frozen)
+    return q[np.ix_(idx, idx)]
 
 
 def _stage_cisd_input(obj: StagedMfOrCc) -> TrialInput:
@@ -1226,7 +1235,7 @@ def build_ham_lno(
     mc.frozen = frozen  # type: ignore
     nelec = mc.nelecas  # type: ignore
     h1, h0 = mc.get_h1eff()  # type: ignore
-    act = [i for i in range(norb) if i not in frozen]
+    act = _active_orbital_indices(norb, frozen)
     e = np.asarray(ao2mo.kernel(mf.mol, mf.mo_coeff[:, act]))  # , compact=False)
     chol = modified_cholesky(e, max_error=chol_cut)
     chol = chol.reshape((-1, nact, nact))
