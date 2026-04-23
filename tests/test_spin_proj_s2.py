@@ -5,6 +5,7 @@ from trot.afqmc import AfqmcFp
 import trot.spin_proj
 import trot.testing
 
+import dataclasses
 import jax
 import jax.numpy as jnp
 
@@ -20,9 +21,9 @@ mol = gto.M(
 mf = scf.UHF(mol)
 mf.kernel()
 
-mo1 = mf.stability()[0]
-dm1 = mf.make_rdm1(mo1, mf.mo_occ)
-mf = mf.run(dm1)
+for i in range(2):
+    mo1 = mf.stability(external=True)[0]
+    mf = mf.newton().run(mo1, mf.mo_occ)  # type: ignore
 mf.stability()
 
 mycc = cc.UCCSD(mf)
@@ -35,52 +36,61 @@ af.seed = 5
 af.n_prop_steps = 100
 af.n_blocks = 1
 af.walker_kind = "unrestricted"
+af.mixed_precision = False
 af.build_job()
 job = af._job
 
-_, meas_ctx, _ = job._prepare_runtime()
-job._runtime_meas_ctx = meas_ctx
 
-# @pytest.mark.parametrize(
-#   "target_spin, e_ref, err_ref",
-#   [
-#       (0, -108.8635909545, 3.8744131e-03),
-#       (2, -108.8519173433, 1.7289549e-03),
-#       (4, -108.8586148233, 2.7743342e-03),
-#   ],
-# )
-# def test_spin_proj_s2(target_spin, e_ref, err_ref):
-#   from trot.meas.ucisd import energy_kernel_gw_rh
-#   from trot.trial.ucisd import overlap_g
-#   from trot.core.ops import k_energy
-#   from trot.spin_proj import make_overlap_u_s2, make_energy_kernel_uw_rh_s2
-#
-#   # Spin projection
-#   ## Data for the quadrature
-#   betas, w_betas = trot.spin_proj.quadrature_s2(
-#       target_spin,
-#       (job.sys.nup, job.sys.ndn),
-#       ngrid=4,
-#   )
-#
-#   ## Overlap and energy with spin projection
-#   overlap_u_s2 = make_overlap_u_s2(betas, w_betas, overlap_g)
-#   energy_kernel_uw_rh_s2 = make_energy_kernel_uw_rh_s2(
-#       betas, w_betas, overlap_g, energy_kernel_gw_rh
-#   )
-#
-#   job.meas_ops = dataclasses.replace(
-#       job.meas_ops,
-#       overlap=overlap_u_s2,
-#       kernels={
-#           k_energy: energy_kernel_uw_rh_s2,
-#       },
-#   )
-#
-#   e, err = af.kernel()
-#
-#   assert jnp.isclose(e[-1].real, e_ref), (e, e_ref)
-#   assert jnp.isclose(err[-1].real, err_ref), (err, err_ref)
+@pytest.mark.parametrize(
+    "target_spin, e_ref, err_ref",
+    [
+        (0.0, -108.8648124049, 4.1501414e-03),
+        (2.0, -108.8521521465, 1.8776746e-03),
+        (4.0, -108.8592975430, 2.9881563e-03),
+    ],
+)
+def test_spin_proj_s2(target_spin, e_ref, err_ref):
+    from trot.meas.ucisd import energy_kernel_gw_rh
+    from trot.trial.ucisd import overlap_g
+    from trot.core.ops import k_energy
+    from trot.spin_proj import make_overlap_u_s2, make_energy_kernel_uw_rh_s2
+
+    # Spin projection
+    ## Data for the quadrature
+    betas, w_betas = trot.spin_proj.quadrature_s2(
+        target_spin,
+        (job.sys.nup, job.sys.ndn),
+        ngrid=4,
+    )
+
+    ## Overlap and energy with spin projection
+    overlap_u_s2 = make_overlap_u_s2(betas, w_betas, overlap_g)
+    energy_kernel_uw_rh_s2 = make_energy_kernel_uw_rh_s2(
+        betas, w_betas, overlap_g, energy_kernel_gw_rh
+    )
+
+    job.meas_ops = dataclasses.replace(
+        job.meas_ops,
+        overlap=overlap_u_s2,
+        kernels={
+            k_energy: energy_kernel_uw_rh_s2,
+        },
+    )
+
+    # Important to do after changing the energy and overlap kernels if the
+    # function job._prepare_runtime() has been run before. Otherwise the initial
+    # state will not be the right one.
+    job._runtime_prop_ctx = None
+    job._runtime_meas_ctx = None
+    job._runtime_state = None
+    job._prepare_runtime()
+
+    e, err = af.kernel()
+
+    # print(e[-1].real- e_ref)
+    # print(err[-1].real- err_ref)
+    assert abs(e[-1].real - e_ref) < 1e-6, (e[-1].real, e_ref)
+    assert abs(err[-1].real - err_ref) < 1e-6, (err[-1].real, err_ref)
 
 
 @pytest.mark.parametrize(

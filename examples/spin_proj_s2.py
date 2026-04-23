@@ -2,7 +2,6 @@ import dataclasses
 from pyscf import cc, gto, scf
 
 from trot.afqmc import AfqmcFp
-import trot.trial.uccsd
 import trot.spin_proj
 
 mol = gto.M(
@@ -32,6 +31,7 @@ af.seed = 5
 af.n_prop_steps = 20
 af.n_blocks = 5
 af.walker_kind = "unrestricted"
+af.mixed_precision = False
 af.build_job()
 
 job = af._job
