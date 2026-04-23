@@ -168,7 +168,7 @@ def _make_trial_bundle(
         _setup_end(t_bundle, "trial bundle ready", details=f"kind={kind}")
         return trial_data, trial_ops, meas_ops
 
-    if kind == "uhf":
+    if kind in {"rohf", "uhf"}:
         from .meas.uhf import make_uhf_meas_ops
         from .trial.uhf import make_uhf_trial_data, make_uhf_trial_ops
 

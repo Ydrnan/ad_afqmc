@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Callable, NamedTuple, Protocol
+from pathlib import Path
+from typing import Any, Callable, NamedTuple, Protocol, cast
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jax import lax, tree_util
+from jax.experimental import io_callback
 
 from .. import walkers as wk
 from ..core.levels import LevelPack
@@ -58,6 +61,135 @@ class MixedBlockFn(Protocol):
 class BlockObs(NamedTuple):
     scalars: dict[str, jax.Array]
     observables: dict[str, jax.Array]
+
+
+def dump_prop_state_npz(
+    state: PropState,
+    path: str | Path,
+    *,
+    compressed: bool = True,
+) -> None:
+    """
+    Save a PropState to a single ``.npz`` file for offline analysis.
+    """
+    out = Path(path).expanduser().resolve()
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    arrays: dict[str, np.ndarray] = {
+        "weights": np.asarray(jax.device_get(state.weights)),
+        "overlaps": np.asarray(jax.device_get(state.overlaps)),
+        "rng_key": np.asarray(jax.device_get(state.rng_key)),
+        "pop_control_ene_shift": np.asarray(jax.device_get(state.pop_control_ene_shift)),
+        "e_estimate": np.asarray(jax.device_get(state.e_estimate)),
+        "node_encounters": np.asarray(jax.device_get(state.node_encounters)),
+    }
+
+    walkers = jax.device_get(state.walkers)
+    if isinstance(walkers, tuple):
+        for i, walker in enumerate(walkers):
+            arrays[f"walkers_{i}"] = np.asarray(walker)
+    else:
+        arrays["walkers"] = np.asarray(walkers)
+
+    arrays_kw = cast(dict[str, Any], arrays)
+    if compressed:
+        np.savez_compressed(out, **arrays_kw)
+    else:
+        np.savez(out, **arrays_kw)
+
+
+def load_prop_state_npz(path: str | Path) -> PropState:
+    """
+    Load a PropState previously written by ``dump_prop_state_npz``.
+    """
+    data = np.load(Path(path).expanduser().resolve())
+
+    if "walkers" in data.files:
+        walkers: Any = jnp.asarray(data["walkers"])
+    else:
+        walker_keys = sorted(k for k in data.files if k.startswith("walkers_"))
+        walkers = tuple(jnp.asarray(data[k]) for k in walker_keys)
+
+    return PropState(
+        walkers=walkers,
+        weights=jnp.asarray(data["weights"]),
+        overlaps=jnp.asarray(data["overlaps"]),
+        rng_key=jnp.asarray(data["rng_key"]),
+        pop_control_ene_shift=jnp.asarray(data["pop_control_ene_shift"]),
+        e_estimate=jnp.asarray(data["e_estimate"]),
+        node_encounters=jnp.asarray(data["node_encounters"]),
+    )
+
+
+def load_all_prop_states_npz(
+    directory: str | Path,
+    *,
+    prefix: str = "block_state",
+) -> list[PropState]:
+    path = Path(directory).expanduser().resolve()
+    files = sorted(path.glob(f"{prefix}_*.npz"))
+    return [load_prop_state_npz(file) for file in files]
+
+
+def make_block_state_logger(
+    directory: str | Path,
+    *,
+    base_block_fn: BlockFn | None = None,
+    prefix: str = "block_state",
+    start_index: int = 0,
+    compressed: bool = True,
+) -> BlockFn:
+    """
+    Wrap a block function so the PropState at the end of every block is written to disk.
+    """
+    if base_block_fn is None:
+        base_block_fn = block
+
+    out_dir = Path(directory).expanduser().resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    counter = int(start_index)
+    result_spec = jax.ShapeDtypeStruct((), jnp.int32)
+
+    def _write_state(state: PropState) -> np.int32:
+        nonlocal counter
+        path = out_dir / f"{prefix}_{counter:05d}.npz"
+        dump_prop_state_npz(state, path, compressed=compressed)
+        counter += 1
+        return np.int32(0)
+
+    def logging_block_fn(
+        state: PropState,
+        *,
+        sys: System,
+        params: Any,
+        ham_data: Any,
+        trial_data: Any,
+        trial_ops: TrialOps,
+        meas_ops: MeasOps,
+        meas_ctx: Any,
+        prop_ops: Any,
+        prop_ctx: Any,
+        sr_fn: SrFn = wk.stochastic_reconfiguration,
+        observable_names: tuple[str, ...] = (),
+    ) -> tuple[PropState, BlockObs]:
+        state, obs = base_block_fn(
+            state,
+            sys=sys,
+            params=params,
+            ham_data=ham_data,
+            trial_data=trial_data,
+            trial_ops=trial_ops,
+            meas_ops=meas_ops,
+            meas_ctx=meas_ctx,
+            prop_ops=prop_ops,
+            prop_ctx=prop_ctx,
+            sr_fn=sr_fn,
+            observable_names=observable_names,
+        )
+        _ = io_callback(_write_state, result_spec, state, ordered=True)
+        return state, obs
+
+    return logging_block_fn
 
 
 def block(
@@ -339,7 +471,9 @@ def block_fp(
 
     thresh = jnp.sqrt(2.0 / jnp.asarray(params.dt))
 
-    e_samples = jnp.where(jnp.abs(e_samples - params.ene0) > thresh, params.ene0, e_samples)  # type: ignore
+    ene0 = params.ene0
+    assert ene0 is not None
+    e_samples = jnp.where(jnp.abs(e_samples - ene0) > thresh, ene0, e_samples)
     e_samples = jnp.array(e_samples)
 
     weights = state.weights
