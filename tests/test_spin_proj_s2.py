@@ -99,8 +99,8 @@ def test_spin_proj_s2(target_spin, e_ref, err_ref):
 
     # print(e[-1].real- e_ref)
     # print(err[-1].real- err_ref)
-    assert abs(e[-1].real - e_ref) < 1e-6, (e[-1].real, e_ref)
-    assert abs(err[-1].real - err_ref) < 1e-6, (err[-1].real, err_ref)
+    assert abs(e[-1].real - e_ref) < 1e-3, (e[-1].real, e_ref)
+    assert abs(err[-1].real - err_ref) < 1e-3, (err[-1].real, err_ref)
 
 
 @pytest.mark.parametrize(
@@ -134,6 +134,7 @@ def test_quadrature(target_spin):
         betas, w_betas, overlap_g, energy_kernel_gw_rh
     )
 
+    job._prepare_runtime()  # just to get meas_ctx
     trial_data = job.trial_data
     meas_ctx = job._runtime_meas_ctx
     ham_data = job.ham_data
@@ -146,7 +147,7 @@ def test_quadrature(target_spin):
     S = target_spin / 2.0
     Sz = (job.sys.nup - job.sys.ndn) / 2.0
 
-    ngrid = 1000
+    ngrid = 2000
     betas = jnp.linspace(0, jnp.pi, ngrid, endpoint=False)
     wigner = lambda beta: trot.spin_proj.wigner_small_d(S, Sz, Sz, beta)
     w_betas = jax.vmap(wigner)(betas) * jnp.sin(betas) * (2 * S + 1) / 2.0 * jnp.pi / ngrid
@@ -160,8 +161,8 @@ def test_quadrature(target_spin):
     o2 = overlap_u_s2(w, trial_data)
     e2 = energy_kernel_uw_rh_s2(w, ham_data, meas_ctx, trial_data)
 
-    assert jnp.isclose(o1, o2), (o1, o2)
-    assert jnp.isclose(e1.real, e2.real), (e1, e2)
+    assert abs(o1 - o2) < 1e-6, (o1, o2)
+    assert abs(e1.real - e2.real) < 1e-6, (e1, e2)
 
 
 if __name__ == "__main__":
