@@ -1,5 +1,6 @@
 import pytest
-from pyscf import cc, gto, scf
+
+# from pyscf import cc, gto, scf
 
 from trot.afqmc import AfqmcFp
 import trot.spin_proj
@@ -8,26 +9,33 @@ import trot.testing
 import dataclasses
 import jax
 import jax.numpy as jnp
+import pickle
 
-mol = gto.M(
-    atom="""
-   N 0.0 0.0 0.0
-   N 0.0 0.0 2.0
-   """,
-    basis="6-31g",
-    verbose=3,
-)
+# mol = gto.M(
+#    atom="""
+#   N 0.0 0.0 0.0
+#   N 0.0 0.0 2.0
+#   """,
+#    basis="6-31g",
+#    verbose=3,
+# )
+#
+# mf = scf.UHF(mol)
+# mf.kernel()
+#
+# for i in range(2):
+#    mo1 = mf.stability(external=True)[0]
+#    mf = mf.newton().run(mo1, mf.mo_occ)  # type: ignore
+# mf.stability()
+#
+# mycc = cc.UCCSD(mf)
+# mycc.kernel()
+#
+# with open("cc_spin_proj.pkl", "wb") as f:
+#    pickle.dump(mycc, f)
 
-mf = scf.UHF(mol)
-mf.kernel()
-
-for i in range(2):
-    mo1 = mf.stability(external=True)[0]
-    mf = mf.newton().run(mo1, mf.mo_occ)  # type: ignore
-mf.stability()
-
-mycc = cc.UCCSD(mf)
-mycc.kernel()
+with open("cc_spin_proj.pkl", "rb") as f:
+    mycc = pickle.load(f)
 
 af = AfqmcFp(mycc)
 af.n_walkers = 10
