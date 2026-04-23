@@ -930,9 +930,7 @@ def _active_orbital_indices(norb: int, frozen: int | NDArray) -> NDArray:
         return np.arange(frozen, norb, dtype=np.int64)
     if isinstance(frozen, np.ndarray):
         return np.delete(np.arange(norb, dtype=np.int64), frozen)
-    raise TypeError(
-        f"frozen must be an integer or a np.ndarray, but received '{type(frozen)}'."
-    )
+    raise TypeError(f"frozen must be an integer or a np.ndarray, but received '{type(frozen)}'.")
 
 
 def _apply_frozen_mask(vec: NDArray, frozen: int | NDArray) -> NDArray:
