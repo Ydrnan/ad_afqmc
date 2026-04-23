@@ -10,6 +10,7 @@ import dataclasses
 import jax
 import jax.numpy as jnp
 import pickle
+import os
 
 # mol = gto.M(
 #    atom="""
@@ -34,7 +35,8 @@ import pickle
 # with open("cc_spin_proj.pkl", "wb") as f:
 #    pickle.dump(mycc, f)
 
-with open("cc_spin_proj.pkl", "rb") as f:
+path = os.path.dirname(os.path.abspath(__file__))
+with open(path + "/cc_spin_proj.pkl", "rb") as f:
     mycc = pickle.load(f)
 
 af = AfqmcFp(mycc)
