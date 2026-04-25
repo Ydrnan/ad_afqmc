@@ -16,6 +16,11 @@ def _half_green_from_overlap_matrix(w: jax.Array, ovlp_mat: jax.Array) -> jax.Ar
     return jnp.linalg.solve(ovlp_mat.T, w.T)
 
 
+def _greenp_from_occ(green_occ: jax.Array) -> jax.Array:
+    nvir = green_occ.shape[1]
+    return jnp.concatenate((green_occ, -jnp.eye(nvir, dtype=green_occ.dtype)), axis=0)
+
+
 @dataclass(frozen=True)
 class UcisdtMeasCfg:
     memory_mode: str = "low"
@@ -96,18 +101,15 @@ def _force_bias_triples(
     trial_data: UcisdtTrial,
     green_a: jax.Array,   # (n_oa, norb)
     green_b: jax.Array,   # (n_ob, norb)
+    go_a: jax.Array,      # (n_oa, n_va)
+    go_b: jax.Array,      # (n_ob, n_vb)
+    gp_a: jax.Array,      # (norb, n_va)
+    gp_b: jax.Array,      # (norb, n_vb)
     chol_a: jax.Array,    # (n_chol, norb, norb)
     chol_b: jax.Array,    # (n_chol, norb, norb)
 ) -> jax.Array:
     """<psi_T(triples)| chol_g |w> / <psi_T|w>  (numerator contribution only)."""
     n_oa, n_ob = trial_data.nocc
-    n_va, n_vb = trial_data.nvir
-
-    go_a = green_a[:, n_oa:]   # (n_oa, n_va)
-    go_b = green_b[:, n_ob:]   # (n_ob, n_vb)
-
-    gp_a = jnp.vstack((go_a, -jnp.eye(n_va)))   # (norb, n_va)
-    gp_b = jnp.vstack((go_b, -jnp.eye(n_vb)))   # (norb, n_vb)
 
     lo_a = chol_a[:, :n_oa, :]  # (n_chol, n_oa, norb)
     lo_b = chol_b[:, :n_ob, :]  # (n_chol, n_ob, norb)
@@ -169,6 +171,10 @@ def _one_body_energy_triples(
     trial_data: UcisdtTrial,
     green_a: jax.Array,  # (n_oa, norb)
     green_b: jax.Array,  # (n_ob, norb)
+    go_a: jax.Array,     # (n_oa, n_va)
+    go_b: jax.Array,     # (n_ob, n_vb)
+    gp_a: jax.Array,     # (norb, n_va)
+    gp_b: jax.Array,     # (norb, n_vb)
     h1_a: jax.Array,    # (norb, norb)
     h1_b: jax.Array,    # (norb, norb)
 ) -> jax.Array:
@@ -178,13 +184,6 @@ def _one_body_energy_triples(
     vector but avoids the extra g-dimension overhead.
     """
     n_oa, n_ob = trial_data.nocc
-    n_va, n_vb = trial_data.nvir
-
-    go_a = green_a[:, n_oa:]
-    go_b = green_b[:, n_ob:]
-
-    gp_a = jnp.vstack((go_a, -jnp.eye(n_va)))
-    gp_b = jnp.vstack((go_b, -jnp.eye(n_vb)))
 
     c3aaa = trial_data.c3aaa
     c3aab = trial_data.c3aab
@@ -243,17 +242,14 @@ def _two_body_energy_triples(
     trial_data: UcisdtTrial,
     green_a: jax.Array,  # (n_oa, norb)
     green_b: jax.Array,  # (n_ob, norb)
+    go_a: jax.Array,     # (n_oa, n_va)
+    go_b: jax.Array,     # (n_ob, n_vb)
+    gp_a: jax.Array,     # (norb, n_va)
+    gp_b: jax.Array,     # (norb, n_vb)
     chol_a: jax.Array,   # (n_chol, norb, norb)
     chol_b: jax.Array,   # (n_chol, norb, norb)
 ) -> jax.Array:
     n_oa, n_ob = trial_data.nocc
-    n_va, n_vb = trial_data.nvir
-
-    go_a = green_a[:, n_oa:]
-    go_b = green_b[:, n_ob:]
-
-    gp_a = jnp.vstack((go_a, -jnp.eye(n_va)))
-    gp_b = jnp.vstack((go_b, -jnp.eye(n_vb)))
 
     lo_a = chol_a[:, :n_oa, :]   # (n_chol, n_oa, norb)
     lo_b = chol_b[:, :n_ob, :]   # (n_chol, n_ob, norb)
@@ -298,17 +294,15 @@ def _two_body_energy_triples(
         + (1 / 4) * jnp.einsum("git,gij,pj,pt->", yb, lo_b, green_b, cbbbgbgb)
     )
 
-    yaya = jnp.einsum("gpt,gqu->ptqu", ya, ya)
     eaaa3 = (
         (1 / 4) * jnp.einsum("gkt,pt,gkl,pl->", ya, caaagaga, lo_a, green_a)
-        + (1 / 2) * jnp.einsum("ptqu,ptqu->", yaya, caaaga)
+        + (1 / 2) * jnp.einsum("gpt,gqu,ptqu->", ya, ya, caaaga)
         - (1 / 4) * jnp.einsum("gpt,pt,g->", ya, caaagaga, x)
     )
 
-    ybyb = jnp.einsum("gpt,gqu->ptqu", yb, yb)
     ebbb3 = (
         (1 / 4) * jnp.einsum("gkt,pt,gkl,pl->", yb, cbbbgbgb, lo_b, green_b)
-        + (1 / 2) * jnp.einsum("ptqu,ptqu->", ybyb, cbbbgb)
+        + (1 / 2) * jnp.einsum("gpt,gqu,ptqu->", yb, yb, cbbbgb)
         - (1 / 4) * jnp.einsum("gpt,pt,g->", yb, cbbbgbgb, x)
     )
 
@@ -411,7 +405,6 @@ def force_bias_kernel_uw_rh(
 ) -> jax.Array:
     wa, wb = walker
     n_oa, n_ob = trial_data.nocc
-    n_va, n_vb = trial_data.nvir
     c1a = trial_data.c1a
     c1b = trial_data.c1b
     c2aa = trial_data.c2aa
@@ -428,10 +421,10 @@ def force_bias_kernel_uw_rh(
     green_a = _half_green_from_overlap_matrix(wa, woa)   # (n_oa, norb)
     green_b = _half_green_from_overlap_matrix(wb, wob)   # (n_ob, norb)
 
-    green_occ_a = green_a[:, n_oa:].copy()   # (n_oa, n_va)
-    green_occ_b = green_b[:, n_ob:].copy()   # (n_ob, n_vb)
-    greenp_a = jnp.vstack((green_occ_a, -jnp.eye(n_va)))
-    greenp_b = jnp.vstack((green_occ_b, -jnp.eye(n_vb)))
+    green_occ_a = green_a[:, n_oa:]   # (n_oa, n_va)
+    green_occ_b = green_b[:, n_ob:]   # (n_ob, n_vb)
+    greenp_a = _greenp_from_occ(green_occ_a)
+    greenp_b = _greenp_from_occ(green_occ_b)
 
     chol_a = ham_data.chol
     chol_b = meas_ctx.chol_b
@@ -519,7 +512,17 @@ def force_bias_kernel_uw_rh(
     )
     overlap = 1.0 + ci1g + gci2g + o3
 
-    fb_3 = _force_bias_triples(trial_data, green_a, green_b, chol_a, chol_b)
+    fb_3 = _force_bias_triples(
+        trial_data,
+        green_a,
+        green_b,
+        green_occ_a,
+        green_occ_b,
+        greenp_a,
+        greenp_b,
+        chol_a,
+        chol_b,
+    )
 
     return (fb_0 + fb_1 + fb_2 + fb_3) / overlap
 
@@ -545,7 +548,6 @@ def energy_kernel_uw_rh(
 ) -> jax.Array:
     wa, wb = walker
     n_oa, n_ob = trial_data.nocc
-    n_va, n_vb = trial_data.nvir
     c1a = trial_data.c1a
     c1b = trial_data.c1b
     c2aa = trial_data.c2aa
@@ -562,10 +564,10 @@ def energy_kernel_uw_rh(
     green_a = _half_green_from_overlap_matrix(wa, woa)
     green_b = _half_green_from_overlap_matrix(wb, wob)
 
-    green_occ_a = green_a[:, n_oa:].copy()
-    green_occ_b = green_b[:, n_ob:].copy()
-    greenp_a = jnp.vstack((green_occ_a, -jnp.eye(n_va)))
-    greenp_b = jnp.vstack((green_occ_b, -jnp.eye(n_vb)))
+    green_occ_a = green_a[:, n_oa:]
+    green_occ_b = green_b[:, n_ob:]
+    greenp_a = _greenp_from_occ(green_occ_a)
+    greenp_b = _greenp_from_occ(green_occ_b)
 
     lci1_a = meas_ctx.lci1_a
     lci1_b = meas_ctx.lci1_b
@@ -691,16 +693,21 @@ def energy_kernel_uw_rh(
 
     # 2-body energy: doubles
     e2_2_1 = e2_0 * gci2g
+    ci2_mix_a = 8 * ci2_green_a + 2 * ci2_green_ab_a
+    ci2_mix_b = 8 * ci2_green_b + 2 * ci2_green_ab_b
+    c2aa_test = c2aa.astype(cfg.mixed_real_dtype_testing)
+    c2bb_test = c2bb.astype(cfg.mixed_real_dtype_testing)
+    c2ab_test = c2ab.astype(cfg.mixed_real_dtype_testing)
     lci2g_a = jnp.einsum(
         "gij,ij->g",
         chol_a.astype(cfg.mixed_real_dtype),
-        (8 * ci2_green_a + 2 * ci2_green_ab_a).astype(cfg.mixed_complex_dtype),
+        ci2_mix_a.astype(cfg.mixed_complex_dtype),
         optimize="optimal",
     )
     lci2g_b = jnp.einsum(
         "gij,ij->g",
         chol_b.astype(cfg.mixed_real_dtype),
-        (8 * ci2_green_b + 2 * ci2_green_ab_b).astype(cfg.mixed_complex_dtype),
+        ci2_mix_b.astype(cfg.mixed_complex_dtype),
         optimize="optimal",
     )
     e2_2_2_1 = -((lci2g_a + lci2g_b) @ (lg_a + lg_b)) / 2.0
@@ -714,13 +721,13 @@ def energy_kernel_uw_rh(
             lci2_green_a_i = jnp.einsum(
                 "pi,ji->pj",
                 rot_chol_a_i,
-                8 * ci2_green_a + 2 * ci2_green_ab_a,
+                ci2_mix_a,
                 optimize="optimal",
             )
             lci2_green_b_i = jnp.einsum(
                 "pi,ji->pj",
                 rot_chol_b_i,
-                8 * ci2_green_b + 2 * ci2_green_ab_b,
+                ci2_mix_b,
                 optimize="optimal",
             )
             carry[0] += 0.5 * (
@@ -737,21 +744,21 @@ def energy_kernel_uw_rh(
                 "pt,qu,ptqu->",
                 glgp_a_i,
                 glgp_a_i,
-                c2aa.astype(cfg.mixed_real_dtype_testing),
+                c2aa_test,
                 optimize="optimal",
             )
             l2ci2_b = 0.5 * jnp.einsum(
                 "pt,qu,ptqu->",
                 glgp_b_i,
                 glgp_b_i,
-                c2bb.astype(cfg.mixed_real_dtype_testing),
+                c2bb_test,
                 optimize="optimal",
             )
             l2c2ab = jnp.einsum(
                 "pt,qu,ptqu->",
                 glgp_a_i,
                 glgp_b_i,
-                c2ab.astype(cfg.mixed_real_dtype_testing),
+                c2ab_test,
                 optimize="optimal",
             )
             carry[1] += l2ci2_a + l2ci2_b + l2c2ab
@@ -776,13 +783,13 @@ def energy_kernel_uw_rh(
         lci2_green_a = jnp.einsum(
             "gpi,ji->gpj",
             rot_chol_a,
-            8 * ci2_green_a + 2 * ci2_green_ab_a,
+            ci2_mix_a,
             optimize="optimal",
         )
         lci2_green_b = jnp.einsum(
             "gpi,ji->gpj",
             rot_chol_b,
-            8 * ci2_green_b + 2 * ci2_green_ab_b,
+            ci2_mix_b,
             optimize="optimal",
         )
         e2_2_2_2 = 0.5 * (
@@ -799,21 +806,21 @@ def energy_kernel_uw_rh(
             "gpt,gqu,ptqu->g",
             glgp_a,
             glgp_a,
-            c2aa.astype(cfg.mixed_real_dtype_testing),
+            c2aa_test,
             optimize="optimal",
         )
         l2ci2_b = 0.5 * jnp.einsum(
             "gpt,gqu,ptqu->g",
             glgp_b,
             glgp_b,
-            c2bb.astype(cfg.mixed_real_dtype_testing),
+            c2bb_test,
             optimize="optimal",
         )
         l2c2ab = jnp.einsum(
             "gpt,gqu,ptqu->g",
             glgp_a,
             glgp_b,
-            c2ab.astype(cfg.mixed_real_dtype_testing),
+            c2ab_test,
             optimize="optimal",
         )
         e2_2_3 = l2ci2_a.sum() + l2ci2_b.sum() + l2c2ab.sum()
@@ -832,8 +839,28 @@ def energy_kernel_uw_rh(
     )
     overlap = 1.0 + ci1g + gci2g + o3
 
-    e3_1 = _one_body_energy_triples(trial_data, green_a, green_b, h1_a, h1_b)
-    e3_2 = _two_body_energy_triples(trial_data, green_a, green_b, chol_a, chol_b)
+    e3_1 = _one_body_energy_triples(
+        trial_data,
+        green_a,
+        green_b,
+        green_occ_a,
+        green_occ_b,
+        greenp_a,
+        greenp_b,
+        h1_a,
+        h1_b,
+    )
+    e3_2 = _two_body_energy_triples(
+        trial_data,
+        green_a,
+        green_b,
+        green_occ_a,
+        green_occ_b,
+        greenp_a,
+        greenp_b,
+        chol_a,
+        chol_b,
+    )
 
     return (e1 + e2 + e3_1 + e3_2) / overlap + e0
 
