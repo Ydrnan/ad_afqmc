@@ -29,6 +29,7 @@ def _is_slow_test(item: pytest.Item) -> bool:
         "test_cis.py",
         "test_eom_cisd.py",
         "test_eom_t_cisd.py",
+        "test_ucisdt_molecular.py",
     }
     if path in slow_files:
         return True

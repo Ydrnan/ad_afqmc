@@ -92,7 +92,7 @@ def _force_bias_from_overlap_array(
 
     x0 = jnp.zeros((n_fields,), dtype=w.dtype)
     val, pullback = jax.vjp(f, x0)
-    grad_x = pullback(jnp.asarray(1.0 + 0.0j, dtype=val.dtype))[0]
+    grad_x = pullback(jnp.asarray(1.0, dtype=val.dtype))[0]
     return grad_x / val
 
 
@@ -138,7 +138,7 @@ def force_bias_kernel_uw_rh(
 
     x0 = jnp.zeros((n_fields,), dtype=wu.dtype)
     val, pullback = jax.vjp(f, x0)
-    grad_x = pullback(jnp.asarray(1.0 + 0.0j, dtype=val.dtype))[0]
+    grad_x = pullback(jnp.asarray(1.0, dtype=val.dtype))[0]
     return grad_x / val
 
 
