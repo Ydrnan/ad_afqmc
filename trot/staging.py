@@ -1537,6 +1537,21 @@ def _stage_ucisdt_input_from_ccpy(driver: Any, staged_mf: "StagedMf", order_cc: 
     return TrialInput(kind="ucisdt", data=data, frozen=staged_mf.trial_frozen, source_kind="cc")
 
 
+def _stage_ucisd_input_from_ccpy(driver: Any, staged_mf: "StagedMf", order_cc: int) -> TrialInput:
+    amps = _ccpy_t_to_c_amplitudes(driver, order=2, order_cc=order_cc)
+
+    mol = staged_mf.mol
+    S = staged_mf.get_ovlp(mol)
+    frozen = staged_mf.afqmc_frozen
+    Ca = np.asarray(staged_mf.mo_coeff[0])
+    Cb = np.asarray(staged_mf.mo_coeff[1])
+    moa = _mf_coeff_helper(Ca, Ca, S, frozen)
+    mob = _mf_coeff_helper(Ca, Cb, S, frozen)
+
+    data = {"mo_coeff_a": np.asarray(moa), "mo_coeff_b": np.asarray(mob), **amps}
+    return TrialInput(kind="ucisd", data=data, frozen=staged_mf.trial_frozen, source_kind="cc")
+
+
 def _stage_ucisdtq_input_from_ccpy(driver: Any, staged_mf: "StagedMf", order_cc: int) -> TrialInput:
     amps = _ccpy_t_to_c_amplitudes(driver, order=4, order_cc=order_cc)
 
@@ -1574,8 +1589,8 @@ def stage_from_ccpy(
         mf:
             PySCF UHF object used for the Hamiltonian and MO coefficients.
         order:
-            CI excitation level to include (3 for UCISDT, 4 for UCISDTQ). Defaults to
-            the order of the ccpy calculation.
+            CI excitation level to include (2 for UCISD, 3 for UCISDT, 4 for UCISDTQ).
+            Defaults to the order of the ccpy calculation.
         norb_frozen_core:
             Number of lowest core orbitals to freeze in the AFQMC Hamiltonian.
         norb_frozen:
@@ -1594,7 +1609,8 @@ def stage_from_ccpy(
             Print timing/info.
 
     Returns:
-        StagedInputs with HamInput, TrialInput (kind='ucisdt' or 'ucisdtq'), and metadata.
+        StagedInputs with HamInput and TrialInput
+        (kind='ucisd', 'ucisdt', or 'ucisdtq'), and metadata.
     """
     cache_path = Path(cache).expanduser().resolve() if cache is not None else None
     if cache_path is not None and cache_path.exists() and not overwrite:
@@ -1607,10 +1623,9 @@ def stage_from_ccpy(
         order = order_cc
     if order > 4:
         order = 4
-    if order < 3:
+    if order < 2:
         raise ValueError(
-            f"stage_from_ccpy requires order >= 3 (got {order}); "
-            "use stage() with a PySCF UCCSD object for order <= 2."
+            f"stage_from_ccpy requires order >= 2 (got {order})."
         )
 
     resolved_frozen = _resolve_stage_frozen_arg(norb_frozen_core, norb_frozen, None)
@@ -1625,7 +1640,9 @@ def stage_from_ccpy(
     _stage_end(t_ham, "Hamiltonian ready", details=f"norb={ham.norb} nchol={ham.chol.shape[0]}")
 
     t_trial = _stage_begin("building trial input")
-    if order == 3:
+    if order <= 2:
+        trial = _stage_ucisd_input_from_ccpy(driver, staged_mf, order_cc)
+    elif order == 3:
         trial = _stage_ucisdt_input_from_ccpy(driver, staged_mf, order_cc)
     else:
         trial = _stage_ucisdtq_input_from_ccpy(driver, staged_mf, order_cc)

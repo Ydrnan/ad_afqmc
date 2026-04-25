@@ -9,7 +9,7 @@ _ccpy_t_to_c_amplitudes helper in trot.staging.
 import numpy as np
 import pytest
 
-from trot.staging import _ccpy_t_to_c_amplitudes
+from trot.staging import _ccpy_t_to_c_amplitudes, stage_from_ccpy
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +196,58 @@ def test_order2_returns_no_triples_keys():
     driver = _make_driver(2, 3, 2, 3, order_cc=2)
     amps = _ccpy_t_to_c_amplitudes(driver, order=2, order_cc=2)
     assert set(amps.keys()) == {"ci1a", "ci1b", "ci2aa", "ci2ab", "ci2bb"}
+
+
+def test_stage_from_ccpy_order2_builds_ucisd_trial():
+    """stage_from_ccpy(order=2) should build a UCISD trial from ccpy-like T amplitudes."""
+    from pyscf import gto, scf
+
+    mol = gto.M(atom="H 0 0 0; H 0 0 0.74", basis="sto-3g", spin=0, symmetry="c1", verbose=0)
+    mf = scf.UHF(mol)
+    mf.run(conv_tol=1.0e-12)
+    assert mf.converged
+
+    n_oa, n_ob = map(int, mol.nelec)
+    nmo = int(mf.mo_coeff[0].shape[1])
+    n_va = nmo - n_oa
+    n_vb = nmo - n_ob
+
+    driver = _make_driver(n_oa, n_va, n_ob, n_vb, order_cc=2, rng=np.random.default_rng(17))
+    staged = stage_from_ccpy(driver, mf, order=2, chol_cut=1.0e-8, verbose=False)
+
+    assert staged.trial.kind == "ucisd"
+    assert set(staged.trial.data.keys()) == {
+        "mo_coeff_a",
+        "mo_coeff_b",
+        "ci1a",
+        "ci1b",
+        "ci2aa",
+        "ci2ab",
+        "ci2bb",
+    }
+    assert staged.trial.data["ci1a"].shape == (n_oa, n_va)
+    assert staged.trial.data["ci1b"].shape == (n_ob, n_vb)
+    assert staged.trial.data["ci2aa"].shape == (n_oa, n_va, n_oa, n_va)
+    assert staged.trial.data["ci2ab"].shape == (n_oa, n_va, n_ob, n_vb)
+    assert staged.trial.data["ci2bb"].shape == (n_ob, n_vb, n_ob, n_vb)
+
+
+def test_stage_from_ccpy_order_lt_2_raises():
+    from pyscf import gto, scf
+
+    mol = gto.M(atom="H 0 0 0; H 0 0 0.74", basis="sto-3g", spin=0, symmetry="c1", verbose=0)
+    mf = scf.UHF(mol)
+    mf.run(conv_tol=1.0e-12)
+    assert mf.converged
+
+    n_oa, n_ob = map(int, mol.nelec)
+    nmo = int(mf.mo_coeff[0].shape[1])
+    n_va = nmo - n_oa
+    n_vb = nmo - n_ob
+    driver = _make_driver(n_oa, n_va, n_ob, n_vb, order_cc=2, rng=np.random.default_rng(5))
+
+    with pytest.raises(ValueError, match="requires order >= 2"):
+        stage_from_ccpy(driver, mf, order=1, chol_cut=1.0e-8, verbose=False)
 
 
 if __name__ == "__main__":
