@@ -904,6 +904,128 @@ def _stage_ham_input(obj: StagedMfOrCc, *, chol_cut: float, verbose: bool) -> Ha
     )
 
 
+def _load_fcidump_context(fcidump: Union[str, Path, Dict[str, Any]]) -> Dict[str, Any]:
+    if isinstance(fcidump, dict):
+        ctx: Dict[str, Any] = dict(fcidump)
+    elif isinstance(fcidump, (str, Path)):
+        from pyscf.tools import fcidump as pyscf_fcidump
+
+        ctx = pyscf_fcidump.read(str(Path(fcidump).expanduser()))
+    else:
+        raise TypeError(f"fcidump must be dict | str | Path, but received '{type(fcidump)}'.")
+
+    required_keys = ("H1", "H2", "NORB", "NELEC")
+    missing = [k for k in required_keys if k not in ctx]
+    if missing:
+        raise ValueError(f"fcidump is missing required keys: {missing}")
+    return ctx
+
+
+def _stage_ham_input_from_fcidump(
+    obj: StagedMfOrCc,
+    *,
+    fcidump: Union[str, Path, Dict[str, Any]],
+    chol_cut: float,
+    verbose: bool,
+) -> HamInput:
+    """
+    Build HamInput from FCIDUMP integrals while preserving the trial MO basis convention.
+    """
+    from pyscf import ao2mo
+
+    scf_obj = obj.mf
+    if scf_obj.kind == "ghf":
+        raise NotImplementedError("FCIDUMP staging for stage_from_ccpy does not support GHF.")
+
+    match scf_obj.kind:
+        case "rhf" | "rohf":
+            basis_coeff = np.asarray(scf_obj.mo_coeff)
+        case "uhf":
+            basis_coeff = np.asarray(scf_obj.mo_coeff[0])
+        case _:
+            raise ValueError(f"Unreachable: '{scf_obj.kind}'.")
+
+    ctx = _load_fcidump_context(fcidump)
+    norb = int(ctx["NORB"])
+    if basis_coeff.shape[1] != norb:
+        raise ValueError(
+            "FCIDUMP NORB does not match mf orbital count: "
+            f"{norb} != {basis_coeff.shape[1]}."
+        )
+
+    h0 = float(ctx.get("ECORE", 0.0))
+    h1_ao = np.asarray(ctx["H1"])
+    if h1_ao.shape != (norb, norb):
+        raise ValueError(f"FCIDUMP H1 must have shape ({norb}, {norb}), got {h1_ao.shape}.")
+    h1_ao = 0.5 * (h1_ao + h1_ao.T.conj())
+    h1 = basis_coeff.T.conj() @ h1_ao @ basis_coeff
+    h1 = np.asarray(h1)
+
+    h2_raw = np.asarray(ctx["H2"])
+    eri_ao = ao2mo.restore(1, h2_raw, norb)
+    eri_mo = np.einsum(
+        "pi,qj,rk,sl,pqrs->ijkl",
+        basis_coeff.conj(),
+        basis_coeff.conj(),
+        basis_coeff,
+        basis_coeff,
+        eri_ao,
+        optimize=True,
+    )
+
+    nelec_tot = int(ctx["NELEC"])
+    ms2 = int(ctx.get("MS2", 0))
+    if (nelec_tot + ms2) % 2 != 0 or (nelec_tot - ms2) % 2 != 0:
+        raise ValueError(f"Inconsistent FCIDUMP NELEC/MS2 pair: NELEC={nelec_tot}, MS2={ms2}.")
+    nelec: Tuple[int, int] = ((nelec_tot + ms2) // 2, (nelec_tot - ms2) // 2)
+
+    norb_frozen = scf_obj.afqmc_frozen
+    assert isinstance(norb_frozen, int)
+    if norb_frozen < 0:
+        raise ValueError(f"norb_frozen must be non-negative, got {norb_frozen}.")
+    if norb_frozen > min(nelec):
+        raise ValueError(f"norb_frozen={norb_frozen} exceeds min(nelec)={min(nelec)}")
+    if norb_frozen >= norb:
+        raise ValueError(f"norb_frozen={norb_frozen} leaves no active orbitals (norb={norb}).")
+
+    if norb_frozen > 0:
+        core = slice(0, norb_frozen)
+        act = slice(norb_frozen, norb)
+
+        # Closed-shell core projection in molecular-orbital basis.
+        h0 += float(
+            2.0 * np.einsum("ii->", h1[core, core])
+            + 2.0 * np.einsum("iijj->", eri_mo[core, core, core, core])
+            - np.einsum("ijji->", eri_mo[core, core, core, core])
+        )
+        h1 = (
+            h1[act, act]
+            + 2.0 * np.einsum("pqii->pq", eri_mo[act, act, core, core])
+            - np.einsum("piiq->pq", eri_mo[act, core, core, act])
+        )
+        eri_mo = eri_mo[act, act, act, act]
+        nelec = (nelec[0] - norb_frozen, nelec[1] - norb_frozen)
+        norb = norb - norb_frozen
+
+    t0 = time.time()
+    eri_s4 = ao2mo.restore(4, np.asarray(eri_mo), norb)
+    chol = modified_cholesky(eri_s4, max_error=chol_cut)
+    if verbose:
+        print(f"[stage] FCIDUMP cholesky: nchol={chol.shape[0]} in {time.time() - t0:.2f}s")
+
+    return HamInput(
+        h0=float(h0),
+        h1=np.asarray(h1),
+        chol=np.asarray(chol),
+        nelec=nelec,
+        norb=norb,
+        chol_cut=float(chol_cut),
+        frozen=norb_frozen,
+        source_kind=obj.source,
+        basis="restricted",
+    )
+
+
 def _stage_trial_input(obj: StagedMfOrCc) -> TrialInput:
     """
     Produce TrialInput consistent with the Hamiltonian basis and frozen core choice
@@ -1438,6 +1560,7 @@ def stage_from_ccpy(
     norb_frozen_core: int | None = None,
     norb_frozen: int | None = None,
     chol_cut: float = 1e-5,
+    fcidump: Union[str, Path, Dict[str, Any], None] = None,
     cache: Union[str, Path] | None = None,
     overwrite: bool = False,
     verbose: bool = False,
@@ -1459,6 +1582,10 @@ def stage_from_ccpy(
             Backward-compatible alias for norb_frozen_core.
         chol_cut:
             Cholesky decomposition cutoff.
+        fcidump:
+            Optional FCIDUMP data source used to build the Hamiltonian. Accepts a parsed
+            FCIDUMP dict or a path to an FCIDUMP file. If omitted, Hamiltonian staging uses
+            the provided ``mf`` object.
         cache:
             Optional path to cache results. Loads existing file if present and overwrite=False.
         overwrite:
@@ -1491,7 +1618,10 @@ def stage_from_ccpy(
     staged_mf = obj.mf
 
     t_ham = _stage_begin("building Hamiltonian")
-    ham = _stage_ham_input(obj, chol_cut=chol_cut, verbose=verbose)
+    if fcidump is None:
+        ham = _stage_ham_input(obj, chol_cut=chol_cut, verbose=verbose)
+    else:
+        ham = _stage_ham_input_from_fcidump(obj, fcidump=fcidump, chol_cut=chol_cut, verbose=verbose)
     _stage_end(t_ham, "Hamiltonian ready", details=f"norb={ham.norb} nchol={ham.chol.shape[0]}")
 
     t_trial = _stage_begin("building trial input")
@@ -1508,6 +1638,7 @@ def stage_from_ccpy(
         "source_kind": "cc",
         "ccpy_order": order_cc,
         "ci_order": order,
+        "ham_source": "fcidump" if fcidump is not None else "mf",
         "frozen": _freeze_meta_value(obj.afqmc_frozen),
         "chol_cut": ham.chol_cut,
         "mol": {
