@@ -3,14 +3,13 @@ from trot import config
 config.configure_once()
 
 from dataclasses import replace
-from pathlib import Path
-import sys
 
 import jax.numpy as jnp
 import numpy as np
 import pytest
 from pyscf import gto, scf
 
+from tests.helpers import hamiltonian_noci_overlaps, noci_overlaps
 from trot.core.ops import k_energy, k_force_bias
 from trot.core.system import System
 from trot.ham.chol import HamChol
@@ -45,18 +44,6 @@ def _build_ccpy_driver(mol, *, cc_method: str):
     driver.options["RHF_symmetry"] = False
     driver.run_cc(method=cc_method)
     return mf, driver
-
-
-def _require_legacy_oracle_modules():
-    legacy_root = Path(__file__).resolve().parents[2] / "ad_afqmc_ccsdt_ccsdtq"
-    if not legacy_root.exists():
-        pytest.skip(f"legacy oracle repo not found at {legacy_root}")
-    sys.path.insert(0, str(legacy_root))
-    try:
-        from ad_afqmc import hamiltonian_noci_overlaps, noci_overlaps
-    except Exception as exc:  # pragma: no cover - depends on local environment
-        pytest.skip(f"legacy oracle modules unavailable: {exc}")
-    return hamiltonian_noci_overlaps, noci_overlaps
 
 
 def _ham_from_staged(staged):
@@ -127,9 +114,8 @@ def _walker_to_oracle_det_mo(mf, trial_data, walker):
 
 
 def _oracle_overlap_energy(mf, ci_amps, det_mo):
-    h_no, no = _require_legacy_oracle_modules()
-    overlap = no.evaluate(mf, ci_amps, det_mo)
-    h_overlap = h_no.evaluate(mf, ci_amps, det_mo)
+    overlap = noci_overlaps.evaluate(mf, ci_amps, det_mo)
+    h_overlap = hamiltonian_noci_overlaps.evaluate(mf, ci_amps, det_mo)
     energy = h_overlap / overlap + mf.mol.energy_nuc()
     return overlap, energy
 
