@@ -987,25 +987,11 @@ def _stage_ham_input_from_fcidump(
         raise ValueError(f"norb_frozen={norb_frozen} exceeds min(nelec)={min(nelec)}")
     if norb_frozen >= norb:
         raise ValueError(f"norb_frozen={norb_frozen} leaves no active orbitals (norb={norb}).")
-
     if norb_frozen > 0:
-        core = slice(0, norb_frozen)
-        act = slice(norb_frozen, norb)
-
-        # Closed-shell core projection in molecular-orbital basis.
-        h0 += float(
-            2.0 * np.einsum("ii->", h1[core, core])
-            + 2.0 * np.einsum("iijj->", eri_mo[core, core, core, core])
-            - np.einsum("ijji->", eri_mo[core, core, core, core])
+        raise NotImplementedError(
+            "FCIDUMP staging currently supports only norb_frozen=0. "
+            "Use stage_from_ccpy(..., fcidump=...) which falls back to the existing MF frozen-core path."
         )
-        h1 = (
-            h1[act, act]
-            + 2.0 * np.einsum("pqii->pq", eri_mo[act, act, core, core])
-            - np.einsum("piiq->pq", eri_mo[act, core, core, act])
-        )
-        eri_mo = eri_mo[act, act, act, act]
-        nelec = (nelec[0] - norb_frozen, nelec[1] - norb_frozen)
-        norb = norb - norb_frozen
 
     t0 = time.time()
     eri_s4 = ao2mo.restore(4, np.asarray(eri_mo), norb)
@@ -1633,10 +1619,17 @@ def stage_from_ccpy(
     staged_mf = obj.mf
 
     t_ham = _stage_begin("building Hamiltonian")
-    if fcidump is None:
-        ham = _stage_ham_input(obj, chol_cut=chol_cut, verbose=verbose)
-    else:
+    ham_source = "mf"
+    if fcidump is not None and int(obj.afqmc_frozen) == 0:
         ham = _stage_ham_input_from_fcidump(obj, fcidump=fcidump, chol_cut=chol_cut, verbose=verbose)
+        ham_source = "fcidump"
+    else:
+        if fcidump is not None and int(obj.afqmc_frozen) > 0 and verbose:
+            print(
+                "[stage] FCIDUMP + norb_frozen>0 requested; "
+                "using existing MF frozen-core Hamiltonian staging."
+            )
+        ham = _stage_ham_input(obj, chol_cut=chol_cut, verbose=verbose)
     _stage_end(t_ham, "Hamiltonian ready", details=f"norb={ham.norb} nchol={ham.chol.shape[0]}")
 
     t_trial = _stage_begin("building trial input")
@@ -1655,7 +1648,7 @@ def stage_from_ccpy(
         "source_kind": "cc",
         "ccpy_order": order_cc,
         "ci_order": order,
-        "ham_source": "fcidump" if fcidump is not None else "mf",
+        "ham_source": ham_source,
         "frozen": _freeze_meta_value(obj.afqmc_frozen),
         "chol_cut": ham.chol_cut,
         "mol": {
