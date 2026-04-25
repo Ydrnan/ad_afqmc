@@ -23,7 +23,7 @@ def _greenp_from_occ(green_occ: jax.Array) -> jax.Array:
 
 @dataclass(frozen=True)
 class UcisdtMeasCfg:
-    memory_mode: str = "low"
+    memory_mode: str = "high"
     mixed_real_dtype: jnp.dtype = jnp.float64
     mixed_complex_dtype: jnp.dtype = jnp.complex128
     mixed_real_dtype_testing: jnp.dtype = jnp.float32
@@ -1131,7 +1131,7 @@ def build_meas_ctx(
 
 def make_ucisdt_meas_ops(
     sys: System,
-    memory_mode: str = "low",
+    memory_mode: str = "high",
     mixed_precision: bool = True,
     testing: bool = False,
 ) -> MeasOps:

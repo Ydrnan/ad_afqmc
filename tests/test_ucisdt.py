@@ -278,5 +278,25 @@ def test_generalized_walkers_raise():
         make_ucisdt_meas_ops(sys)
 
 
+def test_memory_mode_defaults_to_high_and_allows_low_override():
+    from trot.core.system import System
+
+    norb = 6
+    nup, ndn = 2, 2
+    n_chol = 8
+    key = jax.random.PRNGKey(5)
+    key, k_ham, k_trial = jax.random.split(key, 3)
+
+    sys = System(norb=norb, nelec=(nup, ndn), walker_kind="unrestricted")
+    ham = testing.make_random_ham_chol(k_ham, norb=norb, n_chol=n_chol, basis="restricted")
+    trial = _make_ucisdt_trial(k_trial, norb=norb, nup=nup, ndn=ndn)
+
+    ctx_default = make_ucisdt_meas_ops(sys).build_meas_ctx(ham, trial)
+    ctx_low = make_ucisdt_meas_ops(sys, memory_mode="low").build_meas_ctx(ham, trial)
+
+    assert ctx_default.cfg.memory_mode == "high"
+    assert ctx_low.cfg.memory_mode == "low"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
