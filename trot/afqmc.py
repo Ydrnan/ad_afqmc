@@ -248,6 +248,13 @@ class Afqmc:
         Compute or load HamInput/TrialInput.
         If cache is set and exists, loads unless overwrite_cache=True.
         """
+        if isinstance(self._obj, StagedInputs):
+            if self._staged is None or force:
+                self._staged = self._obj
+                self._cache_key = self._key()
+                self._job = None
+            return self._staged
+
         if isinstance(self.norb_frozen_core, (list, tuple, np.ndarray)):
             raise TypeError(
                 "Array-valued frozen is reserved for LNO orbital-list staging; "
