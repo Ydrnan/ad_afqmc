@@ -93,6 +93,223 @@ class UcisdtMeasCtx:
         )
 
 
+def _real_c3_contract_qurs(c3: jax.Array, a: jax.Array, *, low_memory: bool) -> jax.Array:
+    if not low_memory:
+        return jnp.einsum("ptqurs,pt->qurs", c3, a, optimize="optimal")
+
+    out_dtype = jnp.result_type(c3.dtype, a.dtype)
+    out = jnp.zeros(c3.shape[2:6], dtype=out_dtype)
+    n_t = a.shape[1]
+
+    def body(i, acc):
+        p = i // n_t
+        t = i - p * n_t
+        return acc + a[p, t] * c3[p, t, :, :, :, :]
+
+    return lax.fori_loop(0, a.size, body, out)
+
+
+def _real_c3_contract_ptqu(c3: jax.Array, c: jax.Array, *, low_memory: bool) -> jax.Array:
+    if not low_memory:
+        return jnp.einsum("ptqurs,rs->ptqu", c3, c, optimize="optimal")
+
+    out_dtype = jnp.result_type(c3.dtype, c.dtype)
+    out = jnp.zeros(c3.shape[0:4], dtype=out_dtype)
+    n_s = c.shape[1]
+
+    def body(i, acc):
+        r = i // n_s
+        s = i - r * n_s
+        return acc + c[r, s] * c3[:, :, :, :, r, s]
+
+    return lax.fori_loop(0, c.size, body, out)
+
+
+def _real_c3_contract_rs(c3: jax.Array, a: jax.Array, b: jax.Array, *, low_memory: bool) -> jax.Array:
+    if not low_memory:
+        if a.size <= b.size:
+            tmp = jnp.einsum("ptqurs,pt->qurs", c3, a, optimize="optimal")
+            return jnp.einsum("qurs,qu->rs", tmp, b, optimize="optimal")
+        tmp = jnp.einsum("ptqurs,qu->ptrs", c3, b, optimize="optimal")
+        return jnp.einsum("ptrs,pt->rs", tmp, a, optimize="optimal")
+
+    out_dtype = jnp.result_type(c3.dtype, a.dtype, b.dtype)
+    out = jnp.zeros(c3.shape[4:6], dtype=out_dtype)
+
+    if a.size <= b.size:
+        n_t = a.shape[1]
+
+        def body_pt(i, acc):
+            p = i // n_t
+            t = i - p * n_t
+            c_pt = c3[p, t, :, :, :, :]
+            contrib = jnp.einsum("qu,qurs->rs", b, c_pt, optimize="optimal")
+            return acc + a[p, t] * contrib
+
+        return lax.fori_loop(0, a.size, body_pt, out)
+
+    n_u = b.shape[1]
+
+    def body_qu(i, acc):
+        q = i // n_u
+        u = i - q * n_u
+        c_qu = c3[:, :, q, u, :, :]
+        contrib = jnp.einsum("pt,ptrs->rs", a, c_qu, optimize="optimal")
+        return acc + b[q, u] * contrib
+
+    return lax.fori_loop(0, b.size, body_qu, out)
+
+
+def _real_c3_contract_qu(c3: jax.Array, a: jax.Array, c: jax.Array, *, low_memory: bool) -> jax.Array:
+    if not low_memory:
+        if a.size <= c.size:
+            tmp = jnp.einsum("ptqurs,pt->qurs", c3, a, optimize="optimal")
+            return jnp.einsum("qurs,rs->qu", tmp, c, optimize="optimal")
+        tmp = jnp.einsum("ptqurs,rs->ptqu", c3, c, optimize="optimal")
+        return jnp.einsum("ptqu,pt->qu", tmp, a, optimize="optimal")
+
+    out_dtype = jnp.result_type(c3.dtype, a.dtype, c.dtype)
+    out = jnp.zeros(c3.shape[2:4], dtype=out_dtype)
+
+    if a.size <= c.size:
+        n_t = a.shape[1]
+
+        def body_pt(i, acc):
+            p = i // n_t
+            t = i - p * n_t
+            c_pt = c3[p, t, :, :, :, :]
+            contrib = jnp.einsum("rs,qurs->qu", c, c_pt, optimize="optimal")
+            return acc + a[p, t] * contrib
+
+        return lax.fori_loop(0, a.size, body_pt, out)
+
+    n_s = c.shape[1]
+
+    def body_rs(i, acc):
+        r = i // n_s
+        s = i - r * n_s
+        c_rs = c3[:, :, :, :, r, s]
+        contrib = jnp.einsum("pt,ptqu->qu", a, c_rs, optimize="optimal")
+        return acc + c[r, s] * contrib
+
+    return lax.fori_loop(0, c.size, body_rs, out)
+
+
+def _real_c3_contract_pt(c3: jax.Array, b: jax.Array, c: jax.Array, *, low_memory: bool) -> jax.Array:
+    if not low_memory:
+        if b.size <= c.size:
+            tmp = jnp.einsum("ptqurs,qu->ptrs", c3, b, optimize="optimal")
+            return jnp.einsum("ptrs,rs->pt", tmp, c, optimize="optimal")
+        tmp = jnp.einsum("ptqurs,rs->ptqu", c3, c, optimize="optimal")
+        return jnp.einsum("ptqu,qu->pt", tmp, b, optimize="optimal")
+
+    out_dtype = jnp.result_type(c3.dtype, b.dtype, c.dtype)
+    out = jnp.zeros(c3.shape[0:2], dtype=out_dtype)
+
+    if b.size <= c.size:
+        n_u = b.shape[1]
+
+        def body_qu(i, acc):
+            q = i // n_u
+            u = i - q * n_u
+            c_qu = c3[:, :, q, u, :, :]
+            contrib = jnp.einsum("rs,ptrs->pt", c, c_qu, optimize="optimal")
+            return acc + b[q, u] * contrib
+
+        return lax.fori_loop(0, b.size, body_qu, out)
+
+    n_s = c.shape[1]
+
+    def body_rs(i, acc):
+        r = i // n_s
+        s = i - r * n_s
+        c_rs = c3[:, :, :, :, r, s]
+        contrib = jnp.einsum("qu,ptqu->pt", b, c_rs, optimize="optimal")
+        return acc + c[r, s] * contrib
+
+    return lax.fori_loop(0, c.size, body_rs, out)
+
+
+def _complex_from_real_parts(real_part: jax.Array, imag_part: jax.Array) -> jax.Array:
+    return lax.complex(real_part, imag_part)
+
+
+def _c3_contract_qurs(c3: jax.Array, a: jax.Array, *, low_memory: bool) -> jax.Array:
+    a_real = jnp.real(a)
+    a_imag = jnp.imag(a)
+    real_part = _real_c3_contract_qurs(c3, a_real, low_memory=low_memory)
+    imag_part = _real_c3_contract_qurs(c3, a_imag, low_memory=low_memory)
+    return _complex_from_real_parts(real_part, imag_part)
+
+
+def _c3_contract_ptqu(c3: jax.Array, c: jax.Array, *, low_memory: bool) -> jax.Array:
+    c_real = jnp.real(c)
+    c_imag = jnp.imag(c)
+    real_part = _real_c3_contract_ptqu(c3, c_real, low_memory=low_memory)
+    imag_part = _real_c3_contract_ptqu(c3, c_imag, low_memory=low_memory)
+    return _complex_from_real_parts(real_part, imag_part)
+
+
+def _c3_contract_rs(c3: jax.Array, a: jax.Array, b: jax.Array, *, low_memory: bool) -> jax.Array:
+    a_real = jnp.real(a)
+    a_imag = jnp.imag(a)
+    b_real = jnp.real(b)
+    b_imag = jnp.imag(b)
+
+    rr = _real_c3_contract_rs(c3, a_real, b_real, low_memory=low_memory)
+    ri = _real_c3_contract_rs(c3, a_real, b_imag, low_memory=low_memory)
+    ir = _real_c3_contract_rs(c3, a_imag, b_real, low_memory=low_memory)
+    ii = _real_c3_contract_rs(c3, a_imag, b_imag, low_memory=low_memory)
+
+    return _complex_from_real_parts(rr - ii, ri + ir)
+
+
+def _c3_contract_qu(c3: jax.Array, a: jax.Array, c: jax.Array, *, low_memory: bool) -> jax.Array:
+    a_real = jnp.real(a)
+    a_imag = jnp.imag(a)
+    c_real = jnp.real(c)
+    c_imag = jnp.imag(c)
+
+    rr = _real_c3_contract_qu(c3, a_real, c_real, low_memory=low_memory)
+    ri = _real_c3_contract_qu(c3, a_real, c_imag, low_memory=low_memory)
+    ir = _real_c3_contract_qu(c3, a_imag, c_real, low_memory=low_memory)
+    ii = _real_c3_contract_qu(c3, a_imag, c_imag, low_memory=low_memory)
+
+    return _complex_from_real_parts(rr - ii, ri + ir)
+
+
+def _c3_contract_pt(c3: jax.Array, b: jax.Array, c: jax.Array, *, low_memory: bool) -> jax.Array:
+    b_real = jnp.real(b)
+    b_imag = jnp.imag(b)
+    c_real = jnp.real(c)
+    c_imag = jnp.imag(c)
+
+    rr = _real_c3_contract_pt(c3, b_real, c_real, low_memory=low_memory)
+    ri = _real_c3_contract_pt(c3, b_real, c_imag, low_memory=low_memory)
+    ir = _real_c3_contract_pt(c3, b_imag, c_real, low_memory=low_memory)
+    ii = _real_c3_contract_pt(c3, b_imag, c_imag, low_memory=low_memory)
+
+    return _complex_from_real_parts(rr - ii, ri + ir)
+
+
+def _c3_contract_scalar(
+    c3: jax.Array, a: jax.Array, b: jax.Array, c: jax.Array, *, low_memory: bool
+) -> jax.Array:
+    pt = _c3_contract_pt(c3, b, c, low_memory=low_memory)
+    return jnp.einsum("pt,pt->", a, pt, optimize="optimal")
+
+
+def _triples_overlap(
+    trial_data: UcisdtTrial, go_a: jax.Array, go_b: jax.Array, *, low_memory: bool
+) -> jax.Array:
+    return (
+        (1 / 6) * _c3_contract_scalar(trial_data.c3aaa, go_a, go_a, go_a, low_memory=low_memory)
+        + (1 / 6) * _c3_contract_scalar(trial_data.c3bbb, go_b, go_b, go_b, low_memory=low_memory)
+        + (1 / 2) * _c3_contract_scalar(trial_data.c3aab, go_a, go_a, go_b, low_memory=low_memory)
+        + (1 / 2) * _c3_contract_scalar(trial_data.c3abb, go_a, go_b, go_b, low_memory=low_memory)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Triples helper: force-bias contribution
 # ---------------------------------------------------------------------------
@@ -107,6 +324,7 @@ def _force_bias_triples(
     gp_b: jax.Array,      # (norb, n_vb)
     chol_a: jax.Array,    # (n_chol, norb, norb)
     chol_b: jax.Array,    # (n_chol, norb, norb)
+    low_memory: bool = False,
 ) -> jax.Array:
     """<psi_T(triples)| chol_g |w> / <psi_T|w>  (numerator contribution only)."""
     n_oa, n_ob = trial_data.nocc
@@ -129,19 +347,19 @@ def _force_bias_triples(
     yb = jnp.einsum("pj,gij,it->gpt", green_b, chol_b, gp_b)  # (n_chol, n_ob, n_vb)
 
     # --- AAA ---
-    cgg_a = jnp.einsum("ptqurs,qu,rs->pt", c3aaa, go_a, go_a)   # (n_oa, n_va)
+    cgg_a = _c3_contract_pt(c3aaa, go_a, go_a, low_memory=low_memory)  # (n_oa, n_va)
     cggg_a = jnp.einsum("pt,pt->", cgg_a, go_a)
     fb_aaa = (1 / 6) * cggg_a * x - (1 / 2) * jnp.einsum("pt,gpt->g", cgg_a, ya)
 
     # --- BBB ---
-    cgg_b = jnp.einsum("ptqurs,qu,rs->pt", c3bbb, go_b, go_b)   # (n_ob, n_vb)
+    cgg_b = _c3_contract_pt(c3bbb, go_b, go_b, low_memory=low_memory)  # (n_ob, n_vb)
     cggg_b = jnp.einsum("pt,pt->", cgg_b, go_b)
     fb_bbb = (1 / 6) * cggg_b * x - (1 / 2) * jnp.einsum("pt,gpt->g", cgg_b, yb)
 
     # --- AAB ---
-    caab_ga_gb = jnp.einsum("ptqurs,qu,rs->pt", c3aab, go_a, go_b)   # (n_oa, n_va)
+    caab_ga_gb = _c3_contract_pt(c3aab, go_a, go_b, low_memory=low_memory)  # (n_oa, n_va)
     caab_ga_ga_gb = jnp.einsum("pt,pt->", caab_ga_gb, go_a)
-    ga_ga_caab = jnp.einsum("pt,qu,ptqurs->rs", go_a, go_a, c3aab)   # (n_ob, n_vb)
+    ga_ga_caab = _c3_contract_rs(c3aab, go_a, go_a, low_memory=low_memory)  # (n_ob, n_vb)
 
     fb_aab = (
         (1 / 2) * caab_ga_ga_gb * x
@@ -150,9 +368,9 @@ def _force_bias_triples(
     )
 
     # --- ABB ---
-    cabb_ga_gb_gb = jnp.einsum("ptqurs,pt,qu,rs->", c3abb, go_a, go_b, go_b)
-    ga_cabb_gb = jnp.einsum("pt,ptqurs,rs->qu", go_a, c3abb, go_b)   # (n_ob, n_vb)
-    cabb_gb_gb = jnp.einsum("ptqurs,qu,rs->pt", c3abb, go_b, go_b)   # (n_oa, n_va)
+    cabb_ga_gb_gb = _c3_contract_scalar(c3abb, go_a, go_b, go_b, low_memory=low_memory)
+    ga_cabb_gb = _c3_contract_qu(c3abb, go_a, go_b, low_memory=low_memory)  # (n_ob, n_vb)
+    cabb_gb_gb = _c3_contract_pt(c3abb, go_b, go_b, low_memory=low_memory)  # (n_oa, n_va)
 
     fb_abb = (
         (1 / 2) * cabb_ga_gb_gb * x
@@ -177,6 +395,7 @@ def _one_body_energy_triples(
     gp_b: jax.Array,     # (norb, n_vb)
     h1_a: jax.Array,    # (norb, norb)
     h1_b: jax.Array,    # (norb, norb)
+    low_memory: bool = False,
 ) -> jax.Array:
     """
     One-body local energy contribution from the triples sector.
@@ -200,19 +419,19 @@ def _one_body_energy_triples(
     yb = jnp.einsum("pj,ij,it->pt", green_b, h1_b, gp_b)  # (n_ob, n_vb)
 
     # --- AAA ---
-    cgg_a = jnp.einsum("ptqurs,qu,rs->pt", c3aaa, go_a, go_a)
+    cgg_a = _c3_contract_pt(c3aaa, go_a, go_a, low_memory=low_memory)
     cggg_a = jnp.einsum("pt,pt->", cgg_a, go_a)
     e_aaa = (1 / 6) * cggg_a * x - (1 / 2) * jnp.einsum("pt,pt->", cgg_a, ya)
 
     # --- BBB ---
-    cgg_b = jnp.einsum("ptqurs,qu,rs->pt", c3bbb, go_b, go_b)
+    cgg_b = _c3_contract_pt(c3bbb, go_b, go_b, low_memory=low_memory)
     cggg_b = jnp.einsum("pt,pt->", cgg_b, go_b)
     e_bbb = (1 / 6) * cggg_b * x - (1 / 2) * jnp.einsum("pt,pt->", cgg_b, yb)
 
     # --- AAB ---
-    caab_ga_gb = jnp.einsum("ptqurs,qu,rs->pt", c3aab, go_a, go_b)
+    caab_ga_gb = _c3_contract_pt(c3aab, go_a, go_b, low_memory=low_memory)
     caab_ga_ga_gb = jnp.einsum("pt,pt->", caab_ga_gb, go_a)
-    ga_ga_caab = jnp.einsum("pt,qu,ptqurs->rs", go_a, go_a, c3aab)
+    ga_ga_caab = _c3_contract_rs(c3aab, go_a, go_a, low_memory=low_memory)
 
     e_aab = (
         (1 / 2) * caab_ga_ga_gb * x
@@ -221,9 +440,9 @@ def _one_body_energy_triples(
     )
 
     # --- ABB ---
-    cabb_ga_gb_gb = jnp.einsum("ptqurs,pt,qu,rs->", c3abb, go_a, go_b, go_b)
-    ga_cabb_gb = jnp.einsum("pt,ptqurs,rs->qu", go_a, c3abb, go_b)
-    cabb_gb_gb = jnp.einsum("ptqurs,qu,rs->pt", c3abb, go_b, go_b)
+    cabb_ga_gb_gb = _c3_contract_scalar(c3abb, go_a, go_b, go_b, low_memory=low_memory)
+    ga_cabb_gb = _c3_contract_qu(c3abb, go_a, go_b, low_memory=low_memory)
+    cabb_gb_gb = _c3_contract_pt(c3abb, go_b, go_b, low_memory=low_memory)
 
     e_abb = (
         (1 / 2) * cabb_ga_gb_gb * x
@@ -248,6 +467,7 @@ def _two_body_energy_triples(
     gp_b: jax.Array,     # (norb, n_vb)
     chol_a: jax.Array,   # (n_chol, norb, norb)
     chol_b: jax.Array,   # (n_chol, norb, norb)
+    low_memory: bool = False,
 ) -> jax.Array:
     n_oa, n_ob = trial_data.nocc
 
@@ -269,12 +489,12 @@ def _two_body_energy_triples(
     # --- AAA & BBB ---
     x2 = jnp.einsum("g,g->", x, x)
 
-    caaaga = jnp.einsum("ptqurs,rs->ptqu", c3aaa, go_a)       # (n_oa,n_va,n_oa,n_va)
-    caaagaga = jnp.einsum("ptqurs,qu,rs->pt", c3aaa, go_a, go_a)   # (n_oa, n_va)
+    caaaga = _c3_contract_ptqu(c3aaa, go_a, low_memory=low_memory)  # (n_oa,n_va,n_oa,n_va)
+    caaagaga = _c3_contract_pt(c3aaa, go_a, go_a, low_memory=low_memory)  # (n_oa, n_va)
     caaagagaga = jnp.einsum("pt,pt->", caaagaga, go_a)
 
-    cbbbgb = jnp.einsum("ptqurs,rs->ptqu", c3bbb, go_b)
-    cbbbgbgb = jnp.einsum("ptqurs,qu,rs->pt", c3bbb, go_b, go_b)
+    cbbbgb = _c3_contract_ptqu(c3bbb, go_b, low_memory=low_memory)
+    cbbbgbgb = _c3_contract_pt(c3bbb, go_b, go_b, low_memory=low_memory)
     cbbbgbgbgb = jnp.einsum("pt,pt->", cbbbgbgb, go_b)
 
     eaaa1 = (1 / 12) * x2 * caaagagaga - (1 / 4) * jnp.einsum("g,gpt,pt->", x, ya, caaagaga)
@@ -310,9 +530,9 @@ def _two_body_energy_triples(
     ebbb = ebbb1 + ebbb2 + ebbb3
 
     # --- AAB ---
-    caabgagb = jnp.einsum("ptqurs,qu,rs->pt", c3aab, go_a, go_b)   # (n_oa, n_va)
+    caabgagb = _c3_contract_pt(c3aab, go_a, go_b, low_memory=low_memory)  # (n_oa, n_va)
     caabgagagb = jnp.einsum("pt,pt->", caabgagb, go_a)
-    gagacaab = jnp.einsum("pt,qu,ptqurs->rs", go_a, go_a, c3aab)   # (n_ob, n_vb)
+    gagacaab = _c3_contract_rs(c3aab, go_a, go_a, low_memory=low_memory)  # (n_ob, n_vb)
 
     eaab1 = (
         (1 / 4) * x2 * caabgagagb
@@ -325,8 +545,8 @@ def _two_body_energy_triples(
         + (1 / 4) * jnp.einsum("gij,rj,gis,rs->", lo_b, green_b, yb, gagacaab)
     )
 
-    caabgb = jnp.einsum("ptqurs,rs->ptqu", c3aab, go_b)   # (n_oa,n_va,n_oa,n_va)
-    gacaab = jnp.einsum("pt,ptqurs->qurs", go_a, c3aab)   # (n_oa,n_va,n_ob,n_vb)
+    caabgb = _c3_contract_ptqu(c3aab, go_b, low_memory=low_memory)  # (n_oa,n_va,n_oa,n_va)
+    gacaab = _c3_contract_qurs(c3aab, go_a, low_memory=low_memory)  # (n_oa,n_va,n_ob,n_vb)
 
     # terms 3 and 4 (4=3 so multiplied by 2)
     eaab3 = (
@@ -344,10 +564,10 @@ def _two_body_energy_triples(
     eaab = eaab1 + eaab2 + eaab3 + eaab5
 
     # --- ABB ---
-    cabbgb = jnp.einsum("ptqurs,rs->ptqu", c3abb, go_b)   # (n_oa,n_va,n_ob,n_vb)
+    cabbgb = _c3_contract_ptqu(c3abb, go_b, low_memory=low_memory)  # (n_oa,n_va,n_ob,n_vb)
     cabbgbgb = jnp.einsum("ptqu,qu->pt", cabbgb, go_b)    # (n_oa, n_va)
     cabbgagbgb = jnp.einsum("pt,pt->", cabbgbgb, go_a)
-    gacabbgb = jnp.einsum("pt,ptqurs,rs->qu", go_a, c3abb, go_b)  # (n_ob, n_vb)
+    gacabbgb = _c3_contract_qu(c3abb, go_a, go_b, low_memory=low_memory)  # (n_ob, n_vb)
 
     eabb1 = (
         (1 / 4) * x2 * cabbgagbgb
@@ -365,7 +585,7 @@ def _two_body_energy_triples(
         + (1 / 2) * jnp.einsum("ptqu,gpt,gqu->", cabbgb, ya, yb)
     )
 
-    gacabb = jnp.einsum("pt,ptqurs->qurs", go_a, c3abb)   # (n_ob,n_vb,n_ob,n_vb)
+    gacabb = _c3_contract_qurs(c3abb, go_a, low_memory=low_memory)  # (n_ob,n_vb,n_ob,n_vb)
 
     # terms 4 and 5 (4=5 so multiplied by 2)
     eabb4 = (
@@ -504,11 +724,8 @@ def force_bias_kernel_uw_rh(
     fb_2 = fb_2_1 + fb_2_2
 
     # overlap (singles + doubles + triples)
-    o3 = (
-        (1 / 6) * jnp.einsum("iajbkc,ia,jb,kc", trial_data.c3aaa, green_occ_a, green_occ_a, green_occ_a)
-        + (1 / 6) * jnp.einsum("iajbkc,ia,jb,kc", trial_data.c3bbb, green_occ_b, green_occ_b, green_occ_b)
-        + (1 / 2) * jnp.einsum("iajbkc,ia,jb,kc", trial_data.c3aab, green_occ_a, green_occ_a, green_occ_b)
-        + (1 / 2) * jnp.einsum("iajbkc,ia,jb,kc", trial_data.c3abb, green_occ_a, green_occ_b, green_occ_b)
+    o3 = _triples_overlap(
+        trial_data, green_occ_a, green_occ_b, low_memory=(cfg.memory_mode == "low")
     )
     overlap = 1.0 + ci1g + gci2g + o3
 
@@ -522,6 +739,7 @@ def force_bias_kernel_uw_rh(
         greenp_b,
         chol_a,
         chol_b,
+        low_memory=(cfg.memory_mode == "low"),
     )
 
     return (fb_0 + fb_1 + fb_2 + fb_3) / overlap
@@ -831,11 +1049,8 @@ def energy_kernel_uw_rh(
     e2 = e2_0 + e2_1 + e2_2
 
     # triples contributions
-    o3 = (
-        (1 / 6) * jnp.einsum("iajbkc,ia,jb,kc", trial_data.c3aaa, green_occ_a, green_occ_a, green_occ_a)
-        + (1 / 6) * jnp.einsum("iajbkc,ia,jb,kc", trial_data.c3bbb, green_occ_b, green_occ_b, green_occ_b)
-        + (1 / 2) * jnp.einsum("iajbkc,ia,jb,kc", trial_data.c3aab, green_occ_a, green_occ_a, green_occ_b)
-        + (1 / 2) * jnp.einsum("iajbkc,ia,jb,kc", trial_data.c3abb, green_occ_a, green_occ_b, green_occ_b)
+    o3 = _triples_overlap(
+        trial_data, green_occ_a, green_occ_b, low_memory=(cfg.memory_mode == "low")
     )
     overlap = 1.0 + ci1g + gci2g + o3
 
@@ -849,6 +1064,7 @@ def energy_kernel_uw_rh(
         greenp_b,
         h1_a,
         h1_b,
+        low_memory=(cfg.memory_mode == "low"),
     )
     e3_2 = _two_body_energy_triples(
         trial_data,
@@ -860,6 +1076,7 @@ def energy_kernel_uw_rh(
         greenp_b,
         chol_a,
         chol_b,
+        low_memory=(cfg.memory_mode == "low"),
     )
 
     return (e1 + e2 + e3_1 + e3_2) / overlap + e0
@@ -914,7 +1131,7 @@ def build_meas_ctx(
 
 def make_ucisdt_meas_ops(
     sys: System,
-    memory_mode: str = "high",
+    memory_mode: str = "low",
     mixed_precision: bool = True,
     testing: bool = False,
 ) -> MeasOps:

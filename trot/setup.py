@@ -214,7 +214,9 @@ def _make_trial_bundle(
 
         trial_data = make_ucisdt_trial_data(data, sys)
         trial_ops = make_ucisdt_trial_ops(sys=sys)
-        meas_ops = make_ucisdt_meas_ops(sys=sys, mixed_precision=mixed_precision)
+        meas_ops = make_ucisdt_meas_ops(
+            sys=sys, memory_mode="low", mixed_precision=mixed_precision
+        )
         _setup_end(t_bundle, "trial bundle ready", details=f"kind={kind}")
         return trial_data, trial_ops, meas_ops
 
