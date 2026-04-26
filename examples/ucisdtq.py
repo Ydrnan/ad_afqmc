@@ -7,7 +7,7 @@ try:
     from ccpy.drivers.driver import Driver
 except Exception as exc:
     raise RuntimeError(
-        "This example requires ccpy. Activate ccpy_env_xing_2 (or another ccpy-capable environment)."
+        "This example requires ccpy. Please install ccpy to run it."
     ) from exc
 
 mol = gto.M(
