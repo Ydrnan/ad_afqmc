@@ -514,7 +514,6 @@ class point_group_projector(projector):
         self._norm = 1.0 / len(self.pg_ops)
 
     def apply(self, kets: jnp.ndarray, coeffs: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
-
         def apply_one_op(U, kets_batch):
             return jax.vmap(_apply_pg_to_ket, in_axes=(0, None))(kets_batch, U)
 

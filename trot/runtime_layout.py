@@ -59,7 +59,8 @@ class RuntimeJob(Protocol):
 
 
 class RuntimeLayout(Protocol):
-    def make_initial_ham_data(self, ham: HamInput | HamChol, mesh: Mesh | None) -> HamChol: ...
+    def make_initial_ham_data(self, ham: HamInput | HamChol, mesh: Mesh | None) -> HamChol:
+        ...
 
     def prepare(
         self,
@@ -68,7 +69,8 @@ class RuntimeLayout(Protocol):
         state: PropState | None = None,
         meas_ctx: object | None = None,
         prop_ctx: object | None = None,
-    ) -> PreparedRuntime: ...
+    ) -> PreparedRuntime:
+        ...
 
 
 def _model_axis_size(mesh: Mesh) -> int:

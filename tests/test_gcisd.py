@@ -69,15 +69,7 @@ def test_auto_force_bias_matches_manual_gcisd(walker_kind, norb, nup, ndn, n_cho
     key = jax.random.PRNGKey(0)
     key, k_w = jax.random.split(key)
 
-    (
-        sys,
-        ham,
-        trial,
-        meas_manual,
-        ctx_manual,
-        meas_auto,
-        ctx_auto,
-    ) = testing.make_common_auto(
+    (sys, ham, trial, meas_manual, ctx_manual, meas_auto, ctx_auto,) = testing.make_common_auto(
         key,
         walker_kind,
         norb,
@@ -114,15 +106,7 @@ def test_auto_energy_matches_manual_gcisd(walker_kind, norb, nup, ndn, n_chol):
     key = jax.random.PRNGKey(0)
     key, k_w = jax.random.split(key)
 
-    (
-        sys,
-        ham,
-        trial,
-        meas_manual,
-        ctx_manual,
-        meas_auto,
-        ctx_auto,
-    ) = testing.make_common_auto(
+    (sys, ham, trial, meas_manual, ctx_manual, meas_auto, ctx_auto,) = testing.make_common_auto(
         key,
         walker_kind,
         norb,
@@ -152,13 +136,7 @@ def test_auto_energy_matches_manual_gcisd(walker_kind, norb, nup, ndn, n_chol):
 def _prep(mycc, walker_kind):
 
     mf = mycc._scf
-    (
-        sys,
-        ham_data,
-        trial_ops,
-        prop_ops,
-        meas_ops,
-    ) = testing.make_common_pyscf(
+    (sys, ham_data, trial_ops, prop_ops, meas_ops,) = testing.make_common_pyscf(
         mf,
         make_gcisd_meas_ops,
         make_gcisd_trial_ops,

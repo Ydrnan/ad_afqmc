@@ -33,15 +33,7 @@ def test_auto_force_bias_matches_manual_ghf(walker_kind, norb, nup, ndn, n_chol)
     key = jax.random.PRNGKey(0)
     key, k_w = jax.random.split(key)
 
-    (
-        sys,
-        ham,
-        trial,
-        meas_manual,
-        ctx_manual,
-        meas_auto,
-        ctx_auto,
-    ) = testing.make_common_auto(
+    (sys, ham, trial, meas_manual, ctx_manual, meas_auto, ctx_auto,) = testing.make_common_auto(
         key,
         walker_kind,
         norb,
@@ -81,15 +73,7 @@ def test_auto_energy_matches_manual_ghf(walker_kind, norb, nup, ndn, n_chol):
     key = jax.random.PRNGKey(1)
     key, k_w = jax.random.split(key)
 
-    (
-        sys,
-        ham,
-        trial,
-        meas_manual,
-        ctx_manual,
-        meas_auto,
-        ctx_auto,
-    ) = testing.make_common_auto(
+    (sys, ham, trial, meas_manual, ctx_manual, meas_auto, ctx_auto,) = testing.make_common_auto(
         key,
         walker_kind,
         norb,
@@ -121,13 +105,7 @@ def test_auto_energy_matches_manual_ghf(walker_kind, norb, nup, ndn, n_chol):
 
 
 def _prep(mf, walker_kind):
-    (
-        sys,
-        ham_data,
-        trial_ops,
-        prop_ops,
-        meas_ops,
-    ) = testing.make_common_pyscf(
+    (sys, ham_data, trial_ops, prop_ops, meas_ops,) = testing.make_common_pyscf(
         mf,
         make_ghf_meas_ops_chol,
         make_ghf_trial_ops,

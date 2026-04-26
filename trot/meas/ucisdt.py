@@ -33,18 +33,18 @@ class UcisdtMeasCfg:
 @tree_util.register_pytree_node_class
 @dataclass(frozen=True)
 class UcisdtMeasCtx:
-    h1_b: jax.Array         # (norb, norb)
-    chol_b: jax.Array       # (n_chol, norb, norb)
+    h1_b: jax.Array  # (norb, norb)
+    chol_b: jax.Array  # (n_chol, norb, norb)
 
-    rot_h1_a: jax.Array     # (nocc[0], norb)
-    rot_h1_b: jax.Array     # (nocc[1], norb)
-    rot_chol_a: jax.Array   # (n_chol, nocc[0], norb)
-    rot_chol_b: jax.Array   # (n_chol, nocc[1], norb)
+    rot_h1_a: jax.Array  # (nocc[0], norb)
+    rot_h1_b: jax.Array  # (nocc[1], norb)
+    rot_chol_a: jax.Array  # (n_chol, nocc[0], norb)
+    rot_chol_b: jax.Array  # (n_chol, nocc[1], norb)
     rot_chol_flat_a: jax.Array  # (n_chol, nocc[0]*norb)
     rot_chol_flat_b: jax.Array  # (n_chol, nocc[1]*norb)
 
-    lci1_a: jax.Array       # (n_chol, norb, nocc[0])
-    lci1_b: jax.Array       # (n_chol, norb, nocc[1])
+    lci1_a: jax.Array  # (n_chol, norb, nocc[0])
+    lci1_b: jax.Array  # (n_chol, norb, nocc[1])
 
     cfg: UcisdtMeasCfg
 
@@ -125,7 +125,9 @@ def _real_c3_contract_ptqu(c3: jax.Array, c: jax.Array, *, low_memory: bool) -> 
     return lax.fori_loop(0, c.size, body, out)
 
 
-def _real_c3_contract_rs(c3: jax.Array, a: jax.Array, b: jax.Array, *, low_memory: bool) -> jax.Array:
+def _real_c3_contract_rs(
+    c3: jax.Array, a: jax.Array, b: jax.Array, *, low_memory: bool
+) -> jax.Array:
     if not low_memory:
         if a.size <= b.size:
             tmp = jnp.einsum("ptqurs,pt->qurs", c3, a, optimize="optimal")
@@ -160,7 +162,9 @@ def _real_c3_contract_rs(c3: jax.Array, a: jax.Array, b: jax.Array, *, low_memor
     return lax.fori_loop(0, b.size, body_qu, out)
 
 
-def _real_c3_contract_qu(c3: jax.Array, a: jax.Array, c: jax.Array, *, low_memory: bool) -> jax.Array:
+def _real_c3_contract_qu(
+    c3: jax.Array, a: jax.Array, c: jax.Array, *, low_memory: bool
+) -> jax.Array:
     if not low_memory:
         if a.size <= c.size:
             tmp = jnp.einsum("ptqurs,pt->qurs", c3, a, optimize="optimal")
@@ -195,7 +199,9 @@ def _real_c3_contract_qu(c3: jax.Array, a: jax.Array, c: jax.Array, *, low_memor
     return lax.fori_loop(0, c.size, body_rs, out)
 
 
-def _real_c3_contract_pt(c3: jax.Array, b: jax.Array, c: jax.Array, *, low_memory: bool) -> jax.Array:
+def _real_c3_contract_pt(
+    c3: jax.Array, b: jax.Array, c: jax.Array, *, low_memory: bool
+) -> jax.Array:
     if not low_memory:
         if b.size <= c.size:
             tmp = jnp.einsum("ptqurs,qu->ptrs", c3, b, optimize="optimal")
@@ -314,16 +320,17 @@ def _triples_overlap(
 # Triples helper: force-bias contribution
 # ---------------------------------------------------------------------------
 
+
 def _force_bias_triples(
     trial_data: UcisdtTrial,
-    green_a: jax.Array,   # (n_oa, norb)
-    green_b: jax.Array,   # (n_ob, norb)
-    go_a: jax.Array,      # (n_oa, n_va)
-    go_b: jax.Array,      # (n_ob, n_vb)
-    gp_a: jax.Array,      # (norb, n_va)
-    gp_b: jax.Array,      # (norb, n_vb)
-    chol_a: jax.Array,    # (n_chol, norb, norb)
-    chol_b: jax.Array,    # (n_chol, norb, norb)
+    green_a: jax.Array,  # (n_oa, norb)
+    green_b: jax.Array,  # (n_ob, norb)
+    go_a: jax.Array,  # (n_oa, n_va)
+    go_b: jax.Array,  # (n_ob, n_vb)
+    gp_a: jax.Array,  # (norb, n_va)
+    gp_b: jax.Array,  # (norb, n_vb)
+    chol_a: jax.Array,  # (n_chol, norb, norb)
+    chol_b: jax.Array,  # (n_chol, norb, norb)
     low_memory: bool = False,
 ) -> jax.Array:
     """<psi_T(triples)| chol_g |w> / <psi_T|w>  (numerator contribution only)."""
@@ -385,16 +392,17 @@ def _force_bias_triples(
 # Triples helper: one-body energy contribution from triples
 # ---------------------------------------------------------------------------
 
+
 def _one_body_energy_triples(
     trial_data: UcisdtTrial,
     green_a: jax.Array,  # (n_oa, norb)
     green_b: jax.Array,  # (n_ob, norb)
-    go_a: jax.Array,     # (n_oa, n_va)
-    go_b: jax.Array,     # (n_ob, n_vb)
-    gp_a: jax.Array,     # (norb, n_va)
-    gp_b: jax.Array,     # (norb, n_vb)
-    h1_a: jax.Array,    # (norb, norb)
-    h1_b: jax.Array,    # (norb, norb)
+    go_a: jax.Array,  # (n_oa, n_va)
+    go_b: jax.Array,  # (n_ob, n_vb)
+    gp_a: jax.Array,  # (norb, n_va)
+    gp_b: jax.Array,  # (norb, n_vb)
+    h1_a: jax.Array,  # (norb, norb)
+    h1_b: jax.Array,  # (norb, norb)
     low_memory: bool = False,
 ) -> jax.Array:
     """
@@ -457,22 +465,23 @@ def _one_body_energy_triples(
 # Triples helper: two-body energy contribution from triples
 # ---------------------------------------------------------------------------
 
+
 def _two_body_energy_triples(
     trial_data: UcisdtTrial,
     green_a: jax.Array,  # (n_oa, norb)
     green_b: jax.Array,  # (n_ob, norb)
-    go_a: jax.Array,     # (n_oa, n_va)
-    go_b: jax.Array,     # (n_ob, n_vb)
-    gp_a: jax.Array,     # (norb, n_va)
-    gp_b: jax.Array,     # (norb, n_vb)
-    chol_a: jax.Array,   # (n_chol, norb, norb)
-    chol_b: jax.Array,   # (n_chol, norb, norb)
+    go_a: jax.Array,  # (n_oa, n_va)
+    go_b: jax.Array,  # (n_ob, n_vb)
+    gp_a: jax.Array,  # (norb, n_va)
+    gp_b: jax.Array,  # (norb, n_vb)
+    chol_a: jax.Array,  # (n_chol, norb, norb)
+    chol_b: jax.Array,  # (n_chol, norb, norb)
     low_memory: bool = False,
 ) -> jax.Array:
     n_oa, n_ob = trial_data.nocc
 
-    lo_a = chol_a[:, :n_oa, :]   # (n_chol, n_oa, norb)
-    lo_b = chol_b[:, :n_ob, :]   # (n_chol, n_ob, norb)
+    lo_a = chol_a[:, :n_oa, :]  # (n_chol, n_oa, norb)
+    lo_b = chol_b[:, :n_ob, :]  # (n_chol, n_ob, norb)
 
     c3aaa = trial_data.c3aaa
     c3aab = trial_data.c3aab
@@ -505,13 +514,11 @@ def _two_body_energy_triples(
 
     lglg = jnp.einsum("gkl,gkl->", galaga, lo_a) + jnp.einsum("gkl,gkl->", gblbgb, lo_b)
 
-    eaaa2 = (
-        -(1 / 12) * caaagagaga * lglg
-        + (1 / 4) * jnp.einsum("git,gij,pj,pt->", ya, lo_a, green_a, caaagaga)
+    eaaa2 = -(1 / 12) * caaagagaga * lglg + (1 / 4) * jnp.einsum(
+        "git,gij,pj,pt->", ya, lo_a, green_a, caaagaga
     )
-    ebbb2 = (
-        -(1 / 12) * cbbbgbgbgb * lglg
-        + (1 / 4) * jnp.einsum("git,gij,pj,pt->", yb, lo_b, green_b, cbbbgbgb)
+    ebbb2 = -(1 / 12) * cbbbgbgbgb * lglg + (1 / 4) * jnp.einsum(
+        "git,gij,pj,pt->", yb, lo_b, green_b, cbbbgbgb
     )
 
     eaaa3 = (
@@ -565,7 +572,7 @@ def _two_body_energy_triples(
 
     # --- ABB ---
     cabbgb = _c3_contract_ptqu(c3abb, go_b, low_memory=low_memory)  # (n_oa,n_va,n_ob,n_vb)
-    cabbgbgb = jnp.einsum("ptqu,qu->pt", cabbgb, go_b)    # (n_oa, n_va)
+    cabbgbgb = jnp.einsum("ptqu,qu->pt", cabbgb, go_b)  # (n_oa, n_va)
     cabbgagbgb = jnp.einsum("pt,pt->", cabbgbgb, go_a)
     gacabbgb = _c3_contract_qu(c3abb, go_a, go_b, low_memory=low_memory)  # (n_ob, n_vb)
 
@@ -604,6 +611,7 @@ def _two_body_energy_triples(
 # Kernels
 # ---------------------------------------------------------------------------
 
+
 def force_bias_kernel_rw_rh(
     walker: jax.Array,
     ham_data: HamChol,
@@ -638,11 +646,11 @@ def force_bias_kernel_uw_rh(
     woa = wa[:n_oa, :]
     wob = wb[:n_ob, :]
 
-    green_a = _half_green_from_overlap_matrix(wa, woa)   # (n_oa, norb)
-    green_b = _half_green_from_overlap_matrix(wb, wob)   # (n_ob, norb)
+    green_a = _half_green_from_overlap_matrix(wa, woa)  # (n_oa, norb)
+    green_b = _half_green_from_overlap_matrix(wb, wob)  # (n_ob, norb)
 
-    green_occ_a = green_a[:, n_oa:]   # (n_oa, n_va)
-    green_occ_b = green_b[:, n_ob:]   # (n_ob, n_vb)
+    green_occ_a = green_a[:, n_oa:]  # (n_oa, n_va)
+    green_occ_b = green_b[:, n_ob:]  # (n_ob, n_vb)
     greenp_a = _greenp_from_occ(green_occ_a)
     greenp_b = _greenp_from_occ(green_occ_b)
 
@@ -857,12 +865,8 @@ def energy_kernel_uw_rh(
     ci2_green_ab_a = (greenp_a @ ci2g_ab_a.T) @ green_a
     ci2_green_b = (greenp_b @ ci2g_b.T) @ green_b
     ci2_green_ab_b = (greenp_b @ ci2g_ab_b.T) @ green_b
-    e1_2_2_a = -jnp.einsum(
-        "ij,ij->", h1_a, 4 * ci2_green_a + ci2_green_ab_a, optimize="optimal"
-    )
-    e1_2_2_b = -jnp.einsum(
-        "ij,ij->", h1_b, 4 * ci2_green_b + ci2_green_ab_b, optimize="optimal"
-    )
+    e1_2_2_a = -jnp.einsum("ij,ij->", h1_a, 4 * ci2_green_a + ci2_green_ab_a, optimize="optimal")
+    e1_2_2_b = -jnp.einsum("ij,ij->", h1_b, 4 * ci2_green_b + ci2_green_ab_b, optimize="optimal")
     e1_2 = e1_2_1 + e1_2_2_a + e1_2_2_b
 
     e1 = e1_0 + e1_1 + e1_2
@@ -874,11 +878,7 @@ def energy_kernel_uw_rh(
     lg1_a = jnp.einsum("gpj,qj->gpq", rot_chol_a, green_a, optimize="optimal")
     lg1_b = jnp.einsum("gpj,qj->gpq", rot_chol_b, green_b, optimize="optimal")
     e2_0_2 = (
-        -(
-            jnp.sum(vmap(lambda x: x * x.T)(lg1_a))
-            + jnp.sum(vmap(lambda x: x * x.T)(lg1_b))
-        )
-        / 2.0
+        -(jnp.sum(vmap(lambda x: x * x.T)(lg1_a)) + jnp.sum(vmap(lambda x: x * x.T)(lg1_b))) / 2.0
     )
     e2_0 = e2_0_1 + e2_0_2
 
@@ -899,14 +899,14 @@ def energy_kernel_uw_rh(
     e2_1_2 = -((lci1g_a + lci1g_b) @ (lg_a + lg_b))
     ci1g1_a = c1a @ green_occ_a.T
     ci1g1_b = c1b @ green_occ_b.T
-    e2_1_3_1 = jnp.einsum(
-        "gpq,gqr,rp->", lg1_a, lg1_a, ci1g1_a, optimize="optimal"
-    ) + jnp.einsum("gpq,gqr,rp->", lg1_b, lg1_b, ci1g1_b, optimize="optimal")
+    e2_1_3_1 = jnp.einsum("gpq,gqr,rp->", lg1_a, lg1_a, ci1g1_a, optimize="optimal") + jnp.einsum(
+        "gpq,gqr,rp->", lg1_b, lg1_b, ci1g1_b, optimize="optimal"
+    )
     lci1g_a = jnp.einsum("gip,qi->gpq", lci1_a, green_a, optimize="optimal")
     lci1g_b = jnp.einsum("gip,qi->gpq", lci1_b, green_b, optimize="optimal")
-    e2_1_3_2 = -jnp.einsum(
-        "gpq,gqp->", lci1g_a, lg1_a, optimize="optimal"
-    ) - jnp.einsum("gpq,gqp->", lci1g_b, lg1_b, optimize="optimal")
+    e2_1_3_2 = -jnp.einsum("gpq,gqp->", lci1g_a, lg1_a, optimize="optimal") - jnp.einsum(
+        "gpq,gqp->", lci1g_b, lg1_b, optimize="optimal"
+    )
     e2_1 = e2_1_1 + e2_1_2 + e2_1_3_1 + e2_1_3_2
 
     # 2-body energy: doubles
@@ -952,12 +952,12 @@ def energy_kernel_uw_rh(
                 jnp.einsum("pi,pi->", gl_a_i, lci2_green_a_i, optimize="optimal")
                 + jnp.einsum("pi,pi->", gl_b_i, lci2_green_b_i, optimize="optimal")
             )
-            glgp_a_i = jnp.einsum(
-                "pi,it->pt", gl_a_i, greenp_a, optimize="optimal"
-            ).astype(cfg.mixed_complex_dtype_testing)
-            glgp_b_i = jnp.einsum(
-                "pi,it->pt", gl_b_i, greenp_b, optimize="optimal"
-            ).astype(cfg.mixed_complex_dtype_testing)
+            glgp_a_i = jnp.einsum("pi,it->pt", gl_a_i, greenp_a, optimize="optimal").astype(
+                cfg.mixed_complex_dtype_testing
+            )
+            glgp_b_i = jnp.einsum("pi,it->pt", gl_b_i, greenp_b, optimize="optimal").astype(
+                cfg.mixed_complex_dtype_testing
+            )
             l2ci2_a = 0.5 * jnp.einsum(
                 "pt,qu,ptqu->",
                 glgp_a_i,
@@ -1085,6 +1085,7 @@ def energy_kernel_uw_rh(
 # ---------------------------------------------------------------------------
 # Context builder and factory
 # ---------------------------------------------------------------------------
+
 
 def build_meas_ctx(
     ham_data: HamChol, trial_data: UcisdtTrial, cfg: UcisdtMeasCfg = UcisdtMeasCfg()
