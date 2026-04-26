@@ -407,15 +407,6 @@ def ut_ao2mo(mf):
     xg2e_bb = g2e_bb.transpose(0, 2, 1, 3) - g2e_bb.transpose(0, 2, 3, 1)
     xg2e_ab = g2e_ab.transpose(0, 2, 1, 3)
 
-    # try to get 1e term without n.o. term
-    #xg2e_aa = 0.0 * xg2e_aa
-    #xg2e_ab = 0.0 * xg2e_ab
-    #xg2e_bb = 0.0 * xg2e_bb
-
-    #h1e_a = mo_cas[0].T.conj() @ hcore_ao @ mo_cas[0]
-    #h1e_b = mo_cas[1].T.conj() @ hcore_ao @ mo_cas[1]
-    # 
-
     return (h1e_a, h1e_b, xg2e_aa, xg2e_ab, xg2e_bb), (nocca, noccb), (nvira, nvirb)
 
 # compute <ci|det>
