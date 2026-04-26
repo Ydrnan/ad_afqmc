@@ -81,10 +81,18 @@ def _make_ucisdt_trial(
     c2aa = scale_ci2 * jax.random.normal(keys[2], (n_oa, n_va, n_oa, n_va), dtype=dtype)
     c2ab = scale_ci2 * jax.random.normal(keys[3], (n_oa, n_va, n_ob, n_vb), dtype=dtype)
     c2bb = scale_ci2 * jax.random.normal(keys[4], (n_ob, n_vb, n_ob, n_vb), dtype=dtype)
-    c3aaa = scale_ci3 * jax.random.normal(keys[5], (n_oa, n_va, n_oa, n_va, n_oa, n_va), dtype=dtype)
-    c3aab = scale_ci3 * jax.random.normal(keys[6], (n_oa, n_va, n_oa, n_va, n_ob, n_vb), dtype=dtype)
-    c3abb = scale_ci3 * jax.random.normal(keys[7], (n_oa, n_va, n_ob, n_vb, n_ob, n_vb), dtype=dtype)
-    c3bbb = scale_ci3 * jax.random.normal(keys[8], (n_ob, n_vb, n_ob, n_vb, n_ob, n_vb), dtype=dtype)
+    c3aaa = scale_ci3 * jax.random.normal(
+        keys[5], (n_oa, n_va, n_oa, n_va, n_oa, n_va), dtype=dtype
+    )
+    c3aab = scale_ci3 * jax.random.normal(
+        keys[6], (n_oa, n_va, n_oa, n_va, n_ob, n_vb), dtype=dtype
+    )
+    c3abb = scale_ci3 * jax.random.normal(
+        keys[7], (n_oa, n_va, n_ob, n_vb, n_ob, n_vb), dtype=dtype
+    )
+    c3bbb = scale_ci3 * jax.random.normal(
+        keys[8], (n_ob, n_vb, n_ob, n_vb, n_ob, n_vb), dtype=dtype
+    )
 
     # Antisymmetrize c2aa and c2bb under exchange of the two electron pairs
     c2aa = 0.25 * (
@@ -122,9 +130,7 @@ def _make_ucisdt_trial(
 
 
 # Full float64 precision for auto vs manual comparisons
-_ucisdt_meas_ops_fp64 = functools.partial(
-    make_ucisdt_meas_ops, mixed_precision=False, testing=True
-)
+_ucisdt_meas_ops_fp64 = functools.partial(make_ucisdt_meas_ops, mixed_precision=False, testing=True)
 
 
 @pytest.mark.parametrize(
@@ -273,6 +279,7 @@ def test_energy_equal_when_wr_eq_wu():
 
 def test_generalized_walkers_raise():
     from trot.core.system import System
+
     sys = System(norb=4, nelec=(2, 2), walker_kind="generalized")
     with pytest.raises(NotImplementedError):
         make_ucisdt_meas_ops(sys)

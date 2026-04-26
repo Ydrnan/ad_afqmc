@@ -11,10 +11,10 @@ import pytest
 
 from trot.staging import _ccpy_t_to_c_amplitudes, stage_from_ccpy
 
-
 # ---------------------------------------------------------------------------
 # Mock ccpy driver
 # ---------------------------------------------------------------------------
+
 
 class _MockT:
     pass
@@ -52,13 +52,23 @@ def _make_driver(n_oa, n_va, n_ob, n_vb, *, order_cc: int, rng=None):
 # Shape tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("n_oa,n_va,n_ob,n_vb", [(2, 3, 2, 3), (3, 2, 2, 2)])
 def test_amplitude_shapes_order3(n_oa, n_va, n_ob, n_vb):
     driver = _make_driver(n_oa, n_va, n_ob, n_vb, order_cc=3)
     amps = _ccpy_t_to_c_amplitudes(driver, order=3, order_cc=3)
 
-    assert set(amps.keys()) == {"ci1a", "ci1b", "ci2aa", "ci2ab", "ci2bb",
-                                "ci3aaa", "ci3aab", "ci3abb", "ci3bbb"}
+    assert set(amps.keys()) == {
+        "ci1a",
+        "ci1b",
+        "ci2aa",
+        "ci2ab",
+        "ci2bb",
+        "ci3aaa",
+        "ci3aab",
+        "ci3abb",
+        "ci3bbb",
+    }
     assert amps["ci1a"].shape == (n_oa, n_va)
     assert amps["ci1b"].shape == (n_ob, n_vb)
     assert amps["ci2aa"].shape == (n_oa, n_va, n_oa, n_va)
@@ -75,9 +85,22 @@ def test_amplitude_shapes_order4(n_oa, n_va, n_ob, n_vb):
     driver = _make_driver(n_oa, n_va, n_ob, n_vb, order_cc=4)
     amps = _ccpy_t_to_c_amplitudes(driver, order=4, order_cc=4)
 
-    assert set(amps.keys()) == {"ci1a", "ci1b", "ci2aa", "ci2ab", "ci2bb",
-                                "ci3aaa", "ci3aab", "ci3abb", "ci3bbb",
-                                "ci4aaaa", "ci4aaab", "ci4aabb", "ci4abbb", "ci4bbbb"}
+    assert set(amps.keys()) == {
+        "ci1a",
+        "ci1b",
+        "ci2aa",
+        "ci2ab",
+        "ci2bb",
+        "ci3aaa",
+        "ci3aab",
+        "ci3abb",
+        "ci3bbb",
+        "ci4aaaa",
+        "ci4aaab",
+        "ci4aabb",
+        "ci4abbb",
+        "ci4bbbb",
+    }
     assert amps["ci4aaaa"].shape == (n_oa, n_va, n_oa, n_va, n_oa, n_va, n_oa, n_va)
     assert amps["ci4aaab"].shape == (n_oa, n_va, n_oa, n_va, n_oa, n_va, n_ob, n_vb)
     assert amps["ci4aabb"].shape == (n_oa, n_va, n_oa, n_va, n_ob, n_vb, n_ob, n_vb)
@@ -88,6 +111,7 @@ def test_amplitude_shapes_order4(n_oa, n_va, n_ob, n_vb):
 # ---------------------------------------------------------------------------
 # Antisymmetry tests
 # ---------------------------------------------------------------------------
+
 
 def test_c2aa_antisymmetry():
     """C2aa must be antisymmetric under swap of the two virtual indices."""
@@ -127,6 +151,7 @@ def test_c4bbbb_antisymmetry_in_virtuals():
 # Zero-filling when order_cc < requested order
 # ---------------------------------------------------------------------------
 
+
 def test_t3_zeroed_when_order_cc_lt_3():
     """When order_cc=2, the connected T3 contribution is zero and C3 = disconnected only."""
     n_oa, n_va, n_ob, n_vb = 2, 2, 2, 2
@@ -142,8 +167,9 @@ def test_t3_zeroed_when_order_cc_lt_3():
     amps_cc3 = _ccpy_t_to_c_amplitudes(driver_cc3, order=3, order_cc=3)
 
     for key in ("ci3aaa", "ci3aab", "ci3abb", "ci3bbb"):
-        np.testing.assert_allclose(amps_cc2[key], amps_cc3[key], atol=1e-12,
-                                   err_msg=f"Mismatch in {key}")
+        np.testing.assert_allclose(
+            amps_cc2[key], amps_cc3[key], atol=1e-12, err_msg=f"Mismatch in {key}"
+        )
 
 
 def test_t4_zeroed_when_order_cc_lt_4():
@@ -160,13 +186,15 @@ def test_t4_zeroed_when_order_cc_lt_4():
     amps_cc4 = _ccpy_t_to_c_amplitudes(driver_cc4, order=4, order_cc=4)
 
     for key in ("ci4aaaa", "ci4aaab", "ci4aabb", "ci4abbb", "ci4bbbb"):
-        np.testing.assert_allclose(amps_cc3[key], amps_cc4[key], atol=1e-12,
-                                   err_msg=f"Mismatch in {key}")
+        np.testing.assert_allclose(
+            amps_cc3[key], amps_cc4[key], atol=1e-12, err_msg=f"Mismatch in {key}"
+        )
 
 
 # ---------------------------------------------------------------------------
 # Known limiting case: only T1 non-zero
 # ---------------------------------------------------------------------------
+
 
 def test_c2_when_only_t1():
     """When T2 = 0, C2aa = antisym(2 * t1 ⊗ t1), C2ab = t1a ⊗ t1b."""
@@ -178,7 +206,7 @@ def test_c2_when_only_t1():
     driver.T.bb[:] = 0.0
     driver.T.ab[:] = 0.0
 
-    t1a = driver.T.a.T   # (n_oa, n_va)
+    t1a = driver.T.a.T  # (n_oa, n_va)
     t1b = driver.T.b.T
 
     amps = _ccpy_t_to_c_amplitudes(driver, order=2, order_cc=2)

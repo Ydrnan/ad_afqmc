@@ -35,10 +35,18 @@ def _make_ucisdtq_trial(
     c2aa = scale_ci2 * jax.random.normal(keys[2], (n_oa, n_va, n_oa, n_va), dtype=dtype)
     c2ab = scale_ci2 * jax.random.normal(keys[3], (n_oa, n_va, n_ob, n_vb), dtype=dtype)
     c2bb = scale_ci2 * jax.random.normal(keys[4], (n_ob, n_vb, n_ob, n_vb), dtype=dtype)
-    c3aaa = scale_ci3 * jax.random.normal(keys[5], (n_oa, n_va, n_oa, n_va, n_oa, n_va), dtype=dtype)
-    c3aab = scale_ci3 * jax.random.normal(keys[6], (n_oa, n_va, n_oa, n_va, n_ob, n_vb), dtype=dtype)
-    c3abb = scale_ci3 * jax.random.normal(keys[7], (n_oa, n_va, n_ob, n_vb, n_ob, n_vb), dtype=dtype)
-    c3bbb = scale_ci3 * jax.random.normal(keys[8], (n_ob, n_vb, n_ob, n_vb, n_ob, n_vb), dtype=dtype)
+    c3aaa = scale_ci3 * jax.random.normal(
+        keys[5], (n_oa, n_va, n_oa, n_va, n_oa, n_va), dtype=dtype
+    )
+    c3aab = scale_ci3 * jax.random.normal(
+        keys[6], (n_oa, n_va, n_oa, n_va, n_ob, n_vb), dtype=dtype
+    )
+    c3abb = scale_ci3 * jax.random.normal(
+        keys[7], (n_oa, n_va, n_ob, n_vb, n_ob, n_vb), dtype=dtype
+    )
+    c3bbb = scale_ci3 * jax.random.normal(
+        keys[8], (n_ob, n_vb, n_ob, n_vb, n_ob, n_vb), dtype=dtype
+    )
     c4aaaa = scale_ci4 * jax.random.normal(
         keys[9], (n_oa, n_va, n_oa, n_va, n_oa, n_va, n_oa, n_va), dtype=dtype
     )

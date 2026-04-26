@@ -156,9 +156,7 @@ def overlap_u(walker: tuple[jax.Array, jax.Array], trial_data: UcisdtqTrial) -> 
     g_b_vir = g_b[:, n_ob:]
 
     o0 = jnp.linalg.det(woa) * jnp.linalg.det(wob)
-    o1 = jnp.einsum("ia,ia", trial_data.c1a, g_a_vir) + jnp.einsum(
-        "ia,ia", trial_data.c1b, g_b_vir
-    )
+    o1 = jnp.einsum("ia,ia", trial_data.c1a, g_a_vir) + jnp.einsum("ia,ia", trial_data.c1b, g_b_vir)
     o2 = (
         0.5 * jnp.einsum("iajb,ia,jb", trial_data.c2aa, g_a_vir, g_a_vir)
         + 0.5 * jnp.einsum("iajb,ia,jb", trial_data.c2bb, g_b_vir, g_b_vir)
@@ -172,25 +170,15 @@ def overlap_u(walker: tuple[jax.Array, jax.Array], trial_data: UcisdtqTrial) -> 
     )
     o4 = (
         (1 / 24)
-        * jnp.einsum(
-            "iajbkcld,ia,jb,kc,ld", trial_data.c4aaaa, g_a_vir, g_a_vir, g_a_vir, g_a_vir
-        )
+        * jnp.einsum("iajbkcld,ia,jb,kc,ld", trial_data.c4aaaa, g_a_vir, g_a_vir, g_a_vir, g_a_vir)
         + (1 / 24)
-        * jnp.einsum(
-            "iajbkcld,ia,jb,kc,ld", trial_data.c4bbbb, g_b_vir, g_b_vir, g_b_vir, g_b_vir
-        )
+        * jnp.einsum("iajbkcld,ia,jb,kc,ld", trial_data.c4bbbb, g_b_vir, g_b_vir, g_b_vir, g_b_vir)
         + (1 / 6)
-        * jnp.einsum(
-            "iajbkcld,ia,jb,kc,ld", trial_data.c4abbb, g_a_vir, g_b_vir, g_b_vir, g_b_vir
-        )
+        * jnp.einsum("iajbkcld,ia,jb,kc,ld", trial_data.c4abbb, g_a_vir, g_b_vir, g_b_vir, g_b_vir)
         + (1 / 4)
-        * jnp.einsum(
-            "iajbkcld,ia,jb,kc,ld", trial_data.c4aabb, g_a_vir, g_a_vir, g_b_vir, g_b_vir
-        )
+        * jnp.einsum("iajbkcld,ia,jb,kc,ld", trial_data.c4aabb, g_a_vir, g_a_vir, g_b_vir, g_b_vir)
         + (1 / 6)
-        * jnp.einsum(
-            "iajbkcld,ia,jb,kc,ld", trial_data.c4aaab, g_a_vir, g_a_vir, g_a_vir, g_b_vir
-        )
+        * jnp.einsum("iajbkcld,ia,jb,kc,ld", trial_data.c4aaab, g_a_vir, g_a_vir, g_a_vir, g_b_vir)
     )
     return (1.0 + o1 + o2 + o3 + o4) * o0
 
