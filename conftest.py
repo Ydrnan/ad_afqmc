@@ -36,9 +36,16 @@ def _patch_pyscf_einsum_numpy_path_compat() -> None:
     if not needs_patch:
         return
 
-    _numpy_einsum = nh._numpy_einsum
-    _contract = nh._contract
-    _einsum_path = nh._einsum_path
+    _numpy_einsum = getattr(nh, "_numpy_einsum", np.einsum)
+    _einsum_path = getattr(nh, "_einsum_path", None)
+    if _einsum_path is None:
+        return
+
+    _contract = getattr(nh, "_contract", None)
+    if _contract is None:
+
+        def _contract(subscripts, *operands, **kwargs):
+            return _numpy_einsum(subscripts, *operands, **kwargs)
 
     def _einsum_compat(subscripts, *tensors, **kwargs):
         contract = kwargs.pop("_contract", _contract)
