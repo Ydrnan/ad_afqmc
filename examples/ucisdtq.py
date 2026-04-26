@@ -9,11 +9,11 @@ except Exception as exc:
     raise RuntimeError("This example requires ccpy. Please install ccpy to run it.") from exc
 
 mol = gto.M(
-    atom="H 0 0 0; H 0 0 1.1; H 0 1.7 0",
+    atom="H 0 0 0; H 0 0 1.1; Be 0 1.7 0",
     basis="6-31g",
     symmetry="c1",
     charge=0,
-    spin=1,
+    spin=0,
     verbose=3,
 )
 

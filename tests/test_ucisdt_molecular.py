@@ -167,7 +167,9 @@ def _run_ucisdtq_molecular_consistency(mol):
     trial_q = make_ucisdtq_trial_data(staged_q.trial.data, sys)
     trial_q_ops = make_ucisdtq_trial_ops(sys)
 
-    # With explicit Q amplitudes removed, UCISDTQ must reduce to UCISDT.
+    # This is a reduction test for the UCISDTQ kernels, not a staging test.
+    # A CCSDT input staged with order=4 contains disconnected C4 amplitudes;
+    # here we intentionally remove all CI quadruples so the trial is UCISDT.
     trial_q0 = replace(
         trial_q,
         c4aaaa=jnp.zeros_like(trial_q.c4aaaa),

@@ -193,6 +193,17 @@ def test_t4_zeroed_when_order_cc_lt_4():
         )
 
 
+def test_c4_disconnected_nonzero_when_order_cc_lt_4():
+    """Staging CCSDT as order=4 keeps disconnected C4 contributions."""
+    driver = _make_driver(2, 2, 2, 2, order_cc=3, rng=np.random.default_rng(123))
+    amps = _ccpy_t_to_c_amplitudes(driver, order=4, order_cc=3)
+
+    assert any(
+        np.linalg.norm(amps[key]) > 1e-12
+        for key in ("ci4aaaa", "ci4aaab", "ci4aabb", "ci4abbb", "ci4bbbb")
+    )
+
+
 # ---------------------------------------------------------------------------
 # Known limiting case: only T1 non-zero
 # ---------------------------------------------------------------------------
