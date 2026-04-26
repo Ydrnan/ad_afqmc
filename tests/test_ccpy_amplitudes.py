@@ -6,6 +6,8 @@ check shapes, symmetry properties, and known limiting cases of the
 _ccpy_t_to_c_amplitudes helper in trot.staging.
 """
 
+from typing import Any
+
 import numpy as np
 import pytest
 
@@ -24,7 +26,7 @@ def _make_driver(n_oa, n_va, n_ob, n_vb, *, order_cc: int, rng=None):
     if rng is None:
         rng = np.random.default_rng(0)
 
-    d = type("Driver", (), {"operator_params": {"order": order_cc}, "T": _MockT()})()
+    d: Any = type("Driver", (), {"operator_params": {"order": order_cc}, "T": _MockT()})()
 
     d.T.a = rng.standard_normal((n_va, n_oa))
     d.T.b = rng.standard_normal((n_vb, n_ob))
