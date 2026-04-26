@@ -278,6 +278,47 @@ def test_generalized_walkers_raise():
         make_ucisdt_meas_ops(sys)
 
 
+@pytest.mark.parametrize(
+    "walker_kind,norb,nup,ndn,n_chol",
+    [
+        ("restricted", 6, 2, 2, 8),
+        ("unrestricted", 6, 2, 1, 8),
+    ],
+)
+def test_low_memory_matches_high_memory_ucisdt(walker_kind, norb, nup, ndn, n_chol):
+    from trot.core.system import System
+
+    key = jax.random.PRNGKey(11)
+    key, k_ham, k_trial, k_w = jax.random.split(key, 4)
+
+    sys = System(norb=norb, nelec=(nup, ndn), walker_kind=walker_kind)
+    ham = testing.make_random_ham_chol(
+        k_ham, norb=norb, n_chol=n_chol, basis="restricted", dtype=jnp.float64
+    )
+    trial = _make_ucisdt_trial(k_trial, norb=norb, nup=nup, ndn=ndn, dtype=jnp.float64)
+
+    meas_high = make_ucisdt_meas_ops(sys, memory_mode="high", mixed_precision=False, testing=True)
+    meas_low = make_ucisdt_meas_ops(sys, memory_mode="low", mixed_precision=False, testing=True)
+
+    ctx_high = meas_high.build_meas_ctx(ham, trial)
+    ctx_low = meas_low.build_meas_ctx(ham, trial)
+
+    fb_high = meas_high.require_kernel(k_force_bias)
+    fb_low = meas_low.require_kernel(k_force_bias)
+    e_high = meas_high.require_kernel(k_energy)
+    e_low = meas_low.require_kernel(k_energy)
+
+    for i in range(2):
+        walker = testing.make_walkers(jax.random.fold_in(k_w, i), sys, dtype=jnp.complex128)
+        fb_h = fb_high(walker, ham, ctx_high, trial)
+        fb_l = fb_low(walker, ham, ctx_low, trial)
+        e_h = e_high(walker, ham, ctx_high, trial)
+        e_l = e_low(walker, ham, ctx_low, trial)
+
+        assert jnp.allclose(fb_l, fb_h, rtol=1e-11, atol=1e-11), (fb_l, fb_h)
+        assert jnp.allclose(e_l, e_h, rtol=1e-11, atol=1e-11), (e_l, e_h)
+
+
 def test_memory_mode_defaults_to_high_and_allows_low_override():
     from trot.core.system import System
 
