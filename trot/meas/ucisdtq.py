@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from ..core.ops import MeasOps
 from ..core.system import System
-from ..trial.ucisdtq import UcisdtqTrial
 from .auto import make_auto_meas_ops
 
 
