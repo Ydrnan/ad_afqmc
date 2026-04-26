@@ -109,9 +109,7 @@ def test_ucisd_molecular_ccsd_pyscf_vs_ccpy():
     # Cholesky vectors can differ by signs/orderings while representing the same operator.
     assert jnp.allclose(ham_ccpy.h0, ham_pyscf.h0, rtol=0.0, atol=1e-10)
     assert jnp.allclose(ham_ccpy.h1, ham_pyscf.h1, rtol=1e-8, atol=1e-10)
-    assert jnp.allclose(
-        _v0_from_chol(ham_ccpy.chol), _v0_from_chol(ham_pyscf.chol), rtol=1e-6, atol=1e-8
-    )
+    assert jnp.allclose(_v0_from_chol(ham_ccpy.chol), _v0_from_chol(ham_pyscf.chol), rtol=1e-6, atol=1e-8)
 
     sys = System(
         norb=int(staged_ccpy.ham.norb),

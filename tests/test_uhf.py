@@ -46,7 +46,15 @@ def test_auto_force_bias_matches_manual_uhf(walker_kind, norb, nup, ndn, n_chol)
     key = jax.random.PRNGKey(0)
     key, k_w = jax.random.split(key)
 
-    (sys, ham, trial, meas_manual, ctx_manual, meas_auto, ctx_auto,) = testing.make_common_auto(
+    (
+        sys,
+        ham,
+        trial,
+        meas_manual,
+        ctx_manual,
+        meas_auto,
+        ctx_auto,
+    ) = testing.make_common_auto(
         key,
         walker_kind,
         norb,
@@ -85,7 +93,15 @@ def test_auto_energy_matches_manual_uhf(walker_kind, norb, nup, ndn, n_chol):
     key = jax.random.PRNGKey(1)
     key, k_w = jax.random.split(key)
 
-    (sys, ham, trial, meas_manual, ctx_manual, meas_auto, ctx_auto,) = testing.make_common_auto(
+    (
+        sys,
+        ham,
+        trial,
+        meas_manual,
+        ctx_manual,
+        meas_auto,
+        ctx_auto,
+    ) = testing.make_common_auto(
         key,
         walker_kind,
         norb,
@@ -121,7 +137,12 @@ def test_force_bias_equal_when_wu_eq_wr():
     key = jax.random.PRNGKey(1)
     key, k_w = jax.random.split(key)
 
-    (sys, ham, trial, ctx,) = testing.make_common_manual_only(
+    (
+        sys,
+        ham,
+        trial,
+        ctx,
+    ) = testing.make_common_manual_only(
         key,
         walker_kind,
         norb,
@@ -155,7 +176,12 @@ def test_force_bias_equal_when_wg_eq_wu():
     key = jax.random.PRNGKey(1)
     key, k_w = jax.random.split(key)
 
-    (sys, ham, trial, ctx,) = testing.make_common_manual_only(
+    (
+        sys,
+        ham,
+        trial,
+        ctx,
+    ) = testing.make_common_manual_only(
         key,
         walker_kind,
         norb,
@@ -193,7 +219,12 @@ def test_energy_equal_when_wu_eq_wr():
     key = jax.random.PRNGKey(1)
     key, k_w = jax.random.split(key)
 
-    (sys, ham, trial, ctx,) = testing.make_common_manual_only(
+    (
+        sys,
+        ham,
+        trial,
+        ctx,
+    ) = testing.make_common_manual_only(
         key,
         walker_kind,
         norb,
@@ -227,7 +258,12 @@ def test_energy_equal_when_wg_eq_wu():
     key = jax.random.PRNGKey(1)
     key, k_w = jax.random.split(key)
 
-    (sys, ham, trial, ctx,) = testing.make_common_manual_only(
+    (
+        sys,
+        ham,
+        trial,
+        ctx,
+    ) = testing.make_common_manual_only(
         key,
         walker_kind,
         norb,

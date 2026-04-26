@@ -32,7 +32,15 @@ def test_auto_force_bias_matches_manual_rhf(walker_kind):
     key = jax.random.PRNGKey(0)
     key, k_w = jax.random.split(key)
 
-    (sys, ham, trial, meas_manual, ctx_manual, meas_auto, ctx_auto,) = testing.make_common_auto(
+    (
+        sys,
+        ham,
+        trial,
+        meas_manual,
+        ctx_manual,
+        meas_auto,
+        ctx_auto,
+    ) = testing.make_common_auto(
         key,
         walker_kind,
         norb,
@@ -67,7 +75,15 @@ def test_auto_energy_matches_manual_rhf(walker_kind):
     key = jax.random.PRNGKey(1)
     key, k_w = jax.random.split(key)
 
-    (sys, ham, trial, meas_manual, ctx_manual, meas_auto, ctx_auto,) = testing.make_common_auto(
+    (
+        sys,
+        ham,
+        trial,
+        meas_manual,
+        ctx_manual,
+        meas_auto,
+        ctx_auto,
+    ) = testing.make_common_auto(
         key,
         walker_kind,
         norb,
@@ -105,7 +121,15 @@ def test_auto_force_bias_matches_manual_rhf_generalized():
     key = jax.random.PRNGKey(2)
     key, k_w = jax.random.split(key)
 
-    (sys, ham, trial, meas_manual, ctx_manual, meas_auto, ctx_auto,) = testing.make_common_auto(
+    (
+        sys,
+        ham,
+        trial,
+        meas_manual,
+        ctx_manual,
+        meas_auto,
+        ctx_auto,
+    ) = testing.make_common_auto(
         key,
         walker_kind,
         norb,

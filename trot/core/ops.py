@@ -13,13 +13,11 @@ from .typing import ham_data, trial_data
 
 
 class OverlapFn(Protocol):
-    def __call__(self, walker: Any, trial_data: Any) -> jax.Array:
-        ...
+    def __call__(self, walker: Any, trial_data: Any) -> jax.Array: ...
 
 
 class Rdm1Fn(Protocol):
-    def __call__(self, trial_data: Any) -> jax.Array:
-        ...
+    def __call__(self, trial_data: Any) -> jax.Array: ...
 
 
 class GreensFn(Protocol):
@@ -27,8 +25,7 @@ class GreensFn(Protocol):
     #   - single det: Array (n,n)
     #   - multi det:  dict like {"G": (nd,n,n), "w": (nd,)}
 
-    def __call__(self, walker: Any, trial_data: Any) -> Any:
-        ...
+    def __call__(self, walker: Any, trial_data: Any) -> Any: ...
 
 
 class OverlapRatioFn(Protocol):
@@ -37,8 +34,7 @@ class OverlapRatioFn(Protocol):
         greens: Any,
         update_indices: jax.Array,
         update_constants: jax.Array,
-    ) -> jax.Array:
-        ...
+    ) -> jax.Array: ...
 
 
 class UpdateGreenFn(Protocol):
@@ -47,8 +43,7 @@ class UpdateGreenFn(Protocol):
         greens: Any,
         update_indices: jax.Array,
         update_constants: jax.Array,
-    ) -> Any:
-        ...
+    ) -> Any: ...
 
 
 class TrialOps(NamedTuple):
@@ -115,8 +110,7 @@ class MeasKernel(Protocol):
     Measurement kernel protocol.
     """
 
-    def __call__(self, walker: Any, ham_data: Any, meas_ctx: Any, trial_data: Any) -> jax.Array:
-        ...
+    def __call__(self, walker: Any, ham_data: Any, meas_ctx: Any, trial_data: Any) -> jax.Array: ...
 
 
 # usual kernel names

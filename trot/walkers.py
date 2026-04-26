@@ -204,8 +204,7 @@ def SrFn(Protocol):
         weights: jax.Array,
         zeta: jax.Array | float,
         walker_kind: str,
-    ) -> tuple[walkers, jax.Array]:
-        ...
+    ) -> tuple[walkers, jax.Array]: ...
 
 
 def no_sr(

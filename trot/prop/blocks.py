@@ -33,8 +33,7 @@ class BlockFn(Protocol):
         prop_ctx: Any,
         sr_fn: SrFn = wk.stochastic_reconfiguration,
         observable_names: tuple[str, ...] = (),
-    ) -> tuple[PropState, BlockObs]:
-        ...
+    ) -> tuple[PropState, BlockObs]: ...
 
 
 class MixedBlockFn(Protocol):
@@ -56,8 +55,7 @@ class MixedBlockFn(Protocol):
         trial_meas_ctx: Any,
         observable_names: tuple[str, ...] = (),
         sr_fn: Callable = wk.stochastic_reconfiguration,
-    ) -> tuple[PropState, BlockObs]:
-        ...
+    ) -> tuple[PropState, BlockObs]: ...
 
 
 class BlockObs(NamedTuple):

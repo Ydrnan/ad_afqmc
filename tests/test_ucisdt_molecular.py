@@ -208,12 +208,8 @@ def _run_ucisdt_oracle_consistency(mol):
     ham = _ham_from_staged(staged)
     trial_data = make_ucisdt_trial_data(staged.trial.data, sys)
     trial_ops = make_ucisdt_trial_ops(sys)
-    e_manual = make_ucisdt_meas_ops(sys, mixed_precision=False, testing=True).require_kernel(
-        k_energy
-    )
-    ctx = make_ucisdt_meas_ops(sys, mixed_precision=False, testing=True).build_meas_ctx(
-        ham, trial_data
-    )
+    e_manual = make_ucisdt_meas_ops(sys, mixed_precision=False, testing=True).require_kernel(k_energy)
+    ctx = make_ucisdt_meas_ops(sys, mixed_precision=False, testing=True).build_meas_ctx(ham, trial_data)
 
     ci_amps = _trial_to_oracle_ci_amps(trial_data, order=3)
     for walker in _reference_and_rotated_walkers(trial_data):

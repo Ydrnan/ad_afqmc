@@ -6,7 +6,9 @@ from trot.staging import stage_from_ccpy
 try:
     from ccpy.drivers.driver import Driver
 except Exception as exc:
-    raise RuntimeError("This example requires ccpy. Please install ccpy to run it.") from exc
+    raise RuntimeError(
+        "This example requires ccpy. Please install ccpy to run it."
+    ) from exc
 
 mol = gto.M(
     atom="H 0 0 0; F 1.2 0.0 0.0",

@@ -1,8 +1,8 @@
 import os
 
-os.environ[
-    "OMP_NUM_THREADS"
-] = "1"  # For reproducibility. LNO makes slightly different orbitals every time.
+os.environ["OMP_NUM_THREADS"] = (
+    "1"  # For reproducibility. LNO makes slightly different orbitals every time.
+)
 import sys
 import numpy as np
 from pyscf import gto, scf, mp

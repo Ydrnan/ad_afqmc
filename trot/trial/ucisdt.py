@@ -131,7 +131,9 @@ def overlap_u(walker: tuple[jax.Array, jax.Array], trial_data: UcisdtTrial) -> j
     g_b_vir = g_b[:, n_ob:]
 
     o0 = jnp.linalg.det(woa) * jnp.linalg.det(wob)
-    o1 = jnp.einsum("ia,ia", trial_data.c1a, g_a_vir) + jnp.einsum("ia,ia", trial_data.c1b, g_b_vir)
+    o1 = jnp.einsum("ia,ia", trial_data.c1a, g_a_vir) + jnp.einsum(
+        "ia,ia", trial_data.c1b, g_b_vir
+    )
     o2 = (
         0.5 * jnp.einsum("iajb,ia,jb", trial_data.c2aa, g_a_vir, g_a_vir)
         + 0.5 * jnp.einsum("iajb,ia,jb", trial_data.c2bb, g_b_vir, g_b_vir)

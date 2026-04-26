@@ -47,7 +47,15 @@ def test_auto_force_bias_matches_manual_eom_cisd(norb, nocc, n_chol):
     key = jax.random.PRNGKey(123)
     k_ham, k_trial, k_w = jax.random.split(key, 3)
 
-    (sys, ham, trial, meas_manual, ctx_manual, meas_auto, ctx_auto,) = testing.make_common_auto(
+    (
+        sys,
+        ham,
+        trial,
+        meas_manual,
+        ctx_manual,
+        meas_auto,
+        ctx_auto,
+    ) = testing.make_common_auto(
         key,
         walker_kind,
         norb,
@@ -84,7 +92,15 @@ def test_auto_energy_matches_manual_eom_cisd(norb, nocc, n_chol):
     key = jax.random.PRNGKey(456)
     key, k_w = jax.random.split(key)
 
-    (sys, ham, trial, meas_manual, ctx_manual, meas_auto, ctx_auto,) = testing.make_common_auto(
+    (
+        sys,
+        ham,
+        trial,
+        meas_manual,
+        ctx_manual,
+        meas_auto,
+        ctx_auto,
+    ) = testing.make_common_auto(
         key,
         walker_kind,
         norb,
