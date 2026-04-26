@@ -949,8 +949,7 @@ def _stage_ham_input_from_fcidump(
     norb = int(ctx["NORB"])
     if basis_coeff.shape[1] != norb:
         raise ValueError(
-            "FCIDUMP NORB does not match mf orbital count: "
-            f"{norb} != {basis_coeff.shape[1]}."
+            "FCIDUMP NORB does not match mf orbital count: " f"{norb} != {basis_coeff.shape[1]}."
         )
 
     h0 = float(ctx.get("ECORE", 0.0))
@@ -1385,12 +1384,14 @@ def _ccpy_t_to_c_amplitudes(driver: Any, order: int, order_cc: int) -> "dict":
     ci3abb = 0.5 * (ci3abb_raw + ci3abb_raw.transpose(0, 1, 4, 5, 2, 3))
     ci3abb = 0.5 * (ci3abb - ci3abb.transpose(0, 1, 2, 5, 4, 3))
 
-    amps.update({
-        "ci3aaa": ci3aaa,
-        "ci3aab": ci3aab,
-        "ci3abb": ci3abb,
-        "ci3bbb": ci3bbb,
-    })
+    amps.update(
+        {
+            "ci3aaa": ci3aaa,
+            "ci3aab": ci3aab,
+            "ci3abb": ci3abb,
+            "ci3bbb": ci3bbb,
+        }
+    )
 
     if order < 4:
         return amps
@@ -1497,13 +1498,15 @@ def _ccpy_t_to_c_amplitudes(driver: Any, order: int, order_cc: int) -> "dict":
     ci4aabb = 0.5 * (ci4aabb - ci4aabb.transpose(0, 3, 2, 1, 4, 5, 6, 7))
     ci4aabb = 0.5 * (ci4aabb - ci4aabb.transpose(0, 1, 2, 3, 4, 7, 6, 5))
 
-    amps.update({
-        "ci4aaaa": ci4aaaa,
-        "ci4aaab": ci4aaab,
-        "ci4aabb": ci4aabb,
-        "ci4abbb": ci4abbb,
-        "ci4bbbb": ci4bbbb,
-    })
+    amps.update(
+        {
+            "ci4aaaa": ci4aaaa,
+            "ci4aaab": ci4aaab,
+            "ci4aabb": ci4aabb,
+            "ci4abbb": ci4abbb,
+            "ci4bbbb": ci4bbbb,
+        }
+    )
 
     return amps
 
@@ -1610,9 +1613,7 @@ def stage_from_ccpy(
     if order > 4:
         order = 4
     if order < 2:
-        raise ValueError(
-            f"stage_from_ccpy requires order >= 2 (got {order})."
-        )
+        raise ValueError(f"stage_from_ccpy requires order >= 2 (got {order}).")
 
     resolved_frozen = _resolve_stage_frozen_arg(norb_frozen_core, norb_frozen, None)
     obj = StagedMfOrCc(mf, resolved_frozen)
@@ -1621,7 +1622,9 @@ def stage_from_ccpy(
     t_ham = _stage_begin("building Hamiltonian")
     ham_source = "mf"
     if fcidump is not None and int(obj.afqmc_frozen) == 0:
-        ham = _stage_ham_input_from_fcidump(obj, fcidump=fcidump, chol_cut=chol_cut, verbose=verbose)
+        ham = _stage_ham_input_from_fcidump(
+            obj, fcidump=fcidump, chol_cut=chol_cut, verbose=verbose
+        )
         ham_source = "fcidump"
     else:
         if fcidump is not None and int(obj.afqmc_frozen) > 0 and verbose:

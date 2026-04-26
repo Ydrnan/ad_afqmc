@@ -26,7 +26,9 @@ def _patch_pyscf_einsum_numpy_path_compat() -> None:
         a = np.zeros((1, 1))
         b = np.zeros((1, 1))
         c = np.zeros((1, 1, 1, 1))
-        contraction_list = nh._einsum_path("ia,jb,iajb", a, b, c, optimize=True, einsum_call=True)[1]
+        contraction_list = nh._einsum_path("ia,jb,iajb", a, b, c, optimize=True, einsum_call=True)[
+            1
+        ]
         needs_patch = bool(contraction_list) and len(contraction_list[0]) == 3
     except Exception:
         needs_patch = False
@@ -48,7 +50,9 @@ def _patch_pyscf_einsum_numpy_path_compat() -> None:
 
         optimize = kwargs.pop("optimize", True)
         tensors = list(tensors)
-        contraction_list = _einsum_path(subscripts, *tensors, optimize=optimize, einsum_call=True)[1]
+        contraction_list = _einsum_path(subscripts, *tensors, optimize=optimize, einsum_call=True)[
+            1
+        ]
         out = None
         for contraction in contraction_list:
             if len(contraction) >= 4:
