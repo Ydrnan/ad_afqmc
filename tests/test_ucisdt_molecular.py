@@ -102,10 +102,7 @@ def _run_ucisdt_oracle_consistency(mol, *, spin_broken_uhf: bool = False):
         (
             dict(
                 atom=(
-                    "O 0.0 0.0 0.0; "
-                    "H 0.0 0.0 2.2; "
-                    "H 0.95 0.13 -0.25; "
-                    "H -0.24 0.91 0.31"
+                    "O 0.0 0.0 0.0; " "H 0.0 0.0 2.2; " "H 0.95 0.13 -0.25; " "H -0.24 0.91 0.31"
                 ),
                 basis="3-21g",
                 symmetry="c1",
@@ -169,10 +166,7 @@ def test_ucisdt_molecular_ccsdt_consistency(mol_kwargs, spin_broken_uhf):
         (
             dict(
                 atom=(
-                    "O 0.0 0.0 0.0; "
-                    "H 0.0 0.0 2.2; "
-                    "H 0.95 0.13 -0.25; "
-                    "H -0.24 0.91 0.31"
+                    "O 0.0 0.0 0.0; " "H 0.0 0.0 2.2; " "H 0.95 0.13 -0.25; " "H -0.24 0.91 0.31"
                 ),
                 basis="3-21g",
                 symmetry="c1",
