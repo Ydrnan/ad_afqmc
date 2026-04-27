@@ -133,11 +133,22 @@ def _make_ucisdt_trial(
 _ucisdt_meas_ops_fp64 = functools.partial(make_ucisdt_meas_ops, mixed_precision=False, testing=True)
 
 
+def test_balanced_large_trial_exposes_same_spin_triples():
+    trial = _make_ucisdt_trial(jax.random.PRNGKey(19), norb=6, nup=3, ndn=3)
+
+    assert jnp.linalg.norm(trial.c3aaa) > 1e-12
+    assert jnp.linalg.norm(trial.c3aab) > 1e-12
+    assert jnp.linalg.norm(trial.c3abb) > 1e-12
+    assert jnp.linalg.norm(trial.c3bbb) > 1e-12
+
+
 @pytest.mark.parametrize(
     "walker_kind,norb,nup,ndn,n_chol",
     [
         ("restricted", 4, 2, 2, 5),
+        ("restricted", 6, 3, 3, 7),
         ("unrestricted", 4, 2, 1, 5),
+        ("unrestricted", 6, 3, 3, 7),
     ],
 )
 def test_auto_force_bias_matches_manual_ucisdt(walker_kind, norb, nup, ndn, n_chol):
@@ -171,14 +182,16 @@ def test_auto_force_bias_matches_manual_ucisdt(walker_kind, norb, nup, ndn, n_ch
         wi = testing.make_walkers(jax.random.fold_in(k_w, i), sys)
         v_m = fb_manual(wi, ham, ctx_manual, trial)
         v_a = fb_auto(wi, ham, ctx_auto, trial)
-        assert jnp.allclose(v_a, v_m, atol=1e-6), (v_a, v_m)
+        assert jnp.allclose(v_a, v_m, rtol=1e-10, atol=1e-10), (v_a, v_m)
 
 
 @pytest.mark.parametrize(
     "walker_kind,norb,nup,ndn,n_chol",
     [
         ("restricted", 4, 2, 2, 5),
+        ("restricted", 6, 3, 3, 7),
         ("unrestricted", 6, 3, 2, 8),
+        ("unrestricted", 6, 3, 3, 7),
     ],
 )
 def test_auto_energy_matches_manual_ucisdt(walker_kind, norb, nup, ndn, n_chol):
@@ -215,10 +228,45 @@ def test_auto_energy_matches_manual_ucisdt(walker_kind, norb, nup, ndn, n_chol):
         assert jnp.allclose(e_a, e_m, rtol=5e-5, atol=5e-6), (e_a, e_m)
 
 
+@pytest.mark.slow
+def test_auto_energy_matches_manual_ucisdt_larger_asymmetric_case():
+    key = jax.random.PRNGKey(23)
+    key, k_w = jax.random.split(key)
+
+    norb, nup, ndn, n_chol = 7, 4, 3, 9
+    (
+        sys,
+        ham,
+        trial,
+        meas_manual,
+        ctx_manual,
+        meas_auto,
+        ctx_auto,
+    ) = testing.make_common_auto(
+        key,
+        "unrestricted",
+        norb,
+        (nup, ndn),
+        n_chol,
+        make_trial_fn=_make_ucisdt_trial,
+        make_trial_fn_kwargs=dict(norb=norb, nup=nup, ndn=ndn),
+        make_trial_ops_fn=make_ucisdt_trial_ops,
+        make_meas_ops_fn=_ucisdt_meas_ops_fp64,
+    )
+
+    e_manual = meas_manual.require_kernel(k_energy)
+    e_auto = meas_auto.require_kernel(k_energy)
+
+    wi = testing.make_walkers(k_w, sys)
+    e_m = e_manual(wi, ham, ctx_manual, trial)
+    e_a = e_auto(wi, ham, ctx_auto, trial)
+    assert jnp.allclose(e_a, e_m, rtol=5e-5, atol=5e-6), (e_a, e_m)
+
+
 def test_force_bias_equal_when_wr_eq_wu():
     """Restricted and unrestricted force-bias kernels agree when walkers are equal."""
     norb = 6
-    nup, ndn = 2, 2
+    nup, ndn = 3, 3
     n_chol = 8
     walker_kind = "unrestricted"
 
@@ -249,7 +297,7 @@ def test_force_bias_equal_when_wr_eq_wu():
 def test_energy_equal_when_wr_eq_wu():
     """Restricted and unrestricted energy kernels agree when walkers are equal."""
     norb = 6
-    nup, ndn = 2, 2
+    nup, ndn = 3, 3
     n_chol = 8
     walker_kind = "unrestricted"
 
@@ -289,7 +337,9 @@ def test_generalized_walkers_raise():
     "walker_kind,norb,nup,ndn,n_chol",
     [
         ("restricted", 6, 2, 2, 8),
+        ("restricted", 6, 3, 3, 8),
         ("unrestricted", 6, 2, 1, 8),
+        ("unrestricted", 6, 3, 3, 8),
     ],
 )
 def test_low_memory_matches_high_memory_ucisdt(walker_kind, norb, nup, ndn, n_chol):
