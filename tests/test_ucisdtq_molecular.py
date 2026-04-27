@@ -100,7 +100,7 @@ def _run_ucisdtq_oracle_consistency(
         ov_t = trial_ops.overlap(walker, trial_data)
         e_t = e_kernel(walker, ham, ctx, trial_data)
 
-        assert jnp.allclose(ov_t, ov_o, atol=1e-10), (ov_t, ov_o)
+        assert jnp.allclose(ov_t, ov_o, rtol=0.0, atol=1e-10), (ov_t, ov_o)
         # UCISDTQ measurement uses finite differences, so keep relaxed tolerance.
         assert jnp.allclose(e_t, e_o, rtol=5e-5, atol=1e-5), (e_t, e_o)
         if iw == 0:

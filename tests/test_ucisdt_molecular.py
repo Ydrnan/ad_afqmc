@@ -82,8 +82,8 @@ def _run_ucisdt_oracle_consistency(mol, *, spin_broken_uhf: bool = False):
         ov_t = trial_ops.overlap(walker, trial_data)
         e_t = e_manual(walker, ham, ctx, trial_data)
 
-        assert jnp.allclose(ov_t, ov_o, atol=1e-10), (ov_t, ov_o)
-        assert jnp.allclose(e_t, e_o, atol=1e-10), (e_t, e_o)
+        assert jnp.allclose(ov_t, ov_o, rtol=0.0, atol=1e-10), (ov_t, ov_o)
+        assert jnp.allclose(e_t, e_o, rtol=0.0, atol=1e-10), (e_t, e_o)
 
 
 @pytest.mark.integration
