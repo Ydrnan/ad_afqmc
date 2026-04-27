@@ -106,6 +106,7 @@ def _run_ucisdtq_oracle_consistency(
         if iw == 0:
             ref_energy = e_t
         elif rotated_eq_unrotated:
+            assert ref_energy is not None
             assert jnp.allclose(e_t, ref_energy, rtol=5e-5, atol=1e-5), (e_t, ref_energy)
 
 

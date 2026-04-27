@@ -18,11 +18,17 @@ def _run_uhf(mol, *, dm0=None):
 
 
 def _stability_rerun_uhf(mf):
-    mo_i, _, _, _ = mf.stability(return_status=True)
+    stability_result = mf.stability(return_status=True)
+    if len(stability_result) != 4:
+        raise RuntimeError("UHF stability analysis did not return internal stability status.")
+    mo_i = stability_result[0]
     dm0 = mf.make_rdm1(mo_i, mf.mo_occ)
     mf = _run_uhf(mf.mol, dm0=dm0)
 
-    _, _, stable_i, _ = mf.stability(return_status=True)
+    stability_result = mf.stability(return_status=True)
+    if len(stability_result) != 4:
+        raise RuntimeError("UHF stability analysis did not return internal stability status.")
+    stable_i = stability_result[2]
     if not stable_i:
         raise RuntimeError("UHF stability rerun did not converge to an internally stable solution.")
 
