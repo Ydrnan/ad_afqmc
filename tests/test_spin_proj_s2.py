@@ -11,15 +11,19 @@ import jax.numpy as jnp
 
 mol = gto.M(
     atom="""
-    N                 -1.67119571   -1.44021737    0.00000000
-    H                 -2.12619571   -0.65213425    1.00000000
-    H                 -0.76119571   -1.44021737    1.00000000
+    O        0.0000000000      0.0000000000      0.0000000000
+    H        0.9562300000      0.0000000000      1.0000000000
+    H       -0.2353791634      0.9268076728      1.0000000000
     """,
     basis="6-31g",
-    spin=1,
 )
 mf = scf.UHF(mol)
 mf.kernel()
+
+for i in range(2):
+    mo1 = mf.stability(external=True)[0]
+    mf = mf.newton().run(mo1, mf.mo_occ) # type: ignore
+mf.stability()
 
 mycc = cc.UCCSD(mf)
 mycc.kernel()
@@ -41,7 +45,8 @@ job = af._job
 @pytest.mark.parametrize(
     "target_spin, e_ref, err_ref",
     [
-        (1.0, -55.559999973012, 1.5120309e-03),
+        (0.0, -75.9947503188, 4.9884686e-03),
+        (2.0, -75.8479635806, 7.6459366e-02),
     ],
 )
 def test_spin_proj_s2(target_spin, e_ref, err_ref):
@@ -89,9 +94,9 @@ def test_spin_proj_s2(target_spin, e_ref, err_ref):
 @pytest.mark.parametrize(
     "target_spin",
     [
-        (1),
-        (3),
-        (5),
+        (0.0),
+        (2.0),
+        (4.0),
     ],
 )
 def test_quadrature(target_spin):
@@ -143,8 +148,8 @@ def test_quadrature(target_spin):
     o2 = overlap_u_s2(w, trial_data)
     e2 = energy_kernel_uw_rh_s2(w, ham_data, meas_ctx, trial_data)
 
-    assert jnp.isclose(o1, o2), (o1, o2)
-    assert jnp.isclose(e1.real, e2.real), (e1, e2)
+    assert abs(o1 - o2) < 1e-6, (o1, o2)
+    assert abs(e1.real - e2.real) < 1e-6, (e1.real, e2.real)
 
 
 if __name__ == "__main__":
