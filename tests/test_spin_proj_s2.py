@@ -22,7 +22,7 @@ mf.kernel()
 
 for i in range(2):
     mo1 = mf.stability(external=True)[0]
-    mf = mf.newton().run(mo1, mf.mo_occ) # type: ignore
+    mf = mf.newton().run(mo1, mf.mo_occ)  # type: ignore
 mf.stability()
 
 mycc = cc.UCCSD(mf)
