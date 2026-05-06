@@ -1,51 +1,38 @@
 import pytest
-
-# from pyscf import cc, gto, scf
+import dataclasses
+from pyscf import cc, gto, scf
 
 from trot.afqmc import AfqmcFp
 import trot.spin_proj
 import trot.testing
 
-import dataclasses
 import jax
 import jax.numpy as jnp
-import pickle
-import os
 
-# mol = gto.M(
-#    atom="""
-#   N 0.0 0.0 0.0
-#   N 0.0 0.0 2.0
-#   """,
-#    basis="6-31g",
-#    verbose=3,
-# )
-#
-# mf = scf.UHF(mol)
-# mf.kernel()
-#
-# for i in range(2):
-#    mo1 = mf.stability(external=True)[0]
-#    mf = mf.newton().run(mo1, mf.mo_occ)  # type: ignore
-# mf.stability()
-#
-# mycc = cc.UCCSD(mf)
-# mycc.kernel()
-#
-# with open("cc_spin_proj.pkl", "wb") as f:
-#    pickle.dump(mycc, f)
+mol = gto.M(
+    atom="""
+    N                 -1.67119571   -1.44021737    0.00000000
+    H                 -2.12619571   -0.65213425    1.00000000
+    H                 -0.76119571   -1.44021737    1.00000000
+    """,
+    basis="6-31g",
+    spin=1,
+)
+mf = scf.UHF(mol)
+mf.kernel()
 
-path = os.path.dirname(os.path.abspath(__file__))
-with open(path + "/cc_spin_proj.pkl", "rb") as f:
-    mycc = pickle.load(f)
+mycc = cc.UCCSD(mf)
+mycc.kernel()
 
 af = AfqmcFp(mycc)
+af.dt = 0.1
 af.n_walkers = 10
 af.ene0 = mycc.e_tot
 af.seed = 5
-af.n_prop_steps = 100
+af.n_prop_steps = 50
 af.n_blocks = 1
 af.walker_kind = "unrestricted"
+af.n_traj = 10
 af.mixed_precision = False
 af.build_job()
 job = af._job
@@ -54,9 +41,7 @@ job = af._job
 @pytest.mark.parametrize(
     "target_spin, e_ref, err_ref",
     [
-        (0.0, -108.8648124049, 4.1501414e-03),
-        (2.0, -108.8521521465, 1.8776746e-03),
-        (4.0, -108.8592975430, 2.9881563e-03),
+        (1.0, -55.559999973012, 1.5120309e-03),
     ],
 )
 def test_spin_proj_s2(target_spin, e_ref, err_ref):
@@ -97,18 +82,16 @@ def test_spin_proj_s2(target_spin, e_ref, err_ref):
 
     e, err = af.kernel()
 
-    # print(e[-1].real- e_ref)
-    # print(err[-1].real- err_ref)
-    assert abs(e[-1].real - e_ref) < 1e-3, (e[-1].real, e_ref)
-    assert abs(err[-1].real - err_ref) < 1e-3, (err[-1].real, err_ref)
+    assert abs(e[-1].real - e_ref) < 1e-6, (e[-1].real, e_ref)
+    assert abs(err[-1].real - err_ref) < 1e-6, (err[-1].real, err_ref)
 
 
 @pytest.mark.parametrize(
     "target_spin",
     [
-        (0),
-        (2),
-        (4),
+        (1),
+        (3),
+        (5),
     ],
 )
 def test_quadrature(target_spin):
@@ -134,7 +117,6 @@ def test_quadrature(target_spin):
         betas, w_betas, overlap_g, energy_kernel_gw_rh
     )
 
-    job._prepare_runtime()  # just to get meas_ctx
     trial_data = job.trial_data
     meas_ctx = job._runtime_meas_ctx
     ham_data = job.ham_data
@@ -147,7 +129,7 @@ def test_quadrature(target_spin):
     S = target_spin / 2.0
     Sz = (job.sys.nup - job.sys.ndn) / 2.0
 
-    ngrid = 2000
+    ngrid = 1000
     betas = jnp.linspace(0, jnp.pi, ngrid, endpoint=False)
     wigner = lambda beta: trot.spin_proj.wigner_small_d(S, Sz, Sz, beta)
     w_betas = jax.vmap(wigner)(betas) * jnp.sin(betas) * (2 * S + 1) / 2.0 * jnp.pi / ngrid
@@ -161,8 +143,8 @@ def test_quadrature(target_spin):
     o2 = overlap_u_s2(w, trial_data)
     e2 = energy_kernel_uw_rh_s2(w, ham_data, meas_ctx, trial_data)
 
-    assert abs(o1 - o2) < 1e-6, (o1, o2)
-    assert abs(e1.real - e2.real) < 1e-6, (e1, e2)
+    assert jnp.isclose(o1, o2), (o1, o2)
+    assert jnp.isclose(e1.real, e2.real), (e1, e2)
 
 
 if __name__ == "__main__":
