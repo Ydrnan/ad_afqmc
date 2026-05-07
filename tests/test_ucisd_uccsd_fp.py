@@ -45,8 +45,8 @@ def test_ucisd_uccsd_fp():
     job = af._job
 
     trial_coeff = (
-        job.staged.trial.data["mo_a"],
-        job.staged.trial.data["mo_b"],
+        job.staged.trial.data["mo_coeff_a"],
+        job.staged.trial.data["mo_coeff_b"],
     )
 
     # Replace the function creating the initial state
