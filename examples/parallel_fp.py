@@ -45,7 +45,7 @@ for seed in range(start, start + n * af.n_traj, af.n_traj):
     with open("qmc_result_" + str(af.seed) + ".pkl", "wb") as f:
         pickle.dump(af.qmc_result, f)
 
-# Equivalent sequential calculation
+# Equivalent sequential calculation for comparison
 af = AfqmcFp.from_staged("af.h5")
 af.n_walkers = 20
 af.ene0 = mycc.e_tot
@@ -53,13 +53,14 @@ af.n_traj = af.n_traj * n
 af.n_blocks = 10
 af.walker_kind = "unrestricted"
 af.seed = start
-af.kernel()
+e_tot, e_err = af.kernel()
 
 # Comparison with the previous sequential results
 import glob
 import pickle
 import jax
 
+# Not needed here but must be added if AfqmcFp is not imported
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
@@ -84,10 +85,12 @@ s = jnp.concatenate(l_s, axis=0)
 
 mean = jnp.sum(e * w, axis=0) / jnp.sum(w, axis=0)
 n = e.shape[0]
-print(n)
 err = jnp.std(e, axis=0) / jnp.sqrt(n - 1)
 sign = jnp.sum(s * w, axis=0) / jnp.sum(w, axis=0)
 
 # Must be identical to the sequential results
 for e, error, s in zip(mean, err, sign):
     print(f"{e.real:14.10f} {error.real:13.7e} {s.real:6.2f}")
+
+assert jnp.allclose(mean, e_tot, rtol=0.0)
+assert jnp.allclose(err, e_err, rtol=0.0)
