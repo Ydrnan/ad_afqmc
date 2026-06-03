@@ -72,6 +72,96 @@ def afqmc_step_fp(
     )
 
 
+def afqmc_step_ml_tr_fp(
+    state: tuple(PropState, PropState),
+    sys: System,
+    *,
+    params: QmcParamsBase,
+    ham_data: tuple(HamChol, HamChol),
+    trial_data: tuple(Any, Any),
+    meas_ops: MeasOps,
+    trotter_ops: TrotterOps,
+    prop_ctx: tuple(CholAfqmcCtx, CholAfqmcCtx),
+    meas_ctx: tuple(Any, Any),
+) -> PropState:
+    (state, state_tr) = state
+    (ham_data, ham_data_tr) = ham_data
+    (trial_data, trial_data_tr) = trial_data
+    (prop_ctx, prop_ctx_tr) = prop_ctx
+    (meas_ctx, meas_ctx_tr) = meas_ctx
+
+    key, subkey = jax.random.split(state.rng_key)
+    nw = wk.n_walkers(state.walkers)
+    fields = jax.random.normal(subkey, (nw, prop_ctx.chol_flat.shape[0]))
+    wk_kind = sys.walker_kind.lower()
+
+    shift_term = jnp.einsum("wg,g->w", fields, prop_ctx.mf_shifts)
+    shift_term_tr = jnp.einsum("wg,g->w", fields, prop_ctx_tr.mf_shifts)
+    constants = jnp.exp(-prop_ctx.sqrt_dt * shift_term + prop_ctx.dt * prop_ctx.h0_prop)
+    constants_tr = jnp.exp(-prop_ctx_tr.sqrt_dt * shift_term_tr + prop_ctx_tr.dt * prop_ctx_tr.h0_prop)
+
+    walkers_new = wk.vmap_chunked(
+        trotter_ops.apply_trotter, n_chunks=params.n_chunks, in_axes=(0, 0, None, None)
+    )(state.walkers, fields, prop_ctx, 10)
+    walkers_new_tr = wk.vmap_chunked(
+        trotter_ops.apply_trotter, n_chunks=params.n_chunks, in_axes=(0, 0, None, None)
+    )(state_tr.walkers, fields, prop_ctx_tr, 10)
+
+    walkers_new = wk.multiply_constants(walkers_new, constants, wk_kind)
+    walkers_new_tr = wk.multiply_constants(walkers_new_tr, constants_tr, wk_kind)
+
+    # Version with normal qr
+    # q, norms = wk.orthogonalize(walkers_new, wk_kind)
+    # weights_new = state.weights * norms.real
+    # key, subkey = jax.random.split(key)
+    # zeta = jax.random.uniform(subkey)
+    # walker_sr, weight_sr = wk.stochastic_reconfiguration(q, weights_new, zeta, wk_kind)
+
+    norms = wk.qr_norm(walkers_new, wk_kind)
+    weights_new = state.weights * norms.real
+    key, subkey = jax.random.split(key)
+    zeta = jax.random.uniform(subkey)
+
+    norms_tr = wk.qr_norm(walkers_new_tr, wk_kind)
+    weights_new_tr = state_tr.weights * norms_tr.real
+
+    # Since we compute only R in the QR we need to divide
+    # by norms.real after the SR, requiering to keep track
+    # of the indices
+    idx = wk._sr_indices(weights_new, zeta, nw)
+    walker_sr, weight_sr = wk.stochastic_reconfiguration(walkers_new, weights_new, zeta, wk_kind)
+    norms = norms[idx]
+    weight_sr /= norms.real
+
+    cw = jnp.cumsum(jnp.abs(weights_new_tr))
+    avg = cw[-1] / nw
+    weight_sr_tr = jnp.full((nw,), avg, dtype=weights_new_tr.dtype)
+    walker_sr_tr = (walkers_new_tr[0][idx], walkers_new_tr[1][idx])
+    norms_tr = norms_tr[idx]
+    weight_sr_tr /= norms_tr.real
+
+    return (
+        PropState(
+            walkers=walker_sr,
+            weights=weight_sr,
+            overlaps=state.overlaps,
+            rng_key=key,
+            pop_control_ene_shift=state.pop_control_ene_shift,
+            e_estimate=state.e_estimate,
+            node_encounters=state.node_encounters,
+        ),
+        PropState(
+            walkers=walker_sr_tr,
+            weights=weight_sr_tr,
+            overlaps=state_tr.overlaps,
+            rng_key=key,
+            pop_control_ene_shift=state_tr.pop_control_ene_shift,
+            e_estimate=state_tr.e_estimate,
+            node_encounters=state_tr.node_encounters,
+        ),
+    )
+
+
 def make_prop_ops_fp(
     ham_basis: str, walker_kind: str, sys: System, mixed_precision=False
 ) -> PropOps:
@@ -112,3 +202,44 @@ def make_prop_ops_fp(
         )
 
     return PropOps(init_prop_state=init_prop_state, build_prop_ctx=build_prop_ctx_fp, step=step_fp)
+
+def make_prop_ops_ml_tr_fp(
+    ham_basis: str, walker_kind: str, sys: System, mixed_precision=False
+) -> PropOps:
+    trotter_ops = make_trotter_ops_fp(ham_basis, walker_kind, mixed_precision=mixed_precision)
+
+    def step_ml_tr_fp(
+        state: tuple(PropState, PropState),
+        *,
+        params: QmcParamsBase,
+        ham_data: tuple(Any, Any),
+        trial_data: tuple(Any, Any),
+        trial_ops: TrialOps,
+        meas_ops: MeasOps,
+        meas_ctx: tuple(Any, Any),
+        prop_ctx: tuple(Any, Any),
+    ) -> PropState:
+        return afqmc_step_ml_tr_fp(
+            state,
+            sys,
+            params=params,
+            ham_data=ham_data,
+            trial_data=trial_data,
+            meas_ops=meas_ops,
+            meas_ctx=meas_ctx,
+            prop_ctx=prop_ctx,
+            trotter_ops=trotter_ops,
+        )
+
+    def build_prop_ctx_fp(ham_data: Any, rdm1: jax.Array, params: QmcParamsBase) -> CholAfqmcCtx:
+        assert isinstance(params, QmcParamsFp)
+        assert params.ene0 is not None, "ene0 must be set for FP propagation"
+        return _build_prop_ctx_fp(
+            ham_data,
+            rdm1,
+            params.dt,
+            params.ene0,
+            chol_flat_precision=jnp.float32 if mixed_precision else jnp.float64,
+        )
+
+    return PropOps(init_prop_state=init_prop_state, build_prop_ctx=build_prop_ctx_fp, step=step_ml_tr_fp)
