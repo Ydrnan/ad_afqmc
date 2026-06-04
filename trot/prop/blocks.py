@@ -816,8 +816,8 @@ def make_block_ml_tr_fp(
 
         state_tr1 = state._replace(walkers=wk.slice_walkers(state.walkers, sys.walker_kind, p1.level.norb_keep))
         state_tr2 = state._replace(walkers=wk.slice_walkers(state.walkers, sys.walker_kind, p2.level.norb_keep))
-        prop_ctx_tr = prop_ops.build_prop_ctx(p1.ham_data, trial_ops.get_rdm1(p1.trial_data), params)
-        prop_ctx_tr = prop_ops.build_prop_ctx(p2.ham_data, trial_ops.get_rdm1(p2.trial_data), params)
+        prop_ctx_tr1 = prop_ops.build_prop_ctx(p1.ham_data, trial_ops.get_rdm1(p1.trial_data), params)
+        prop_ctx_tr2 = prop_ops.build_prop_ctx(p2.ham_data, trial_ops.get_rdm1(p2.trial_data), params)
 
         step_fp = lambda st_tuple: prop_ops.step(
             st_tuple,
