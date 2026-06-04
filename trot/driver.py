@@ -858,6 +858,13 @@ def run_qmc_fp(
     block_e_all = jnp.zeros((params.n_traj, params.n_blocks + 1)) + 0.0j
     block_w_all = jnp.zeros((params.n_traj, params.n_blocks + 1)) + 0.0j
     total_sign = jnp.ones((params.n_traj, params.n_blocks + 1)) + 0.0j
+    #from . import walkers as wk
+    #e1 = jnp.zeros((params.n_traj, wk.n_walkers(state.walkers))) + 0.0j
+    #w1 = jnp.zeros((params.n_traj, wk.n_walkers(state.walkers))) + 0.0j
+    #o1 = jnp.zeros((params.n_traj, wk.n_walkers(state.walkers))) + 0.0j
+    #e2 = jnp.zeros((params.n_traj, wk.n_walkers(state.walkers))) + 0.0j
+    #w2 = jnp.zeros((params.n_traj, wk.n_walkers(state.walkers))) + 0.0j
+    #o2 = jnp.zeros((params.n_traj, wk.n_walkers(state.walkers))) + 0.0j
 
     chunk = print_every
     for i in range(params.n_traj):
@@ -894,6 +901,13 @@ def run_qmc_fp(
         block_ov_s = scalars_chunk["overlap"]
         block_abs_ov_s = scalars_chunk["abs_overlap"]
 
+        #e1=e1.at[i,:].set(scalars_chunk["e1"].reshape(-1))
+        #w1=w1.at[i,:].set(scalars_chunk["w1"].reshape(-1))
+        #o1=o1.at[i,:].set(scalars_chunk["o1"].reshape(-1))
+        #e2=e2.at[i,:].set(scalars_chunk["e2"].reshape(-1))
+        #w2=w2.at[i,:].set(scalars_chunk["w2"].reshape(-1))
+        #o2=o2.at[i,:].set(scalars_chunk["o2"].reshape(-1))
+
         block_e_all = block_e_all.at[i, 1:].set(block_e_s)
         block_w_all = block_w_all.at[i, 1:].set(block_w_s)
         sign = block_ov_s / block_abs_ov_s
@@ -920,7 +934,10 @@ def run_qmc_fp(
             )
 
         # not implemented in free projection yet
-        block_obs_all: dict[str, jax.Array] = {"sign": total_sign}
+        block_obs_all: dict[str, jax.Array] = {"sign": total_sign,
+        #"e1": e1, "w1": w1, "o1": o1,
+        #"e2": e2, "w2": w2, "o2": o2,
+        }
         obs_means: dict[str, jax.Array] = {}
         obs_stderrs: dict[str, jax.Array] = {}
 
