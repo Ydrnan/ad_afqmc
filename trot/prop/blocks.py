@@ -889,8 +889,8 @@ def make_block_ml_tr_fp(
         norm_weights_tr2 = weights_tr2 * overlaps_tr2 / jnp.sum(weights_tr2 * overlaps_tr2)
         e_block = jnp.sum(norm_weights_tr1 * e1 - norm_weights_tr2 * e2)
 
-        ov = jnp.sum(overlaps)
-        abs_ov = jnp.sum(jnp.abs(overlaps))
+        ov = jnp.sum(overlaps_tr1)
+        abs_ov = jnp.sum(jnp.abs(overlaps_tr1))
 
         obs = BlockObs(
             scalars={"energy": e_block, "weight": w_sum, "overlap": ov, "abs_overlap": abs_ov,
